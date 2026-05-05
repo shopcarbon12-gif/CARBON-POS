@@ -15,7 +15,7 @@ export default async function PosLayout({
     redirect("/sign-in?from=/pos");
   }
   return (
-    <div className="min-h-screen bg-[--color-pos-bg] text-[--color-pos-ink]">
+    <div className="min-h-screen bg-[var(--color-pos-bg)] text-[var(--color-pos-ink)]">
       {children}
     </div>
   );

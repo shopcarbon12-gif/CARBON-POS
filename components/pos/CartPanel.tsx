@@ -23,15 +23,15 @@ export function CartPanel({
 }) {
   if (lines.length === 0) {
     return (
-      <div className="bg-white border border-[--color-pos-border] rounded-2xl p-10 text-center">
-        <p className="text-[--color-pos-muted]">
+      <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-10 text-center">
+        <p className="text-[var(--color-pos-muted)]">
           Scan a barcode or search for an item to start a sale.
         </p>
       </div>
     );
   }
   return (
-    <div className="bg-white border border-[--color-pos-border] rounded-2xl overflow-hidden">
+    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl overflow-hidden">
       <ul>
         {lines.map((line) => {
           const lineSubtotal = line.unit_price * line.quantity;
@@ -39,18 +39,18 @@ export function CartPanel({
           return (
             <li
               key={line.cart_id}
-              className="flex items-center gap-3 px-4 py-3 border-b border-[--color-pos-border] last:border-b-0"
+              className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-pos-border)] last:border-b-0"
             >
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{line.description}</p>
-                <p className="text-xs text-[--color-pos-muted]">
+                <p className="text-xs text-[var(--color-pos-muted)]">
                   {formatMoney(line.unit_price)} each
                   {line.discount_amount > 0 && (
                     <>
                       {" · "}
                       <button
                         onClick={() => onEditDiscount(line.cart_id)}
-                        className="text-[--color-pos-accent-2] underline"
+                        className="text-[var(--color-pos-accent-2)] underline"
                       >
                         −{formatMoney(line.discount_amount)} off
                       </button>
@@ -64,7 +64,7 @@ export function CartPanel({
                     onClick={() =>
                       onChangeQty(line.cart_id, Math.max(1, line.quantity - 1))
                     }
-                    className="tap w-12 rounded-lg border border-[--color-pos-border] flex items-center justify-center"
+                    className="tap w-12 rounded-lg border border-[var(--color-pos-border)] flex items-center justify-center"
                     aria-label="Decrease quantity"
                   >
                     <Minus size={18} />
@@ -74,7 +74,7 @@ export function CartPanel({
                   </span>
                   <button
                     onClick={() => onChangeQty(line.cart_id, line.quantity + 1)}
-                    className="tap w-12 rounded-lg border border-[--color-pos-border] flex items-center justify-center"
+                    className="tap w-12 rounded-lg border border-[var(--color-pos-border)] flex items-center justify-center"
                     aria-label="Increase quantity"
                   >
                     <Plus size={18} />
@@ -91,7 +91,7 @@ export function CartPanel({
               </div>
               <button
                 onClick={() => onRemove(line.cart_id)}
-                className="tap w-12 rounded-lg text-[--color-pos-muted] hover:text-[--color-pos-danger] flex items-center justify-center"
+                className="tap w-12 rounded-lg text-[var(--color-pos-muted)] hover:text-[var(--color-pos-danger)] flex items-center justify-center"
                 aria-label="Remove item"
               >
                 <Trash2 size={18} />

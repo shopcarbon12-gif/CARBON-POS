@@ -81,11 +81,11 @@ export function ItemSearch({
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={onKey}
         placeholder="Scan a barcode or type to search…"
-        className="tap-lg w-full rounded-2xl border border-[--color-pos-border] bg-white px-5 text-lg"
+        className="tap-lg w-full rounded-2xl border border-[var(--color-pos-border)] bg-white px-5 text-lg"
         autoComplete="off"
       />
       {q && results.length > 0 && (
-        <div className="absolute z-10 left-0 right-0 mt-2 bg-white border border-[--color-pos-border] rounded-2xl shadow-lg max-h-80 overflow-auto">
+        <div className="absolute z-10 left-0 right-0 mt-2 bg-white border border-[var(--color-pos-border)] rounded-2xl shadow-lg max-h-80 overflow-auto">
           {results.map((r) => (
             <button
               key={r.id}
@@ -94,7 +94,7 @@ export function ItemSearch({
                 setQ("");
                 setResults([]);
               }}
-              className="w-full text-left px-4 py-3 hover:bg-[--color-pos-bg] border-b border-[--color-pos-border] last:border-b-0"
+              className="w-full text-left px-4 py-3 hover:bg-[var(--color-pos-bg)] border-b border-[var(--color-pos-border)] last:border-b-0"
             >
               <div className="flex justify-between">
                 <span className="font-medium">{r.item_name}</span>
@@ -102,7 +102,7 @@ export function ItemSearch({
                   {formatMoney(r.retail_price ?? 0)}
                 </span>
               </div>
-              <div className="text-xs text-[--color-pos-muted]">
+              <div className="text-xs text-[var(--color-pos-muted)]">
                 {[r.color, r.size, r.sku].filter(Boolean).join(" · ")}
               </div>
             </button>
@@ -110,7 +110,7 @@ export function ItemSearch({
         </div>
       )}
       {q && !loading && results.length === 0 && (
-        <div className="absolute z-10 left-0 right-0 mt-2 bg-white border border-[--color-pos-border] rounded-2xl px-4 py-3 text-[--color-pos-muted]">
+        <div className="absolute z-10 left-0 right-0 mt-2 bg-white border border-[var(--color-pos-border)] rounded-2xl px-4 py-3 text-[var(--color-pos-muted)]">
           No items match. Check the barcode and try again.
         </div>
       )}

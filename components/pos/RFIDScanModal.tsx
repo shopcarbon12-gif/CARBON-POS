@@ -96,24 +96,24 @@ export function RFIDScanModal({
           <h2 className="text-xl font-bold">RFID Scan</h2>
           <button
             onClick={onClose}
-            className="text-[--color-pos-muted] text-xl leading-none px-2"
+            className="text-[var(--color-pos-muted)] text-xl leading-none px-2"
             aria-label="Close"
           >
             ×
           </button>
         </div>
-        <p className="text-[--color-pos-muted] mb-3">
+        <p className="text-[var(--color-pos-muted)] mb-3">
           Wave each item near the reader. The list below grows as tags are
           picked up.
         </p>
         {streamErr && (
-          <p className="text-sm text-[--color-pos-danger] mb-2">
+          <p className="text-sm text-[var(--color-pos-danger)] mb-2">
             {streamErr} You can keep scanning once it reconnects.
           </p>
         )}
-        <div className="flex-1 overflow-auto rounded-xl border border-[--color-pos-border]">
+        <div className="flex-1 overflow-auto rounded-xl border border-[var(--color-pos-border)]">
           {scanned.length === 0 ? (
-            <div className="p-6 text-center text-[--color-pos-muted]">
+            <div className="p-6 text-center text-[var(--color-pos-muted)]">
               Waiting for tags…
             </div>
           ) : (
@@ -121,15 +121,15 @@ export function RFIDScanModal({
               {scanned.map((it) => (
                 <li
                   key={it.epc}
-                  className="flex items-center justify-between px-4 py-2 border-b border-[--color-pos-border] last:border-b-0"
+                  className="flex items-center justify-between px-4 py-2 border-b border-[var(--color-pos-border)] last:border-b-0"
                 >
                   <div>
                     <p className="font-medium">{it.item_name}</p>
-                    <p className="text-xs text-[--color-pos-muted]">
+                    <p className="text-xs text-[var(--color-pos-muted)]">
                       {[it.color, it.size, it.sku].filter(Boolean).join(" · ")}
                     </p>
                   </div>
-                  <span className="text-xs font-mono text-[--color-pos-muted]">
+                  <span className="text-xs font-mono text-[var(--color-pos-muted)]">
                     {it.epc.slice(-6)}
                   </span>
                 </li>
@@ -138,14 +138,14 @@ export function RFIDScanModal({
           )}
         </div>
         <div className="flex items-center justify-between mt-3">
-          <p className="text-sm text-[--color-pos-muted]">
+          <p className="text-sm text-[var(--color-pos-muted)]">
             {scanned.length} ready to add
             {skipped > 0 && ` · ${skipped} skipped (already sold)`}
           </p>
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="tap rounded-xl border border-[--color-pos-border] px-4 font-medium"
+              className="tap rounded-xl border border-[var(--color-pos-border)] px-4 font-medium"
             >
               Cancel
             </button>
@@ -155,7 +155,7 @@ export function RFIDScanModal({
                 onClose();
               }}
               disabled={scanned.length === 0}
-              className="tap rounded-xl bg-[--color-pos-accent] text-white px-5 font-semibold disabled:opacity-50"
+              className="tap rounded-xl bg-[var(--color-pos-accent)] text-white px-5 font-semibold disabled:opacity-50"
             >
               Add {scanned.length} to cart
             </button>

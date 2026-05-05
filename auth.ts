@@ -1,19 +1,9 @@
-import NextAuth, { type NextAuthConfig, type DefaultSession } from "next-auth";
+import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { getPool } from "@/lib/db";
-
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      role: "cashier" | "supervisor" | "manager" | "admin";
-      employee_id: number;
-      flow: "pin" | "password";
-    } & DefaultSession["user"];
-  }
-}
+import { authConfig } from "./auth.config";
 
 const pinSchema = z.object({
   pin: z.string().regex(/^\d{4}$/, "PIN must be 4 digits"),
@@ -25,19 +15,19 @@ const passwordSchema = z.object({
 });
 
 /**
+ * Full NextAuth config — runs only in /api/auth/[...nextauth]/route.ts (Node
+ * runtime). The middleware uses authConfig directly so the Edge bundle
+ * doesn't pull in bcrypt + pg.
+ *
  * Two providers:
- *  - "pin": for the touch register screen. Cashier enters their 4-digit PIN.
- *           We bcrypt-compare against every active pos_employees.pin_hash.
- *           Tradeoff: 4-digit PIN means we must check all candidates because
- *           bcrypt is one-way. Active employee count is small (tens), so this
- *           is fine.
- *  - "password": for back-office /admin. Email + password against WMS users.
- *                Falls back to pos_employees PIN-as-password if you want a
- *                separate admin password column, add it later.
+ *  - "pin": touch register. Cashier enters their 4-digit PIN; we
+ *    bcrypt-compare against every active pos_employees.pin_hash. PIN is
+ *    one-way so the loop is required; active employee count is small.
+ *  - "password": back office. Email + password against WMS users.
+ *    Restricted to manager + admin roles.
  */
-const config: NextAuthConfig = {
-  session: { strategy: "jwt", maxAge: 60 * 60 * 12 },
-  pages: { signIn: "/sign-in" },
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   providers: [
     Credentials({
       id: "pin",
@@ -101,7 +91,6 @@ const config: NextAuthConfig = {
         const row = result.rows[0];
         if (!row || !row.password_hash) return null;
         if (!(await bcrypt.compare(password, row.password_hash))) return null;
-        // Only managers and admins are allowed in the back-office.
         const role = row.role ?? "cashier";
         if (role !== "manager" && role !== "admin") return null;
         return {
@@ -114,31 +103,6 @@ const config: NextAuthConfig = {
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.role = (user as { role: string }).role;
-        token.employee_id = (user as { employee_id: number }).employee_id;
-        token.flow = (user as { flow: "pin" | "password" }).flow;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = String(token.sub ?? "");
-        session.user.role = (token.role ?? "cashier") as
-          | "cashier"
-          | "supervisor"
-          | "manager"
-          | "admin";
-        session.user.employee_id = Number(token.employee_id ?? 0);
-        session.user.flow = (token.flow ?? "pin") as "pin" | "password";
-      }
-      return session;
-    },
-  },
-};
-
-export const { handlers, auth, signIn, signOut } = NextAuth(config);
+});
 
 export type SessionRole = "cashier" | "supervisor" | "manager" | "admin";

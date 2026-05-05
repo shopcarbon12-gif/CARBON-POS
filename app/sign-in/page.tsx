@@ -16,7 +16,7 @@ export default function SignInPage() {
     <Suspense
       fallback={
         <main className="min-h-screen flex items-center justify-center">
-          <p className="text-[--color-pos-muted]">Loading…</p>
+          <p className="text-[var(--color-pos-muted)]">Loading…</p>
         </main>
       }
     >
@@ -75,9 +75,9 @@ function SignInInner() {
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4">
-      <div className="bg-white border border-[--color-pos-border] rounded-2xl shadow-sm w-full max-w-md p-8">
+      <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl shadow-sm w-full max-w-md p-8">
         <h1 className="text-2xl font-bold mb-1">Carbon POS</h1>
-        <p className="text-[--color-pos-muted] mb-6">
+        <p className="text-[var(--color-pos-muted)] mb-6">
           {mode === "pin"
             ? "Tap your 4-digit PIN to start your shift."
             : "Sign in to the back office."}
@@ -91,8 +91,8 @@ function SignInInner() {
                   key={i}
                   className={`w-4 h-4 rounded-full border-2 ${
                     i < pin.length
-                      ? "bg-[--color-pos-ink] border-[--color-pos-ink]"
-                      : "border-[--color-pos-border]"
+                      ? "bg-[var(--color-pos-ink)] border-[var(--color-pos-ink)]"
+                      : "border-[var(--color-pos-border)]"
                   }`}
                 />
               ))}
@@ -101,33 +101,33 @@ function SignInInner() {
               {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
                 <button
                   key={d}
-                  className="tap-lg rounded-xl bg-[--color-pos-bg] border border-[--color-pos-border] text-2xl font-semibold active:bg-zinc-200"
+                  className="tap-lg rounded-xl bg-[var(--color-pos-bg)] border border-[var(--color-pos-border)] text-2xl font-semibold active:bg-zinc-200"
                   onClick={() => tapDigit(d)}
                 >
                   {d}
                 </button>
               ))}
               <button
-                className="tap-lg rounded-xl text-[--color-pos-muted]"
+                className="tap-lg rounded-xl text-[var(--color-pos-muted)]"
                 onClick={() => setPin("")}
               >
                 Clear
               </button>
               <button
-                className="tap-lg rounded-xl bg-[--color-pos-bg] border border-[--color-pos-border] text-2xl font-semibold active:bg-zinc-200"
+                className="tap-lg rounded-xl bg-[var(--color-pos-bg)] border border-[var(--color-pos-border)] text-2xl font-semibold active:bg-zinc-200"
                 onClick={() => tapDigit("0")}
               >
                 0
               </button>
               <button
-                className="tap-lg rounded-xl text-[--color-pos-muted]"
+                className="tap-lg rounded-xl text-[var(--color-pos-muted)]"
                 onClick={() => setPin(pin.slice(0, -1))}
               >
                 ←
               </button>
             </div>
             <button
-              className="w-full mt-6 text-sm text-[--color-pos-muted] underline"
+              className="w-full mt-6 text-sm text-[var(--color-pos-muted)] underline"
               onClick={() => setMode("password")}
             >
               Manager? Sign in with email and password
@@ -142,7 +142,7 @@ function SignInInner() {
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="tap rounded-lg border border-[--color-pos-border] px-3"
+              className="tap rounded-lg border border-[var(--color-pos-border)] px-3"
             />
             <label className="text-sm font-medium">Password</label>
             <input
@@ -150,18 +150,18 @@ function SignInInner() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="tap rounded-lg border border-[--color-pos-border] px-3"
+              className="tap rounded-lg border border-[var(--color-pos-border)] px-3"
             />
             <button
               type="submit"
               disabled={busy}
-              className="tap-lg rounded-xl bg-[--color-pos-ink] text-white font-semibold mt-2"
+              className="tap-lg rounded-xl bg-[var(--color-pos-ink)] text-white font-semibold mt-2"
             >
               {busy ? "Signing in..." : "Sign in"}
             </button>
             <button
               type="button"
-              className="text-sm text-[--color-pos-muted] underline mt-1"
+              className="text-sm text-[var(--color-pos-muted)] underline mt-1"
               onClick={() => setMode("pin")}
             >
               Cashier? Use the PIN keypad
@@ -170,7 +170,7 @@ function SignInInner() {
         )}
 
         {error && (
-          <p className="mt-4 text-center text-[--color-pos-danger] text-sm">
+          <p className="mt-4 text-center text-[var(--color-pos-danger)] text-sm">
             {error}
           </p>
         )}

@@ -41,22 +41,22 @@ export default async function AdminPage() {
   const t = today.rows[0];
   return (
     <main className="min-h-screen bg-white">
-      <header className="border-b border-[--color-pos-border] px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-[var(--color-pos-border)] px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Carbon POS — Back Office</h1>
-          <p className="text-xs text-[--color-pos-muted]">{cashier.email}</p>
+          <p className="text-xs text-[var(--color-pos-muted)]">{cashier.email}</p>
         </div>
         <nav className="flex gap-3 text-sm">
           <Link href="/admin" className="font-medium">
             Dashboard
           </Link>
-          <Link href="/admin/sales" className="text-[--color-pos-muted]">
+          <Link href="/admin/sales" className="text-[var(--color-pos-muted)]">
             Sales
           </Link>
-          <Link href="/admin/reports" className="text-[--color-pos-muted]">
+          <Link href="/admin/reports" className="text-[var(--color-pos-muted)]">
             Reports
           </Link>
-          <Link href="/pos" className="text-[--color-pos-muted] underline">
+          <Link href="/pos" className="text-[var(--color-pos-muted)] underline">
             Register →
           </Link>
         </nav>
@@ -71,8 +71,8 @@ export default async function AdminPage() {
 
       <section className="px-6 pb-6">
         <h2 className="font-semibold mb-2">Recent sales</h2>
-        <table className="w-full text-sm border border-[--color-pos-border] rounded-xl overflow-hidden">
-          <thead className="bg-[--color-pos-bg]">
+        <table className="w-full text-sm border border-[var(--color-pos-border)] rounded-xl overflow-hidden">
+          <thead className="bg-[var(--color-pos-bg)]">
             <tr className="text-left">
               <th className="px-3 py-2">Sale</th>
               <th className="px-3 py-2">When</th>
@@ -86,14 +86,14 @@ export default async function AdminPage() {
               <tr>
                 <td
                   colSpan={5}
-                  className="px-3 py-6 text-center text-[--color-pos-muted]"
+                  className="px-3 py-6 text-center text-[var(--color-pos-muted)]"
                 >
                   No sales yet.
                 </td>
               </tr>
             ) : (
               recent.rows.map((s) => (
-                <tr key={s.id} className="border-t border-[--color-pos-border]">
+                <tr key={s.id} className="border-t border-[var(--color-pos-border)]">
                   <td className="px-3 py-2">
                     <Link href={`/admin/sales/${s.id}`}>{s.sale_number}</Link>
                   </td>
@@ -118,8 +118,8 @@ export default async function AdminPage() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white border border-[--color-pos-border] rounded-2xl p-4">
-      <p className="text-xs text-[--color-pos-muted]">{label}</p>
+    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-4">
+      <p className="text-xs text-[var(--color-pos-muted)]">{label}</p>
       <p className="total-display text-3xl mt-1">{value}</p>
     </div>
   );

@@ -95,24 +95,24 @@ function ReceiptInner() {
   if (!data) {
     return (
       <main className="min-h-screen flex items-center justify-center">
-        <p className="text-[--color-pos-muted]">Loading receipt…</p>
+        <p className="text-[var(--color-pos-muted)]">Loading receipt…</p>
       </main>
     );
   }
   const { sale, lines, payments } = data;
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-3xl mx-auto">
-      <div className="bg-white border border-[--color-pos-border] rounded-2xl p-6">
+      <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6">
         <div className="text-center mb-4">
           <h1 className="text-2xl font-bold">{sale.location_name}</h1>
-          <p className="text-[--color-pos-muted] text-sm">
+          <p className="text-[var(--color-pos-muted)] text-sm">
             Sale {sale.sale_number} · {sale.register_name}
           </p>
-          <p className="text-[--color-pos-muted] text-sm">
+          <p className="text-[var(--color-pos-muted)] text-sm">
             {new Date(sale.completed_at ?? sale.created_at).toLocaleString()}
           </p>
         </div>
-        <ul className="border-t border-[--color-pos-border] pt-3">
+        <ul className="border-t border-[var(--color-pos-border)] pt-3">
           {lines.map((l) => (
             <li
               key={l.id}
@@ -125,7 +125,7 @@ function ReceiptInner() {
             </li>
           ))}
         </ul>
-        <div className="mt-3 border-t border-[--color-pos-border] pt-3 grid grid-cols-2 gap-y-1 text-sm">
+        <div className="mt-3 border-t border-[var(--color-pos-border)] pt-3 grid grid-cols-2 gap-y-1 text-sm">
           <span>Subtotal</span>
           <span className="text-right">{formatMoney(sale.subtotal)}</span>
           <span>Discount</span>
@@ -137,15 +137,15 @@ function ReceiptInner() {
             {formatMoney(sale.total_amount)}
           </span>
         </div>
-        <div className="mt-3 border-t border-[--color-pos-border] pt-3 grid grid-cols-2 gap-y-1 text-sm">
+        <div className="mt-3 border-t border-[var(--color-pos-border)] pt-3 grid grid-cols-2 gap-y-1 text-sm">
           {payments.map((p) => (
             <span key={p.id} className="contents">
               <span>{humanMethod(p.method)}</span>
               <span className="text-right">{formatMoney(p.amount)}</span>
               {p.method === "cash" && p.change_given ? (
                 <>
-                  <span className="text-[--color-pos-muted]">Change</span>
-                  <span className="text-right text-[--color-pos-muted]">
+                  <span className="text-[var(--color-pos-muted)]">Change</span>
+                  <span className="text-right text-[var(--color-pos-muted)]">
                     {formatMoney(p.change_given)}
                   </span>
                 </>
@@ -154,7 +154,7 @@ function ReceiptInner() {
           ))}
         </div>
         {sale.return_policy && (
-          <p className="mt-4 text-center text-xs text-[--color-pos-muted]">
+          <p className="mt-4 text-center text-xs text-[var(--color-pos-muted)]">
             {sale.return_policy}
           </p>
         )}
@@ -164,7 +164,7 @@ function ReceiptInner() {
         <button
           onClick={print}
           disabled={printState === "printing"}
-          className="tap-lg rounded-2xl bg-[--color-pos-ink] text-white text-lg font-semibold"
+          className="tap-lg rounded-2xl bg-[var(--color-pos-ink)] text-white text-lg font-semibold"
         >
           {printState === "printing"
             ? "Printing…"
@@ -172,18 +172,18 @@ function ReceiptInner() {
               ? "Printed ✓ — Print again"
               : "Print Receipt"}
         </button>
-        <div className="bg-white border border-[--color-pos-border] rounded-2xl p-3 flex flex-col gap-2">
+        <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-3 flex flex-col gap-2">
           <input
             type="email"
             value={emailValue}
             onChange={(e) => setEmailValue(e.target.value)}
             placeholder="customer@email.com"
-            className="tap rounded-lg border border-[--color-pos-border] px-3"
+            className="tap rounded-lg border border-[var(--color-pos-border)] px-3"
           />
           <button
             onClick={sendEmail}
             disabled={!emailValue.trim() || emailState === "sending"}
-            className="tap rounded-xl bg-white border border-[--color-pos-border] font-semibold"
+            className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-semibold"
           >
             {emailState === "sending"
               ? "Sending…"
@@ -195,12 +195,12 @@ function ReceiptInner() {
       </div>
 
       {errorMsg && (
-        <p className="mt-4 text-center text-[--color-pos-danger]">{errorMsg}</p>
+        <p className="mt-4 text-center text-[var(--color-pos-danger)]">{errorMsg}</p>
       )}
 
       <button
         onClick={() => router.replace("/pos")}
-        className="tap-lg w-full rounded-2xl bg-[--color-pos-accent] text-white text-xl font-semibold mt-4"
+        className="tap-lg w-full rounded-2xl bg-[var(--color-pos-accent)] text-white text-xl font-semibold mt-4"
       >
         New Sale
       </button>
@@ -213,7 +213,7 @@ export default function ReceiptPage() {
     <Suspense
       fallback={
         <main className="min-h-screen flex items-center justify-center">
-          <p className="text-[--color-pos-muted]">Loading…</p>
+          <p className="text-[var(--color-pos-muted)]">Loading…</p>
         </main>
       }
     >

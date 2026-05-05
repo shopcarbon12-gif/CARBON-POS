@@ -155,20 +155,20 @@ export function SellScreen({
       <header className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold">{registerName}</h1>
-          <p className="text-xs text-[--color-pos-muted]">
+          <p className="text-xs text-[var(--color-pos-muted)]">
             Tax rate {(taxRate * 100).toFixed(2)}%
           </p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => router.push("/pos/register")}
-            className="tap rounded-xl border border-[--color-pos-border] px-4 font-medium"
+            className="tap rounded-xl border border-[var(--color-pos-border)] px-4 font-medium"
           >
             Register
           </button>
           <button
             onClick={onSignOut}
-            className="tap text-[--color-pos-muted] underline px-3"
+            className="tap text-[var(--color-pos-muted)] underline px-3"
           >
             Sign out
           </button>
@@ -183,7 +183,7 @@ export function SellScreen({
             </div>
             <button
               onClick={() => setShowRfid(true)}
-              className="tap-lg rounded-2xl bg-white border border-[--color-pos-border] px-5 font-medium"
+              className="tap-lg rounded-2xl bg-white border border-[var(--color-pos-border)] px-5 font-medium"
             >
               Scan RFID
             </button>
@@ -197,13 +197,13 @@ export function SellScreen({
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setShowMisc(true)}
-              className="tap rounded-xl bg-white border border-[--color-pos-border] font-medium"
+              className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-medium"
             >
               Misc Charge
             </button>
             <button
               disabled={lines.length === 0}
-              className="tap rounded-xl bg-white border border-[--color-pos-border] font-medium disabled:opacity-50"
+              className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-medium disabled:opacity-50"
               title="Phase 2"
             >
               Hold Sale
@@ -211,7 +211,7 @@ export function SellScreen({
             <button
               onClick={() => setLines([])}
               disabled={lines.length === 0}
-              className="tap rounded-xl bg-white border border-[--color-pos-border] font-medium disabled:opacity-50"
+              className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-medium disabled:opacity-50"
             >
               Clear All
             </button>
@@ -277,7 +277,7 @@ function MiscChargeModal({
   const [amount, setAmount] = useState("");
   return (
     <BasicModal title="Misc Charge" onCancel={onCancel}>
-      <p className="text-[--color-pos-muted]">
+      <p className="text-[var(--color-pos-muted)]">
         For items not in the catalog. Don't use this if a barcode exists.
       </p>
       <label className="block mt-3 text-sm font-medium">Description</label>
@@ -285,7 +285,7 @@ function MiscChargeModal({
         autoFocus
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        className="tap w-full rounded-lg border border-[--color-pos-border] px-3 mt-1"
+        className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3 mt-1"
       />
       <label className="block mt-3 text-sm font-medium">Amount</label>
       <input
@@ -294,12 +294,12 @@ function MiscChargeModal({
         min="0"
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
-        className="tap-lg w-full rounded-xl border border-[--color-pos-border] px-3 text-2xl font-semibold mt-1"
+        className="tap-lg w-full rounded-xl border border-[var(--color-pos-border)] px-3 text-2xl font-semibold mt-1"
       />
       <div className="mt-5 flex gap-2">
         <button
           onClick={onCancel}
-          className="tap rounded-xl border border-[--color-pos-border] flex-1 font-medium"
+          className="tap rounded-xl border border-[var(--color-pos-border)] flex-1 font-medium"
         >
           Cancel
         </button>
@@ -309,7 +309,7 @@ function MiscChargeModal({
             if (!description.trim() || !Number.isFinite(n) || n <= 0) return;
             onAdd(description.trim(), n);
           }}
-          className="tap rounded-xl bg-[--color-pos-ink] text-white flex-1 font-semibold"
+          className="tap rounded-xl bg-[var(--color-pos-ink)] text-white flex-1 font-semibold"
         >
           Add
         </button>
@@ -339,8 +339,8 @@ function DiscountModal({
           onClick={() => setMode("percent")}
           className={`tap rounded-lg border ${
             mode === "percent"
-              ? "bg-[--color-pos-ink] text-white border-[--color-pos-ink]"
-              : "border-[--color-pos-border]"
+              ? "bg-[var(--color-pos-ink)] text-white border-[var(--color-pos-ink)]"
+              : "border-[var(--color-pos-border)]"
           }`}
         >
           % Off
@@ -349,8 +349,8 @@ function DiscountModal({
           onClick={() => setMode("fixed")}
           className={`tap rounded-lg border ${
             mode === "fixed"
-              ? "bg-[--color-pos-ink] text-white border-[--color-pos-ink]"
-              : "border-[--color-pos-border]"
+              ? "bg-[var(--color-pos-ink)] text-white border-[var(--color-pos-ink)]"
+              : "border-[var(--color-pos-border)]"
           }`}
         >
           $ Off
@@ -364,7 +364,7 @@ function DiscountModal({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={mode === "percent" ? "10" : "5.00"}
-        className="tap-lg w-full rounded-xl border border-[--color-pos-border] px-3 text-3xl font-semibold mt-3"
+        className="tap-lg w-full rounded-xl border border-[var(--color-pos-border)] px-3 text-3xl font-semibold mt-3"
       />
       {mode === "percent" && Number(value) > 20 && (
         <p className="text-xs text-amber-700 mt-2">
@@ -374,7 +374,7 @@ function DiscountModal({
       <div className="mt-5 flex gap-2">
         <button
           onClick={onCancel}
-          className="tap rounded-xl border border-[--color-pos-border] flex-1 font-medium"
+          className="tap rounded-xl border border-[var(--color-pos-border)] flex-1 font-medium"
         >
           Cancel
         </button>
@@ -384,7 +384,7 @@ function DiscountModal({
             if (!Number.isFinite(n) || n <= 0) return;
             onApply(n, mode === "percent");
           }}
-          className="tap rounded-xl bg-[--color-pos-ink] text-white flex-1 font-semibold"
+          className="tap rounded-xl bg-[var(--color-pos-ink)] text-white flex-1 font-semibold"
         >
           Apply
         </button>
@@ -409,7 +409,7 @@ function BasicModal({
           <h2 className="text-xl font-bold">{title}</h2>
           <button
             onClick={onCancel}
-            className="text-[--color-pos-muted] text-xl leading-none px-2"
+            className="text-[var(--color-pos-muted)] text-xl leading-none px-2"
           >
             ×
           </button>

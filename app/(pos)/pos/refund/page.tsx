@@ -103,14 +103,14 @@ export default function RefundPage() {
   if (done) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="bg-white rounded-2xl border border-[--color-pos-border] p-8 max-w-md w-full text-center">
-          <p className="text-[--color-pos-muted]">Refunded</p>
+        <div className="bg-white rounded-2xl border border-[var(--color-pos-border)] p-8 max-w-md w-full text-center">
+          <p className="text-[var(--color-pos-muted)]">Refunded</p>
           <p className="total-display text-4xl mt-1">
             {formatMoney(done.amount)}
           </p>
           <button
             onClick={() => router.replace("/pos")}
-            className="tap-lg w-full rounded-2xl bg-[--color-pos-accent] text-white text-xl font-semibold mt-6"
+            className="tap-lg w-full rounded-2xl bg-[var(--color-pos-accent)] text-white text-xl font-semibold mt-6"
           >
             Done
           </button>
@@ -125,7 +125,7 @@ export default function RefundPage() {
         <h1 className="text-2xl font-bold">Refund a sale</h1>
         <button
           onClick={() => router.push("/pos")}
-          className="tap text-[--color-pos-muted] underline px-3"
+          className="tap text-[var(--color-pos-muted)] underline px-3"
         >
           Cancel
         </button>
@@ -139,28 +139,28 @@ export default function RefundPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Sale number (POS-…) or customer name"
-            className="tap-lg w-full rounded-2xl border border-[--color-pos-border] bg-white px-5 text-lg"
+            className="tap-lg w-full rounded-2xl border border-[var(--color-pos-border)] bg-white px-5 text-lg"
           />
-          <ul className="mt-3 bg-white border border-[--color-pos-border] rounded-2xl overflow-hidden">
+          <ul className="mt-3 bg-white border border-[var(--color-pos-border)] rounded-2xl overflow-hidden">
             {results.length === 0 ? (
-              <li className="p-4 text-[--color-pos-muted]">
+              <li className="p-4 text-[var(--color-pos-muted)]">
                 Type the sale number or the customer's name.
               </li>
             ) : (
               results.map((r) => (
                 <li
                   key={r.id}
-                  className="border-b border-[--color-pos-border] last:border-b-0"
+                  className="border-b border-[var(--color-pos-border)] last:border-b-0"
                 >
                   <button
                     onClick={() => pick(r)}
-                    className="w-full text-left px-4 py-3 hover:bg-[--color-pos-bg]"
+                    className="w-full text-left px-4 py-3 hover:bg-[var(--color-pos-bg)]"
                   >
                     <div className="flex justify-between">
                       <span className="font-medium">{r.sale_number}</span>
                       <span>{formatMoney(r.total_amount)}</span>
                     </div>
-                    <p className="text-xs text-[--color-pos-muted]">
+                    <p className="text-xs text-[var(--color-pos-muted)]">
                       {r.completed_at &&
                         new Date(r.completed_at).toLocaleString()}
                     </p>
@@ -171,15 +171,15 @@ export default function RefundPage() {
           </ul>
         </>
       ) : (
-        <div className="bg-white border border-[--color-pos-border] rounded-2xl p-5">
+        <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-5">
           <p className="font-medium mb-3">
             {picked.sale.sale_number} · {formatMoney(picked.sale.total_amount)}
           </p>
-          <ul className="border-t border-[--color-pos-border] pt-2">
+          <ul className="border-t border-[var(--color-pos-border)] pt-2">
             {picked.lines.map((l) => (
               <li
                 key={l.id}
-                className="flex items-center gap-3 py-2 border-b border-[--color-pos-border] last:border-b-0"
+                className="flex items-center gap-3 py-2 border-b border-[var(--color-pos-border)] last:border-b-0"
               >
                 <input
                   type="checkbox"
@@ -194,7 +194,7 @@ export default function RefundPage() {
                 />
                 <div className="flex-1">
                   <p>{l.description}</p>
-                  <p className="text-xs text-[--color-pos-muted]">
+                  <p className="text-xs text-[var(--color-pos-muted)]">
                     Qty {l.quantity}
                   </p>
                 </div>
@@ -231,11 +231,11 @@ export default function RefundPage() {
             type="text"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="tap w-full rounded-lg border border-[--color-pos-border] px-3 mt-1"
+            className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3 mt-1"
             placeholder="e.g. Wrong size"
           />
           <div className="mt-5 flex justify-between items-center">
-            <span className="text-[--color-pos-muted]">Refund total</span>
+            <span className="text-[var(--color-pos-muted)]">Refund total</span>
             <span className="total-display text-3xl">
               {formatMoney(refundAmount)}
             </span>
@@ -243,12 +243,12 @@ export default function RefundPage() {
           <button
             onClick={submit}
             disabled={busy || refundAmount <= 0}
-            className="tap-lg w-full rounded-2xl bg-[--color-pos-accent] text-white text-xl font-semibold mt-3 disabled:opacity-50"
+            className="tap-lg w-full rounded-2xl bg-[var(--color-pos-accent)] text-white text-xl font-semibold mt-3 disabled:opacity-50"
           >
             {busy ? "Refunding…" : "Refund"}
           </button>
           {error && (
-            <p className="mt-3 text-center text-[--color-pos-danger]">
+            <p className="mt-3 text-center text-[var(--color-pos-danger)]">
               {error}
             </p>
           )}
@@ -272,8 +272,8 @@ function MethodTab({
       onClick={onClick}
       className={`tap rounded-xl font-medium ${
         active
-          ? "bg-[--color-pos-ink] text-white"
-          : "bg-white border border-[--color-pos-border]"
+          ? "bg-[var(--color-pos-ink)] text-white"
+          : "bg-white border border-[var(--color-pos-border)]"
       }`}
     >
       {label}

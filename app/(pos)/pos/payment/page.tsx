@@ -60,14 +60,14 @@ function PaymentInner() {
   if (!cart) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="bg-white rounded-2xl border border-[--color-pos-border] p-8 text-center">
+        <div className="bg-white rounded-2xl border border-[var(--color-pos-border)] p-8 text-center">
           <p className="font-medium mb-2">We lost the cart.</p>
-          <p className="text-[--color-pos-muted] mb-4">
+          <p className="text-[var(--color-pos-muted)] mb-4">
             Go back to the sell screen and start the sale again.
           </p>
           <button
             onClick={() => router.push("/pos")}
-            className="tap rounded-xl bg-[--color-pos-ink] text-white px-5 font-semibold"
+            className="tap rounded-xl bg-[var(--color-pos-ink)] text-white px-5 font-semibold"
           >
             Back to Register
           </button>
@@ -156,12 +156,12 @@ function PaymentInner() {
       <header className="flex items-center justify-between mb-4">
         <button
           onClick={() => router.back()}
-          className="tap text-[--color-pos-muted] underline px-3"
+          className="tap text-[var(--color-pos-muted)] underline px-3"
         >
           ← Back to cart
         </button>
         <div className="text-right">
-          <p className="text-[--color-pos-muted] text-sm">Amount due</p>
+          <p className="text-[var(--color-pos-muted)] text-sm">Amount due</p>
           <p className="total-display text-3xl">{formatMoney(total)}</p>
         </div>
       </header>
@@ -239,15 +239,15 @@ function PaymentInner() {
         />
       )}
 
-      <div className="mt-5 bg-white border border-[--color-pos-border] rounded-2xl p-4">
+      <div className="mt-5 bg-white border border-[var(--color-pos-border)] rounded-2xl p-4">
         <div className="flex items-center justify-between">
           <span className="font-medium">Split payment</span>
           <button
             onClick={() => setSplitOn((v) => !v)}
             className={`tap rounded-full px-4 ${
               splitOn
-                ? "bg-[--color-pos-ink] text-white"
-                : "bg-[--color-pos-bg] border border-[--color-pos-border]"
+                ? "bg-[var(--color-pos-ink)] text-white"
+                : "bg-[var(--color-pos-bg)] border border-[var(--color-pos-border)]"
             }`}
           >
             {splitOn ? "On" : "Off"}
@@ -263,7 +263,7 @@ function PaymentInner() {
                 min="0"
                 value={splitCard}
                 onChange={(e) => setSplitCard(e.target.value)}
-                className="tap w-full rounded-lg border border-[--color-pos-border] px-3 mt-1"
+                className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3 mt-1"
               />
             </label>
             <label className="text-sm font-medium">
@@ -274,12 +274,12 @@ function PaymentInner() {
                 min="0"
                 value={splitCash}
                 onChange={(e) => setSplitCash(e.target.value)}
-                className="tap w-full rounded-lg border border-[--color-pos-border] px-3 mt-1"
+                className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3 mt-1"
               />
             </label>
             <p
               className={`col-span-2 text-sm ${
-                splitOk ? "text-[--color-pos-muted]" : "text-[--color-pos-danger]"
+                splitOk ? "text-[var(--color-pos-muted)]" : "text-[var(--color-pos-danger)]"
               }`}
             >
               {splitOk
@@ -305,7 +305,7 @@ function PaymentInner() {
                   },
                 ])
               }
-              className="col-span-2 tap-lg rounded-2xl bg-[--color-pos-accent] text-white font-semibold disabled:opacity-50"
+              className="col-span-2 tap-lg rounded-2xl bg-[var(--color-pos-accent)] text-white font-semibold disabled:opacity-50"
             >
               {saving ? "Saving…" : "Finish Split Sale"}
             </button>
@@ -314,7 +314,7 @@ function PaymentInner() {
       </div>
 
       {error && (
-        <p className="mt-4 text-center text-[--color-pos-danger]">{error}</p>
+        <p className="mt-4 text-center text-[var(--color-pos-danger)]">{error}</p>
       )}
     </main>
   );
@@ -325,7 +325,7 @@ export default function PaymentPage() {
     <Suspense
       fallback={
         <main className="min-h-screen flex items-center justify-center">
-          <p className="text-[--color-pos-muted]">Loading…</p>
+          <p className="text-[var(--color-pos-muted)]">Loading…</p>
         </main>
       }
     >
@@ -359,8 +359,8 @@ function MethodTab({
       onClick={onClick}
       className={`tap rounded-xl font-semibold ${
         active
-          ? "bg-[--color-pos-ink] text-white"
-          : "bg-white border border-[--color-pos-border]"
+          ? "bg-[var(--color-pos-ink)] text-white"
+          : "bg-white border border-[var(--color-pos-border)]"
       }`}
     >
       {label}
@@ -384,15 +384,15 @@ function CardSection({
   saving: boolean;
 }) {
   return (
-    <div className="bg-white border border-[--color-pos-border] rounded-2xl p-6">
-      <p className="text-[--color-pos-muted] mb-4">
+    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6">
+      <p className="text-[var(--color-pos-muted)] mb-4">
         Tap the button to send the amount to the card reader. The customer
         taps, inserts, or swipes their card on the reader itself.
       </p>
       {status === "idle" ? (
         <button
           onClick={onStart}
-          className="tap-lg w-full rounded-2xl bg-[--color-pos-accent] text-white text-xl font-semibold"
+          className="tap-lg w-full rounded-2xl bg-[var(--color-pos-accent)] text-white text-xl font-semibold"
         >
           Send to Reader
         </button>
@@ -400,14 +400,14 @@ function CardSection({
         <div className="text-center py-6">
           <p className="font-medium">{message}</p>
           {status === "declined" && (
-            <p className="mt-2 text-[--color-pos-danger]">
+            <p className="mt-2 text-[var(--color-pos-danger)]">
               The card was declined. Ask the customer to try a different card.
             </p>
           )}
           <button
             disabled={!ready || saving}
             onClick={onFinish}
-            className="tap-lg w-full rounded-2xl bg-[--color-pos-ink] text-white text-xl font-semibold mt-5 disabled:opacity-50"
+            className="tap-lg w-full rounded-2xl bg-[var(--color-pos-ink)] text-white text-xl font-semibold mt-5 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Approved — Finish Sale"}
           </button>
@@ -436,8 +436,8 @@ function CashSection({
 }) {
   const quick = [1, 5, 10, 20, 50, 100];
   return (
-    <div className="bg-white border border-[--color-pos-border] rounded-2xl p-6">
-      <p className="text-[--color-pos-muted] mb-3">
+    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6">
+      <p className="text-[var(--color-pos-muted)] mb-3">
         Type how much cash the customer handed over. We'll show the change.
       </p>
       <input
@@ -448,7 +448,7 @@ function CashSection({
         value={cashGiven}
         onChange={(e) => setCashGiven(e.target.value)}
         autoFocus
-        className="tap-lg w-full rounded-2xl border border-[--color-pos-border] text-3xl font-semibold px-4 mb-3"
+        className="tap-lg w-full rounded-2xl border border-[var(--color-pos-border)] text-3xl font-semibold px-4 mb-3"
         placeholder="0.00"
       />
       <div className="grid grid-cols-3 gap-2 mb-4">
@@ -456,20 +456,20 @@ function CashSection({
           <button
             key={q}
             onClick={() => setCashGiven(String(q))}
-            className="tap rounded-lg border border-[--color-pos-border] font-semibold"
+            className="tap rounded-lg border border-[var(--color-pos-border)] font-semibold"
           >
             ${q}
           </button>
         ))}
       </div>
       <div className="flex justify-between items-center mb-4">
-        <span className="text-[--color-pos-muted]">Change</span>
+        <span className="text-[var(--color-pos-muted)]">Change</span>
         <span className="total-display text-3xl">{formatMoney(change)}</span>
       </div>
       <button
         disabled={!ready || saving}
         onClick={onFinish}
-        className="tap-lg w-full rounded-2xl bg-[--color-pos-accent-2] text-white text-xl font-semibold disabled:opacity-50"
+        className="tap-lg w-full rounded-2xl bg-[var(--color-pos-accent-2)] text-white text-xl font-semibold disabled:opacity-50"
       >
         {saving
           ? "Saving…"
@@ -494,7 +494,7 @@ function OtherSection({
 }) {
   const [checkNumber, setCheckNumber] = useState("");
   return (
-    <div className="bg-white border border-[--color-pos-border] rounded-2xl p-6 flex flex-col gap-4">
+    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6 flex flex-col gap-4">
       <div>
         <p className="font-medium mb-1">Check</p>
         <input
@@ -502,25 +502,25 @@ function OtherSection({
           value={checkNumber}
           onChange={(e) => setCheckNumber(e.target.value)}
           placeholder="Check number"
-          className="tap w-full rounded-lg border border-[--color-pos-border] px-3"
+          className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3"
         />
         <button
           disabled={!checkNumber.trim() || saving}
           onClick={() => onCheck(checkNumber.trim())}
-          className="tap rounded-xl bg-[--color-pos-ink] text-white font-semibold mt-2 w-full disabled:opacity-50"
+          className="tap rounded-xl bg-[var(--color-pos-ink)] text-white font-semibold mt-2 w-full disabled:opacity-50"
         >
           Take {formatMoney(total)} by check
         </button>
       </div>
-      <div className="border-t border-[--color-pos-border] pt-4">
+      <div className="border-t border-[var(--color-pos-border)] pt-4">
         <p className="font-medium mb-1">Store Credit</p>
-        <p className="text-sm text-[--color-pos-muted] mb-2">
+        <p className="text-sm text-[var(--color-pos-muted)] mb-2">
           Applies the customer's store credit balance to this sale.
         </p>
         <button
           disabled={saving}
           onClick={onStoreCredit}
-          className="tap rounded-xl bg-white border border-[--color-pos-border] font-semibold w-full"
+          className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-semibold w-full"
         >
           Use store credit ({formatMoney(total)})
         </button>

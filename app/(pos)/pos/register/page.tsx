@@ -55,7 +55,7 @@ export default function RegisterPage() {
   if (loading) {
     return (
       <main className="flex items-center justify-center min-h-screen">
-        <p className="text-[--color-pos-muted]">Loading registers…</p>
+        <p className="text-[var(--color-pos-muted)]">Loading registers…</p>
       </main>
     );
   }
@@ -77,22 +77,22 @@ export default function RegisterPage() {
       <header className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Pick your register</h1>
-          <p className="text-[--color-pos-muted]">
+          <p className="text-[var(--color-pos-muted)]">
             Tap your till to start your shift.
           </p>
         </div>
         <button
           onClick={() => signOut({ callbackUrl: "/sign-in" })}
-          className="tap text-[--color-pos-muted] underline px-3"
+          className="tap text-[var(--color-pos-muted)] underline px-3"
         >
           Sign out
         </button>
       </header>
 
       {registers.length === 0 ? (
-        <div className="bg-white border border-[--color-pos-border] rounded-2xl p-10 text-center">
+        <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-10 text-center">
           <p className="font-medium mb-2">No registers found.</p>
-          <p className="text-[--color-pos-muted]">
+          <p className="text-[var(--color-pos-muted)]">
             Ask a manager to set one up in the Back Office.
           </p>
         </div>
@@ -142,7 +142,7 @@ export default function RegisterPage() {
         />
       )}
       {error && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[--color-pos-danger] text-white rounded-xl px-4 py-3 shadow">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[var(--color-pos-danger)] text-white rounded-xl px-4 py-3 shadow">
           {error}
         </div>
       )}
@@ -161,14 +161,14 @@ function RegisterCard({
 }) {
   const isOpen = !!register.open_session;
   return (
-    <div className="bg-white border border-[--color-pos-border] rounded-2xl p-5 flex flex-col gap-3">
+    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-5 flex flex-col gap-3">
       <div>
-        <p className="text-sm text-[--color-pos-muted]">
+        <p className="text-sm text-[var(--color-pos-muted)]">
           {register.location_name}
         </p>
         <h2 className="text-xl font-semibold">{register.name}</h2>
         {register.stripe_reader_label && (
-          <p className="text-xs text-[--color-pos-muted] mt-1">
+          <p className="text-xs text-[var(--color-pos-muted)] mt-1">
             Card reader: {register.stripe_reader_label}
           </p>
         )}
@@ -177,14 +177,14 @@ function RegisterCard({
         <div className="flex flex-col gap-2">
           <p className="text-sm">
             <span className="font-medium">Currently open.</span>{" "}
-            <span className="text-[--color-pos-muted]">
+            <span className="text-[var(--color-pos-muted)]">
               Started with {formatMoney(register.open_session!.opening_cash)} in
               cash.
             </span>
           </p>
           <button
             onClick={onClose}
-            className="tap-lg rounded-xl bg-[--color-pos-bg] border border-[--color-pos-border] font-semibold"
+            className="tap-lg rounded-xl bg-[var(--color-pos-bg)] border border-[var(--color-pos-border)] font-semibold"
           >
             Close This Register
           </button>
@@ -192,7 +192,7 @@ function RegisterCard({
       ) : (
         <button
           onClick={onOpen}
-          className="tap-lg rounded-xl bg-[--color-pos-accent] text-white font-semibold"
+          className="tap-lg rounded-xl bg-[var(--color-pos-accent)] text-white font-semibold"
         >
           Open This Register
         </button>
@@ -238,7 +238,7 @@ function OpenRegisterModal({
 
   return (
     <Modal title={`Open ${register.name}`} onClose={onCancel}>
-      <p className="text-[--color-pos-muted]">
+      <p className="text-[var(--color-pos-muted)]">
         Count the cash already in the drawer and enter the total below.
       </p>
       <label className="block mt-4 text-sm font-medium">Starting cash</label>
@@ -250,20 +250,20 @@ function OpenRegisterModal({
         min="0"
         value={cash}
         onChange={(e) => setCash(e.target.value)}
-        className="tap-lg w-full rounded-xl border border-[--color-pos-border] px-4 text-2xl font-semibold mt-1"
+        className="tap-lg w-full rounded-xl border border-[var(--color-pos-border)] px-4 text-2xl font-semibold mt-1"
         placeholder="0.00"
       />
       <div className="mt-6 flex gap-3">
         <button
           onClick={onCancel}
-          className="tap rounded-xl border border-[--color-pos-border] flex-1 font-medium"
+          className="tap rounded-xl border border-[var(--color-pos-border)] flex-1 font-medium"
         >
           Cancel
         </button>
         <button
           onClick={submit}
           disabled={busy}
-          className="tap rounded-xl bg-[--color-pos-accent] text-white flex-1 font-semibold"
+          className="tap rounded-xl bg-[var(--color-pos-accent)] text-white flex-1 font-semibold"
         >
           {busy ? "Opening…" : "Open Register"}
         </button>
@@ -323,11 +323,11 @@ function CloseRegisterModal({
     return (
       <Modal title="Drawer counted" onClose={onClosed}>
         <div className="text-center py-4">
-          <p className="text-[--color-pos-muted]">Expected in drawer</p>
+          <p className="text-[var(--color-pos-muted)]">Expected in drawer</p>
           <p className="total-display text-3xl">
             {formatMoney(result.expected)}
           </p>
-          <p className="text-[--color-pos-muted] mt-3">You counted</p>
+          <p className="text-[var(--color-pos-muted)] mt-3">You counted</p>
           <p className="total-display text-3xl">
             {formatMoney(result.counted)}
           </p>
@@ -353,7 +353,7 @@ function CloseRegisterModal({
           </div>
           <button
             onClick={onClosed}
-            className="tap-lg w-full rounded-xl bg-[--color-pos-ink] text-white font-semibold mt-5"
+            className="tap-lg w-full rounded-xl bg-[var(--color-pos-ink)] text-white font-semibold mt-5"
           >
             Done
           </button>
@@ -364,7 +364,7 @@ function CloseRegisterModal({
 
   return (
     <Modal title={`Close ${session.register_name}`} onClose={onCancel}>
-      <p className="text-[--color-pos-muted]">
+      <p className="text-[var(--color-pos-muted)]">
         Count every bill and coin in the drawer, then enter the total.
       </p>
       <label className="block mt-4 text-sm font-medium">Cash in drawer</label>
@@ -376,20 +376,20 @@ function CloseRegisterModal({
         min="0"
         value={counted}
         onChange={(e) => setCounted(e.target.value)}
-        className="tap-lg w-full rounded-xl border border-[--color-pos-border] px-4 text-2xl font-semibold mt-1"
+        className="tap-lg w-full rounded-xl border border-[var(--color-pos-border)] px-4 text-2xl font-semibold mt-1"
         placeholder="0.00"
       />
       <div className="mt-6 flex gap-3">
         <button
           onClick={onCancel}
-          className="tap rounded-xl border border-[--color-pos-border] flex-1 font-medium"
+          className="tap rounded-xl border border-[var(--color-pos-border)] flex-1 font-medium"
         >
           Cancel
         </button>
         <button
           onClick={submit}
           disabled={busy}
-          className="tap rounded-xl bg-[--color-pos-ink] text-white flex-1 font-semibold"
+          className="tap rounded-xl bg-[var(--color-pos-ink)] text-white flex-1 font-semibold"
         >
           {busy ? "Closing…" : "Close Register"}
         </button>
@@ -415,34 +415,34 @@ function SessionDashboard({
   return (
     <main className="min-h-screen p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold mb-1">{session.register_name}</h1>
-      <p className="text-[--color-pos-muted]">
+      <p className="text-[var(--color-pos-muted)]">
         Open since {new Date(session.opened_at).toLocaleString()}. Started with{" "}
         {formatMoney(session.opening_cash)} in cash.
       </p>
       <div className="grid grid-cols-1 gap-3 mt-6">
         <button
           onClick={onContinue}
-          className="tap-lg rounded-2xl bg-[--color-pos-accent] text-white text-xl font-semibold"
+          className="tap-lg rounded-2xl bg-[var(--color-pos-accent)] text-white text-xl font-semibold"
         >
           Continue Selling
         </button>
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={() => setShowMovement("drop")}
-            className="tap rounded-xl bg-white border border-[--color-pos-border] font-medium"
+            className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-medium"
           >
             Cash Drop
           </button>
           <button
             onClick={() => setShowMovement("payout")}
-            className="tap rounded-xl bg-white border border-[--color-pos-border] font-medium"
+            className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-medium"
           >
             Cash Payout
           </button>
         </div>
         <button
           onClick={onClose}
-          className="tap rounded-xl bg-white border border-[--color-pos-border] font-medium"
+          className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-medium"
         >
           Close Register
         </button>
@@ -507,7 +507,7 @@ function CashMovementModal({
       title={type === "drop" ? "Cash Drop" : "Cash Payout"}
       onClose={onCancel}
     >
-      <p className="text-[--color-pos-muted]">
+      <p className="text-[var(--color-pos-muted)]">
         {type === "drop"
           ? "Cash leaving the drawer for the safe or bank deposit."
           : "Cash leaving the drawer for petty cash, refund, etc."}
@@ -521,32 +521,32 @@ function CashMovementModal({
         min="0"
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
-        className="tap-lg w-full rounded-xl border border-[--color-pos-border] px-4 text-2xl font-semibold mt-1"
+        className="tap-lg w-full rounded-xl border border-[var(--color-pos-border)] px-4 text-2xl font-semibold mt-1"
       />
       <label className="block mt-4 text-sm font-medium">Reason</label>
       <input
         type="text"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        className="tap w-full rounded-lg border border-[--color-pos-border] px-3 mt-1"
+        className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3 mt-1"
         placeholder={
           type === "drop" ? "e.g. Mid-day deposit" : "e.g. Office supplies"
         }
       />
       {error && (
-        <p className="text-sm text-[--color-pos-danger] mt-2">{error}</p>
+        <p className="text-sm text-[var(--color-pos-danger)] mt-2">{error}</p>
       )}
       <div className="mt-6 flex gap-3">
         <button
           onClick={onCancel}
-          className="tap rounded-xl border border-[--color-pos-border] flex-1 font-medium"
+          className="tap rounded-xl border border-[var(--color-pos-border)] flex-1 font-medium"
         >
           Cancel
         </button>
         <button
           onClick={submit}
           disabled={busy}
-          className="tap rounded-xl bg-[--color-pos-ink] text-white flex-1 font-semibold"
+          className="tap rounded-xl bg-[var(--color-pos-ink)] text-white flex-1 font-semibold"
         >
           {busy ? "Saving…" : "Save"}
         </button>
@@ -571,7 +571,7 @@ function Modal({
           <h2 className="text-xl font-bold">{title}</h2>
           <button
             onClick={onClose}
-            className="text-[--color-pos-muted] text-xl leading-none px-2"
+            className="text-[var(--color-pos-muted)] text-xl leading-none px-2"
             aria-label="Close"
           >
             ×

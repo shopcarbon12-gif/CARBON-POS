@@ -1,10 +1,14 @@
+import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { authConfig } from "./auth.config";
 
 /**
- * Protect everything under /pos and /admin. Unauthenticated users get
- * bounced to /sign-in. The /api/health endpoint stays open for Coolify.
+ * Edge-runtime middleware. Uses the minimal authConfig (no providers) so
+ * the Edge bundle stays free of bcrypt + pg. Session validation happens
+ * via JWT decoding only here; sign-in itself runs on the Node handler.
  */
+const { auth } = NextAuth(authConfig);
+
 export default auth((req) => {
   const { nextUrl, auth: session } = req;
   const isPos = nextUrl.pathname.startsWith("/pos");
