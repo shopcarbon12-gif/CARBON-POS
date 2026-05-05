@@ -18,6 +18,12 @@ declare module "next-auth" {
  * credentials providers for the actual /api/auth handler.
  */
 export const authConfig: NextAuthConfig = {
+  // Coolify's Traefik fronts the app, so the request hostname inside the
+  // container looks like an internal IP, not pos.shopcarbon.com. Auth.js
+  // v5 refuses to issue sessions in that case unless we explicitly trust
+  // the X-Forwarded-Host header. Without this every /api/auth/session call
+  // throws UntrustedHost and the /sign-in page renders "Server error".
+  trustHost: true,
   session: { strategy: "jwt", maxAge: 60 * 60 * 12 },
   pages: { signIn: "/sign-in" },
   providers: [],
