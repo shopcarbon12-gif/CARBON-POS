@@ -33,7 +33,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@stripe/terminal-js": "^0.16.0",
+    "@stripe/terminal-js": "^0.26.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22",
