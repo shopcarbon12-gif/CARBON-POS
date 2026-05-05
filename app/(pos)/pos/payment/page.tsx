@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatMoney, round2 } from "@/lib/utils";
+import { CashKeypad } from "@/components/pos/CashKeypad";
+import { PaymentModal } from "@/components/pos/PaymentModal";
 import type { CartLine, CartTotals } from "@/types/pos";
 
 type CartPayload = {
@@ -31,13 +33,7 @@ function PaymentInner() {
 
   const [method, setMethod] = useState<Method>(initialMethod);
   const [registerId, setRegisterId] = useState<number | null>(null);
-
-  // Card flow state
-  const [cardStatus, setCardStatus] = useState<
-    "idle" | "starting" | "waiting" | "approved" | "declined" | "error"
-  >("idle");
-  const [cardMessage, setCardMessage] = useState<string | null>(null);
-  const [cardIntentId, setCardIntentId] = useState<string | null>(null);
+  const [readerId, setReaderId] = useState<string | null>(null);
 
   // Cash flow state
   const [cashGiven, setCashGiven] = useState("");
@@ -56,6 +52,21 @@ function PaymentInner() {
         if (d?.session?.register_id) setRegisterId(d.session.register_id);
       });
   }, []);
+
+  // Look up the reader paired with this register so the PaymentModal knows
+  // where to send the amount.
+  useEffect(() => {
+    if (!registerId) return;
+    fetch("/api/pos/registers")
+      .then((r) => r.json())
+      .then((d) => {
+        const reg = (d?.registers ?? []).find(
+          (r: { id: number; stripe_reader_id: string | null }) =>
+            r.id === registerId,
+        );
+        setReaderId(reg?.stripe_reader_id ?? null);
+      });
+  }, [registerId]);
 
   if (!cart) {
     return (
@@ -78,42 +89,10 @@ function PaymentInner() {
 
   const total = cart.totals.total;
   const cashAmount = round2(Number(cashGiven || 0));
-  const change = round2(Math.max(0, cashAmount - total));
   const splitCardAmt = round2(Number(splitCard || 0));
   const splitCashAmt = round2(Number(splitCash || 0));
   const splitOk =
-    !splitOn ||
-    Math.abs(splitCardAmt + splitCashAmt - total) < 0.01;
-
-  async function startCardPayment(amount: number) {
-    setCardStatus("starting");
-    setCardMessage("Setting up the card reader…");
-    setError(null);
-    try {
-      const res = await fetch("/api/pos/payment/create-intent", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount, description: `Carbon POS sale` }),
-      });
-      if (!res.ok) throw new Error("create_intent_failed");
-      const data = await res.json();
-      setCardIntentId(data.id);
-      // In Phase 1 we ship the server-driven flow only. The browser would
-      // call stripe-terminal-js here to dispatch to a paired reader. For
-      // dev with a simulated reader, you can also call stripe.test_helpers
-      // server-side to mark it succeeded. We simulate "waiting" here.
-      setCardStatus("waiting");
-      setCardMessage(
-        "Hand the reader to the customer. Waiting for them to tap or insert their card…",
-      );
-    } catch (err) {
-      console.error(err);
-      setCardStatus("error");
-      setCardMessage(
-        "Couldn't start the card payment. Try again or take cash.",
-      );
-    }
-  }
+    !splitOn || Math.abs(splitCardAmt + splitCashAmt - total) < 0.01;
 
   async function finishSale(payments: SubmitPayment[]) {
     if (!cart) return;
@@ -185,43 +164,47 @@ function PaymentInner() {
       </div>
 
       {method === "card" && !splitOn && (
-        <CardSection
-          status={cardStatus}
-          message={cardMessage}
-          onStart={() => startCardPayment(total)}
-          onFinish={() =>
+        <PaymentModal
+          amount={total}
+          readerId={readerId}
+          saving={saving}
+          onCancel={() => router.back()}
+          onApprove={(intentId) =>
             finishSale([
               {
                 method: "card",
                 amount: total,
-                payment_intent_id: cardIntentId ?? "",
-                reader_id: null,
+                payment_intent_id: intentId,
+                reader_id: readerId,
               },
             ])
           }
-          ready={cardStatus === "waiting" && !!cardIntentId}
-          saving={saving}
         />
       )}
 
       {method === "cash" && !splitOn && (
-        <CashSection
-          total={total}
-          cashGiven={cashGiven}
-          setCashGiven={setCashGiven}
-          change={change}
-          onFinish={() =>
-            finishSale([
-              {
-                method: "cash",
-                amount: total,
-                cash_given: cashAmount,
-              },
-            ])
-          }
-          ready={cashAmount >= total}
-          saving={saving}
-        />
+        <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6">
+          <CashKeypad value={cashGiven} onChange={setCashGiven} total={total} />
+          <button
+            disabled={cashAmount < total || saving}
+            onClick={() =>
+              finishSale([
+                {
+                  method: "cash",
+                  amount: total,
+                  cash_given: cashAmount,
+                },
+              ])
+            }
+            className="tap-lg w-full rounded-2xl bg-[var(--color-pos-accent-2)] text-white text-xl font-semibold disabled:opacity-50 mt-4"
+          >
+            {saving
+              ? "Saving…"
+              : cashAmount >= total
+                ? "Finish Sale"
+                : `Need ${formatMoney(total)} or more`}
+          </button>
+        </div>
       )}
 
       {method === "other" && !splitOn && (
@@ -279,7 +262,9 @@ function PaymentInner() {
             </label>
             <p
               className={`col-span-2 text-sm ${
-                splitOk ? "text-[var(--color-pos-muted)]" : "text-[var(--color-pos-danger)]"
+                splitOk
+                  ? "text-[var(--color-pos-muted)]"
+                  : "text-[var(--color-pos-danger)]"
               }`}
             >
               {splitOk
@@ -288,33 +273,19 @@ function PaymentInner() {
                     splitCardAmt + splitCashAmt,
                   )}.`}
             </p>
-            <button
-              disabled={!splitOk || saving}
-              onClick={() =>
-                finishSale([
-                  {
-                    method: "card",
-                    amount: splitCardAmt,
-                    payment_intent_id: cardIntentId ?? "",
-                    reader_id: null,
-                  },
-                  {
-                    method: "cash",
-                    amount: splitCashAmt,
-                    cash_given: splitCashAmt,
-                  },
-                ])
-              }
-              className="col-span-2 tap-lg rounded-2xl bg-[var(--color-pos-accent)] text-white font-semibold disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Finish Split Sale"}
-            </button>
+            <p className="col-span-2 text-xs text-[var(--color-pos-muted)]">
+              Split sales charge the cash portion now and the card portion via
+              the reader as a separate payment. (Phase 2 will run them in one
+              flow.)
+            </p>
           </div>
         )}
       </div>
 
       {error && (
-        <p className="mt-4 text-center text-[var(--color-pos-danger)]">{error}</p>
+        <p className="mt-4 text-center text-[var(--color-pos-danger)]">
+          {error}
+        </p>
       )}
     </main>
   );
@@ -368,119 +339,6 @@ function MethodTab({
   );
 }
 
-function CardSection({
-  status,
-  message,
-  onStart,
-  onFinish,
-  ready,
-  saving,
-}: {
-  status: string;
-  message: string | null;
-  onStart: () => void;
-  onFinish: () => void;
-  ready: boolean;
-  saving: boolean;
-}) {
-  return (
-    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6">
-      <p className="text-[var(--color-pos-muted)] mb-4">
-        Tap the button to send the amount to the card reader. The customer
-        taps, inserts, or swipes their card on the reader itself.
-      </p>
-      {status === "idle" ? (
-        <button
-          onClick={onStart}
-          className="tap-lg w-full rounded-2xl bg-[var(--color-pos-accent)] text-white text-xl font-semibold"
-        >
-          Send to Reader
-        </button>
-      ) : (
-        <div className="text-center py-6">
-          <p className="font-medium">{message}</p>
-          {status === "declined" && (
-            <p className="mt-2 text-[var(--color-pos-danger)]">
-              The card was declined. Ask the customer to try a different card.
-            </p>
-          )}
-          <button
-            disabled={!ready || saving}
-            onClick={onFinish}
-            className="tap-lg w-full rounded-2xl bg-[var(--color-pos-ink)] text-white text-xl font-semibold mt-5 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Approved — Finish Sale"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CashSection({
-  total,
-  cashGiven,
-  setCashGiven,
-  change,
-  onFinish,
-  ready,
-  saving,
-}: {
-  total: number;
-  cashGiven: string;
-  setCashGiven: (v: string) => void;
-  change: number;
-  onFinish: () => void;
-  ready: boolean;
-  saving: boolean;
-}) {
-  const quick = [1, 5, 10, 20, 50, 100];
-  return (
-    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6">
-      <p className="text-[var(--color-pos-muted)] mb-3">
-        Type how much cash the customer handed over. We'll show the change.
-      </p>
-      <input
-        type="number"
-        inputMode="decimal"
-        step="0.01"
-        min="0"
-        value={cashGiven}
-        onChange={(e) => setCashGiven(e.target.value)}
-        autoFocus
-        className="tap-lg w-full rounded-2xl border border-[var(--color-pos-border)] text-3xl font-semibold px-4 mb-3"
-        placeholder="0.00"
-      />
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        {quick.map((q) => (
-          <button
-            key={q}
-            onClick={() => setCashGiven(String(q))}
-            className="tap rounded-lg border border-[var(--color-pos-border)] font-semibold"
-          >
-            ${q}
-          </button>
-        ))}
-      </div>
-      <div className="flex justify-between items-center mb-4">
-        <span className="text-[var(--color-pos-muted)]">Change</span>
-        <span className="total-display text-3xl">{formatMoney(change)}</span>
-      </div>
-      <button
-        disabled={!ready || saving}
-        onClick={onFinish}
-        className="tap-lg w-full rounded-2xl bg-[var(--color-pos-accent-2)] text-white text-xl font-semibold disabled:opacity-50"
-      >
-        {saving
-          ? "Saving…"
-          : ready
-            ? "Finish Sale"
-            : `Need ${formatMoney(total)} or more`}
-      </button>
-    </div>
-  );
-}
-
 function OtherSection({
   total,
   saving,
@@ -515,7 +373,7 @@ function OtherSection({
       <div className="border-t border-[var(--color-pos-border)] pt-4">
         <p className="font-medium mb-1">Store Credit</p>
         <p className="text-sm text-[var(--color-pos-muted)] mb-2">
-          Applies the customer's store credit balance to this sale.
+          Applies the customer&apos;s store credit balance to this sale.
         </p>
         <button
           disabled={saving}

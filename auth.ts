@@ -91,13 +91,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const row = result.rows[0];
         if (!row || !row.password_hash) return null;
         if (!(await bcrypt.compare(password, row.password_hash))) return null;
-        const role = row.role ?? "cashier";
+
+        // Bootstrap path: if there are zero pos_employees in the system, the
+        // very first WMS user that signs in here gets auto-promoted to admin
+        // with a default PIN of 0000. The /admin/employees screen warns them
+        // to change it. This is the only way to onboard the first manager
+        // without hand-running SQL.
+        let role = row.role ?? null;
+        let employee_id = row.employee_id ?? null;
+        if (!employee_id) {
+          const count = await pool.query(
+            `SELECT COUNT(*)::int AS n FROM pos_employees`,
+          );
+          if (count.rows[0].n === 0) {
+            const defaultPinHash = await bcrypt.hash("0000", 10);
+            const ins = await pool.query(
+              `INSERT INTO pos_employees (user_id, pin_hash, role, is_active)
+               VALUES ($1, $2, 'admin', TRUE)
+               RETURNING id, role`,
+              [row.user_id, defaultPinHash],
+            );
+            employee_id = ins.rows[0].id;
+            role = ins.rows[0].role;
+          }
+        }
         if (role !== "manager" && role !== "admin") return null;
         return {
           id: String(row.user_id),
           email: row.email,
           role,
-          employee_id: row.employee_id,
+          employee_id,
           flow: "password",
         };
       },

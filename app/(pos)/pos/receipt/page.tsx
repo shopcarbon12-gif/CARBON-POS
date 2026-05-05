@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { formatMoney } from "@/lib/utils";
+import { ReceiptView } from "@/components/pos/ReceiptView";
 
 type SaleDetail = {
   sale: {
@@ -29,7 +29,7 @@ type SaleDetail = {
   }>;
   payments: Array<{
     id: number;
-    method: string;
+    method: "card" | "cash" | "check" | "store_credit";
     amount: string;
     change_given: string | null;
   }>;
@@ -40,13 +40,13 @@ function ReceiptInner() {
   const router = useRouter();
   const saleId = Number(params.get("sale"));
   const [data, setData] = useState<SaleDetail | null>(null);
-  const [printState, setPrintState] = useState<"idle" | "printing" | "done" | "error">(
-    "idle",
-  );
+  const [printState, setPrintState] = useState<
+    "idle" | "printing" | "done" | "error"
+  >("idle");
   const [emailValue, setEmailValue] = useState("");
-  const [emailState, setEmailState] = useState<"idle" | "sending" | "done" | "error">(
-    "idle",
-  );
+  const [emailState, setEmailState] = useState<
+    "idle" | "sending" | "done" | "error"
+  >("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,6 +68,14 @@ function ReceiptInner() {
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setErrorMsg(data.message ?? "Couldn't reach the printer.");
+      setPrintState("error");
+      return;
+    }
+    const r = await res.json().catch(() => ({}));
+    if (r.skipped) {
+      setErrorMsg(
+        "No receipt printer is configured yet. Set THERMAL_PRINTER_HOST in Settings.",
+      );
       setPrintState("error");
       return;
     }
@@ -99,66 +107,13 @@ function ReceiptInner() {
       </main>
     );
   }
-  const { sale, lines, payments } = data;
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-3xl mx-auto">
-      <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6">
-        <div className="text-center mb-4">
-          <h1 className="text-2xl font-bold">{sale.location_name}</h1>
-          <p className="text-[var(--color-pos-muted)] text-sm">
-            Sale {sale.sale_number} · {sale.register_name}
-          </p>
-          <p className="text-[var(--color-pos-muted)] text-sm">
-            {new Date(sale.completed_at ?? sale.created_at).toLocaleString()}
-          </p>
-        </div>
-        <ul className="border-t border-[var(--color-pos-border)] pt-3">
-          {lines.map((l) => (
-            <li
-              key={l.id}
-              className="flex justify-between py-1 text-sm"
-            >
-              <span>
-                {l.quantity}× {l.description}
-              </span>
-              <span className="tabular-nums">{formatMoney(l.line_total)}</span>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-3 border-t border-[var(--color-pos-border)] pt-3 grid grid-cols-2 gap-y-1 text-sm">
-          <span>Subtotal</span>
-          <span className="text-right">{formatMoney(sale.subtotal)}</span>
-          <span>Discount</span>
-          <span className="text-right">−{formatMoney(sale.discount_amount)}</span>
-          <span>Tax</span>
-          <span className="text-right">{formatMoney(sale.tax_amount)}</span>
-          <span className="font-bold text-lg">Total</span>
-          <span className="text-right font-bold text-lg">
-            {formatMoney(sale.total_amount)}
-          </span>
-        </div>
-        <div className="mt-3 border-t border-[var(--color-pos-border)] pt-3 grid grid-cols-2 gap-y-1 text-sm">
-          {payments.map((p) => (
-            <span key={p.id} className="contents">
-              <span>{humanMethod(p.method)}</span>
-              <span className="text-right">{formatMoney(p.amount)}</span>
-              {p.method === "cash" && p.change_given ? (
-                <>
-                  <span className="text-[var(--color-pos-muted)]">Change</span>
-                  <span className="text-right text-[var(--color-pos-muted)]">
-                    {formatMoney(p.change_given)}
-                  </span>
-                </>
-              ) : null}
-            </span>
-          ))}
-        </div>
-        {sale.return_policy && (
-          <p className="mt-4 text-center text-xs text-[var(--color-pos-muted)]">
-            {sale.return_policy}
-          </p>
-        )}
-      </div>
+      <ReceiptView
+        sale={data.sale}
+        lines={data.lines}
+        payments={data.payments}
+      />
 
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button
@@ -195,7 +150,9 @@ function ReceiptInner() {
       </div>
 
       {errorMsg && (
-        <p className="mt-4 text-center text-[var(--color-pos-danger)]">{errorMsg}</p>
+        <p className="mt-4 text-center text-[var(--color-pos-danger)]">
+          {errorMsg}
+        </p>
       )}
 
       <button
@@ -220,13 +177,4 @@ export default function ReceiptPage() {
       <ReceiptInner />
     </Suspense>
   );
-}
-
-function humanMethod(m: string): string {
-  return {
-    card: "Card",
-    cash: "Cash",
-    check: "Check",
-    store_credit: "Store credit",
-  }[m] ?? m;
 }
