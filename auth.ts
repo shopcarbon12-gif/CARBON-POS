@@ -104,7 +104,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             `SELECT COUNT(*)::int AS n FROM pos_employees`,
           );
           if (count.rows[0].n === 0) {
-            const defaultPinHash = await bcrypt.hash("0000", 10);
+            const defaultPin = process.env.POS_BOOTSTRAP_ADMIN_PIN?.trim() || "1234";
+            const defaultPinHash = await bcrypt.hash(defaultPin, 10);
             const ins = await pool.query(
               `INSERT INTO pos_employees (user_id, pin_hash, role, is_active)
                VALUES ($1, $2, 'admin', TRUE)
