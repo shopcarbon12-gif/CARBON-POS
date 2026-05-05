@@ -116,6 +116,7 @@ function PaymentInner() {
   }
 
   async function finishSale(payments: SubmitPayment[]) {
+    if (!cart) return;
     if (!registerId) {
       setError("Your register isn't open. Go to the Register screen first.");
       return;

@@ -13,6 +13,6 @@ export function stripe(): Stripe {
   if (!key) {
     throw new Error("STRIPE_SECRET_KEY is not set.");
   }
-  client = new Stripe(key, { apiVersion: "2024-12-18.acacia" });
+  client = new Stripe(key, { apiVersion: "2025-02-24.acacia" });
   return client;
 }
