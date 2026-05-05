@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  --color-pos-bg: #f7f7f8;
+  --color-pos-card: #ffffff;
+  --color-pos-border: #e4e4e7;
+  --color-pos-ink: #18181b;
+  --color-pos-muted: #71717a;
+  --color-pos-accent: #16a34a;   /* charge-card green */
+  --color-pos-accent-2: #2563eb; /* take-cash blue */
+  --color-pos-danger: #dc2626;
+}
+
+html, body {
+  height: 100%;
+  background: var(--color-pos-bg);
+  color: var(--color-pos-ink);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Touch targets — 56px is the minimum tap target for the register UI. */
+.tap {
+  min-height: 56px;
+}
+
+.tap-lg {
+  min-height: 72px;
+}
+
+/* Big number used for the running total. */
+.total-display {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}

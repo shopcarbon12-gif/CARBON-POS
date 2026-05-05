@@ -1,0 +1,13 @@
+node_modules
+.next
+.next/dev
+.git
+.env
+.env.local
+.env.*.local
+.env.coolify.local
+.DS_Store
+.vscode
+.idea
+*.log
+tsconfig.tsbuildinfo

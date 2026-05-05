@@ -1,0 +1,55 @@
+-- Bootstrap example — copy to seeds/000_bootstrap_first_location_and_admin.sql
+-- and edit the values, then run:
+--   psql "$DATABASE_URL" -f migrations/seeds/000_bootstrap_first_location_and_admin.sql
+--
+-- This wires:
+--   1. One pos_locations row pointing at an existing WMS locations row.
+--   2. One pos_registers row at that pos_location.
+--   3. One pos_employees row that elevates an existing WMS users account
+--      to POS admin and stores a bcrypt-hashed 4-digit PIN.
+--
+-- Generate the PIN hash from a Node REPL:
+--   node -e "console.log(require('bcryptjs').hashSync('1234', 10))"
+
+BEGIN;
+
+-- 1. POS location for WMS location id = 1. Adjust wms_location_id, address,
+--    and tax_rate for your store.
+INSERT INTO pos_locations (
+  wms_location_id, address_line1, city, state, zip, phone,
+  tax_rate, receipt_header, receipt_footer, return_policy, timezone
+)
+VALUES (
+  1,
+  '123 Main St',
+  'Orlando', 'FL', '32801',
+  '407-555-0123',
+  0.0650,
+  'Carbon Jeans Company',
+  'Thanks for shopping with us!',
+  'Returns accepted within 30 days with receipt.',
+  'America/New_York'
+)
+ON CONFLICT (wms_location_id) DO NOTHING;
+
+-- 2. One register at that location.
+INSERT INTO pos_registers (pos_location_id, name)
+SELECT id, 'Front Counter'
+  FROM pos_locations
+ WHERE wms_location_id = 1
+   AND NOT EXISTS (
+     SELECT 1 FROM pos_registers r
+      WHERE r.pos_location_id = pos_locations.id AND r.name = 'Front Counter'
+   );
+
+-- 3. Admin employee: replace the email and the bcrypt hash.
+--    The hash below is for PIN '1234' — DO NOT USE IN PRODUCTION.
+INSERT INTO pos_employees (user_id, pin_hash, role)
+SELECT u.id,
+       '$2a$10$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUV',
+       'admin'
+  FROM users u
+ WHERE lower(u.email) = lower('admin@shopcarbon.com')
+ON CONFLICT (user_id) DO NOTHING;
+
+COMMIT;
