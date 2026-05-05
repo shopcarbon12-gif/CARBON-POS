@@ -15,7 +15,7 @@ BEGIN;
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS pos_locations (
   id              SERIAL PRIMARY KEY,
-  wms_location_id INTEGER NOT NULL REFERENCES locations(id),
+  wms_location_id UUID NOT NULL REFERENCES locations(id),
   address_line1   TEXT,
   address_line2   TEXT,
   city            TEXT,
@@ -56,10 +56,10 @@ CREATE INDEX IF NOT EXISTS pos_registers_location_idx
 CREATE TABLE IF NOT EXISTS pos_register_sessions (
   id                   SERIAL PRIMARY KEY,
   register_id          INTEGER NOT NULL REFERENCES pos_registers(id),
-  opened_by            INTEGER NOT NULL REFERENCES users(id),
+  opened_by            UUID NOT NULL REFERENCES users(id),
   opened_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   opening_cash         NUMERIC(10,2) NOT NULL,
-  closed_by            INTEGER REFERENCES users(id),
+  closed_by            UUID REFERENCES users(id),
   closed_at            TIMESTAMPTZ,
   closing_cash_counted NUMERIC(10,2),
   expected_cash        NUMERIC(10,2),
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS pos_cash_movements (
   type                TEXT NOT NULL CHECK (type IN ('drop','payout')),
   amount              NUMERIC(10,2) NOT NULL,
   reason              TEXT,
-  done_by             INTEGER NOT NULL REFERENCES users(id),
+  done_by             UUID NOT NULL REFERENCES users(id),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -122,7 +122,7 @@ CREATE INDEX IF NOT EXISTS pos_customers_name_idx
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS pos_employees (
   id          SERIAL PRIMARY KEY,
-  user_id     INTEGER NOT NULL REFERENCES users(id) UNIQUE,
+  user_id     UUID NOT NULL REFERENCES users(id) UNIQUE,
   pin_hash    TEXT NOT NULL,
   role        TEXT NOT NULL DEFAULT 'cashier'
                 CHECK (role IN ('cashier','supervisor','manager','admin')),
@@ -191,7 +191,7 @@ CREATE SEQUENCE IF NOT EXISTS pos_sale_number_seq START 1;
 CREATE TABLE IF NOT EXISTS pos_sale_lines (
   id              SERIAL PRIMARY KEY,
   sale_id         INTEGER NOT NULL REFERENCES pos_sales(id) ON DELETE CASCADE,
-  sku_id          INTEGER REFERENCES custom_skus(id),
+  sku_id          UUID REFERENCES custom_skus(id),
   epc             TEXT,
   description     TEXT NOT NULL,
   quantity        INTEGER NOT NULL DEFAULT 1,
@@ -260,6 +260,8 @@ CREATE TABLE IF NOT EXISTS pos_discount_rules (
   value                NUMERIC(10,2) NOT NULL,
   applies_to           TEXT NOT NULL
                          CHECK (applies_to IN ('all','customer_type','sku_id')),
+  -- For applies_to='sku_id' this holds the UUID as text. For 'customer_type'
+  -- this holds 'regular'|'vip'|'staff'|'wholesale'. Plain TEXT either way.
   applies_to_value     TEXT,
   start_date           DATE,
   end_date             DATE,

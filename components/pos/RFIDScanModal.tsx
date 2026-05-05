@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 export type RfidResolvedItem = {
   epc: string;
-  sku_id: number;
+  sku_id: string;
   sku: string | null;
   item_name: string;
   color: string | null;

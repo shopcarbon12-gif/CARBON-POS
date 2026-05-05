@@ -5,15 +5,16 @@
  */
 
 // --- WMS-owned tables (POS reads, never writes) ---------------------------
+// All WMS primary keys are UUIDs (typed as string here).
 
 export type WmsLocation = {
-  id: number;
+  id: string;
   name: string;
   site_code: string | null;
 };
 
 export type CustomSku = {
-  id: number;
+  id: string;
   sku: string | null;
   upc: string | null;
   item_name: string;
@@ -21,24 +22,24 @@ export type CustomSku = {
   size: string | null;
   retail_price: string | null; // NUMERIC comes back as string from pg
   bin: string | null;
-  matrix_id: number | null;
+  matrix_id: string | null;
 };
 
 export type Matrix = {
-  id: number;
+  id: string;
   description: string | null;
 };
 
 export type Epc = {
   epc: string;
-  sku_id: number | null;
+  sku_id: string | null;
   status: string;
-  location_id: number | null;
+  location_id: string | null;
   bin: string | null;
 };
 
 export type WmsUser = {
-  id: number;
+  id: string;
   email: string;
   // Other columns vary by WMS deployment; reference what you need.
 };
@@ -47,7 +48,7 @@ export type WmsUser = {
 
 export type PosLocation = {
   id: number;
-  wms_location_id: number;
+  wms_location_id: string;
   address_line1: string | null;
   address_line2: string | null;
   city: string | null;
@@ -76,10 +77,10 @@ export type PosRegister = {
 export type PosRegisterSession = {
   id: number;
   register_id: number;
-  opened_by: number;
+  opened_by: string;
   opened_at: string;
   opening_cash: string;
-  closed_by: number | null;
+  closed_by: string | null;
   closed_at: string | null;
   closing_cash_counted: string | null;
   expected_cash: string | null;
@@ -93,7 +94,7 @@ export type PosCashMovement = {
   type: "drop" | "payout";
   amount: string;
   reason: string | null;
-  done_by: number;
+  done_by: string;
   created_at: string;
 };
 
@@ -113,7 +114,7 @@ export type PosCustomer = {
 
 export type PosEmployee = {
   id: number;
-  user_id: number;
+  user_id: string;
   pin_hash: string;
   role: "cashier" | "supervisor" | "manager" | "admin";
   is_active: boolean;
@@ -151,7 +152,7 @@ export type PosSale = {
 export type PosSaleLine = {
   id: number;
   sale_id: number;
-  sku_id: number | null;
+  sku_id: string | null;
   epc: string | null;
   description: string;
   quantity: number;
@@ -208,7 +209,7 @@ export type PosDiscountRule = {
 export type CartLine = {
   /** Stable per-row id within the cart; not the DB id. */
   cart_id: string;
-  sku_id: number | null;
+  sku_id: string | null;
   epc: string | null;
   description: string;
   quantity: number;

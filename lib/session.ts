@@ -9,7 +9,8 @@ export async function currentCashier() {
   const session = await auth();
   if (!session?.user?.employee_id) return null;
   return {
-    user_id: Number(session.user.id),
+    /** WMS users.id is a UUID — string. */
+    user_id: String(session.user.id),
     employee_id: session.user.employee_id,
     role: session.user.role,
     email: session.user.email ?? null,

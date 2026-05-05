@@ -6,7 +6,7 @@ import { currentCashier } from "@/lib/session";
 import { formatSaleNumber } from "@/lib/utils";
 
 const lineSchema = z.object({
-  sku_id: z.number().nullable(),
+  sku_id: z.string().uuid().nullable(),
   epc: z.string().nullable(),
   description: z.string().min(1),
   quantity: z.number().int().positive(),

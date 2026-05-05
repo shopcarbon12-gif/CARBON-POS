@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { formatMoney } from "@/lib/utils";
 
 export type SearchResultItem = {
-  id: number;
+  id: string;
   sku: string | null;
   upc: string | null;
   item_name: string;
