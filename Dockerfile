@@ -63,14 +63,14 @@ RUN chmod +x /app/docker-entrypoint.sh \
   && mkdir -p /app/.next/cache \
   && chown -R nextjs:nodejs /app
 
-EXPOSE 3000
-ENV PORT=3000
+EXPOSE 5000
+ENV PORT=5000
 ENV HOSTNAME=0.0.0.0
 
 # /api/health checks the DB. start_period gives Postgres time to be reachable from
 # inside the coolify network on first boot.
 HEALTHCHECK --interval=30s --timeout=8s --start-period=45s --retries=5 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||5000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "server.js"]
