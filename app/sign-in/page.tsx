@@ -1,14 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 /**
  * Two-mode sign-in. Cashiers tap a 4-digit PIN; managers/admins switch to
  * email + password to enter the back office.
+ *
+ * useSearchParams() needs a Suspense boundary in Next 16 static rendering —
+ * the inner component reads `from`, the outer wraps it.
  */
 export default function SignInPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center">
+          <p className="text-[--color-pos-muted]">Loading…</p>
+        </main>
+      }
+    >
+      <SignInInner />
+    </Suspense>
+  );
+}
+
+function SignInInner() {
   const router = useRouter();
   const params = useSearchParams();
   const from = params.get("from") || "/pos/register";
