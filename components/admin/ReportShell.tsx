@@ -1,10 +1,14 @@
 import Link from "next/link";
+import { currentCashier } from "@/lib/session";
+import { AdminShell } from "./AdminShell";
 
 /**
- * Page chrome for individual /admin/reports/* pages. Standardized header,
- * breadcrumb back to /admin/reports, and a grid for filters + table.
+ * Page chrome for individual /admin/reports/* pages. Renders inside the
+ * shared Carbon AdminShell so every page in the back office wears the same
+ * sidebar + topbar — and exposes a per-page header strip with a back link
+ * to the reports index plus an optional CSV download.
  */
-export function ReportShell({
+export async function ReportShell({
   title,
   description,
   filters,
@@ -17,39 +21,40 @@ export function ReportShell({
   csvHref?: string;
   children: React.ReactNode;
 }) {
+  const cashier = await currentCashier();
   return (
-    <main className="min-h-screen bg-white">
-      <header className="border-b border-[var(--color-pos-border)] px-6 py-4 flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <Link
-            href="/admin/reports"
-            className="text-sm text-[var(--color-pos-muted)] underline"
-          >
-            ← All reports
-          </Link>
-          <h1 className="text-xl font-bold mt-1">{title}</h1>
-          {description && (
-            <p className="text-xs text-[var(--color-pos-muted)] mt-1">
-              {description}
-            </p>
-          )}
-        </div>
-        {csvHref && (
+    <AdminShell
+      email={cashier?.email ?? null}
+      active="reports"
+      title="Reports"
+      rightSlot={
+        csvHref ? (
           <a
             href={csvHref}
-            className="tap rounded-xl bg-[var(--color-pos-ink)] text-white font-semibold px-4"
+            className="carbon-btn-primary tap px-4 flex items-center justify-center text-sm uppercase tracking-wider font-bold"
           >
             Download CSV
           </a>
+        ) : null
+      }
+    >
+      <div className="px-8 py-6 border-b border-carbon-border-soft bg-carbon-surface">
+        <Link
+          href="/admin/reports"
+          className="text-xs uppercase tracking-wider font-bold text-carbon-blue hover:underline"
+        >
+          ← All reports
+        </Link>
+        <h2 className="text-2xl font-bold mt-2 tracking-tight">{title}</h2>
+        {description && (
+          <p className="text-sm text-carbon-text-muted mt-1">{description}</p>
         )}
-      </header>
-      <div className="p-6">
-        <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-4 mb-4">
-          {filters}
-        </div>
+      </div>
+      <div className="p-8">
+        <div className="carbon-card p-5 mb-5">{filters}</div>
         {children}
       </div>
-    </main>
+    </AdminShell>
   );
 }
 

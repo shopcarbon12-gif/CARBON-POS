@@ -1,41 +1,275 @@
 @import "tailwindcss";
 
+/* ============================================================
+ * CarbonPOS unified theme — high-end retail, square corners.
+ * Shared with CarbonWMS.  Brand blue: #005BC0 on a #f9f9ff canvas.
+ * ============================================================ */
+
 @theme {
-  --color-pos-bg: #f7f7f8;
-  --color-pos-card: #ffffff;
-  --color-pos-border: #e4e4e7;
-  --color-pos-ink: #18181b;
-  --color-pos-muted: #71717a;
-  --color-pos-accent: #16a34a;   /* charge-card green */
-  --color-pos-accent-2: #2563eb; /* take-cash blue */
-  --color-pos-danger: #dc2626;
+  /* Color tokens used directly via Tailwind utilities (bg-carbon-blue, etc.) */
+  --color-carbon-bg:           #f9f9ff;
+  --color-carbon-surface:      #ffffff;
+  --color-carbon-surface-soft: #f1f3fe;
+  --color-carbon-border:       #c1c6d7;
+  --color-carbon-border-soft:  #e0e2ed;
+  --color-carbon-text:         #181c23;
+  --color-carbon-text-muted:   #5f6675;
+  --color-carbon-blue:         #005BC0;
+  --color-carbon-blue-hover:   #00489a;
+  --color-carbon-blue-soft:    rgba(0, 91, 192, 0.10);
+  --color-carbon-danger:       #ba1a1a;
+  --color-carbon-success:      #168a3f;
+  --color-carbon-warning:      #b07a00;
+
+  /* Legacy POS color tokens — kept so existing pages adopt the new theme
+   * automatically without page-by-page edits. */
+  --color-pos-bg:       #f9f9ff;
+  --color-pos-card:     #ffffff;
+  --color-pos-border:   #c1c6d7;
+  --color-pos-ink:      #181c23;
+  --color-pos-muted:    #5f6675;
+  --color-pos-accent:   #005BC0;
+  --color-pos-accent-2: #005BC0;
+  --color-pos-danger:   #ba1a1a;
+
+  /* Square corners — design spec calls for sharp 90-degree edges everywhere.
+   * Every Tailwind radius class resolves to 0 because of these tokens. */
+  --radius-xs:   0px;
+  --radius-sm:   0px;
+  --radius-md:   0px;
+  --radius-lg:   0px;
+  --radius-xl:   0px;
+  --radius-2xl:  0px;
+  --radius-3xl:  0px;
+  --radius-4xl:  0px;
+  --radius-full: 0px;
+
+  /* Type scale + Inter as the only family. */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+               "Segoe UI", Roboto, sans-serif;
+
+  --spacing-gutter: 20px;
+}
+
+/* ============================================================
+ * Carbon design tokens (CSS vars), used by the shell components.
+ * ============================================================ */
+:root {
+  --carbon-bg:           #f9f9ff;
+  --carbon-surface:      #ffffff;
+  --carbon-surface-soft: #f1f3fe;
+  --carbon-border:       #c1c6d7;
+  --carbon-border-soft:  #e0e2ed;
+  --carbon-text:         #181c23;
+  --carbon-muted:        #5f6675;
+  --carbon-blue:         #005BC0;
+  --carbon-blue-hover:   #00489a;
+  --carbon-blue-soft:    rgba(0, 91, 192, 0.10);
+  --carbon-danger:       #ba1a1a;
+  --carbon-success:      #168a3f;
+  --carbon-sidebar-w:    256px;
+  --carbon-topbar-h:     80px;
 }
 
 html, body {
   height: 100%;
-  background: var(--color-pos-bg);
-  color: var(--color-pos-ink);
+  background: var(--carbon-bg);
+  color: var(--carbon-text);
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
 }
 
-/* Touch targets — 56px is the minimum tap target for the register UI. */
-.tap {
-  min-height: 56px;
+/* Force every container to sharp 90-degree corners. The reference HTML files
+ * still use `rounded-*` utilities — this pulls them all back to 0px. */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
 }
 
-.tap-lg {
-  min-height: 72px;
+/* The "selected PIN dot" on the login screen is the only deliberate circle.
+ * Allow opt-in via .pin-dot. Receipt thermal print also uses .thermal-receipt
+ * which we leave alone for printer fidelity. */
+.pin-dot {
+  border-radius: 9999px !important;
 }
 
-/* Big number used for the running total. */
+/* Touch targets — 56px minimum for the register UI. */
+.tap    { min-height: 56px; }
+.tap-lg { min-height: 72px; }
+
+/* Big tabular total. */
 .total-display {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+/* ============================================================
+ * Shell: vertical sidebar (256px) + sticky topbar (80px).
+ * ============================================================ */
+.carbon-sidebar {
+  width: var(--carbon-sidebar-w);
+  background: var(--carbon-surface);
+  border-right: 1px solid var(--carbon-border);
+}
+
+.carbon-topbar {
+  height: var(--carbon-topbar-h);
+  background: var(--carbon-surface);
+  border-bottom: 1px solid var(--carbon-border);
+}
+
+.carbon-card {
+  background: var(--carbon-surface);
+  border: 1px solid var(--carbon-border);
+}
+
+.carbon-card-soft {
+  background: var(--carbon-surface-soft);
+  border: 1px solid var(--carbon-border);
+}
+
+/* Primary brand button — solid Carbon Blue, white text, sharp corners. */
+.carbon-btn-primary {
+  background: var(--carbon-blue);
+  color: #ffffff;
+  border: 1px solid var(--carbon-blue);
+  font-weight: 600;
+  transition: background 120ms ease;
+}
+.carbon-btn-primary:hover:not(:disabled) { background: var(--carbon-blue-hover); border-color: var(--carbon-blue-hover); }
+.carbon-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Secondary outlined button. */
+.carbon-btn-secondary {
+  background: var(--carbon-surface);
+  color: var(--carbon-text);
+  border: 1px solid var(--carbon-border);
+  font-weight: 500;
+  transition: background 120ms ease;
+}
+.carbon-btn-secondary:hover:not(:disabled) { background: var(--carbon-surface-soft); }
+.carbon-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Ghost button — transparent with hover wash. */
+.carbon-btn-ghost {
+  background: transparent;
+  color: var(--carbon-text);
+  border: 1px solid transparent;
+}
+.carbon-btn-ghost:hover { background: var(--carbon-surface-soft); }
+
+/* Inputs, selects, textareas. */
+.carbon-input,
+input.carbon-input,
+select.carbon-input,
+textarea.carbon-input {
+  background: var(--carbon-surface);
+  border: 1px solid var(--carbon-border);
+  color: var(--carbon-text);
+  padding: 0 12px;
+}
+.carbon-input:focus {
+  outline: none;
+  border-color: var(--carbon-blue);
+  box-shadow: 0 0 0 1px var(--carbon-blue);
+}
+
+/* Sidebar nav link. */
+.carbon-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  color: var(--carbon-muted);
+  font-weight: 500;
+  border-left: 3px solid transparent;
+  transition: background 120ms ease, color 120ms ease;
+}
+.carbon-nav-item:hover { background: var(--carbon-surface-soft); color: var(--carbon-text); }
+.carbon-nav-item.active {
+  background: var(--carbon-blue-soft);
+  color: var(--carbon-blue);
+  border-left-color: var(--carbon-blue);
+  font-weight: 700;
+}
+
+/* Stat / KPI card — left-bordered. */
+.carbon-stat {
+  position: relative;
+  background: var(--carbon-surface);
+  border: 1px solid var(--carbon-border);
+  padding: 24px;
+  overflow: hidden;
+}
+.carbon-stat::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--carbon-blue);
+}
+
+/* Tables. */
+.carbon-table {
+  width: 100%;
+  font-size: 14px;
+  border: 1px solid var(--carbon-border);
+  background: var(--carbon-surface);
+}
+.carbon-table thead {
+  background: var(--carbon-surface-soft);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--carbon-muted);
+}
+.carbon-table th, .carbon-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--carbon-border-soft);
+}
+.carbon-table tr:last-child td { border-bottom: none; }
+
+/* ============================================================
+ * Thermal receipt — must remain pure black & white for the
+ * thermal printer. Override the carbon palette inside the
+ * receipt only.
+ * ============================================================ */
+.thermal-receipt {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+  box-shadow: none !important;
+  filter: grayscale(1) contrast(1.05) !important;
+}
+.thermal-receipt * {
+  color: #000000 !important;
+  border-color: #000000 !important;
+  background-color: transparent !important;
+}
+.thermal-receipt img { filter: grayscale(1) contrast(1.25) !important; }
+
+@media print {
+  body * { visibility: hidden !important; }
+  .thermal-receipt, .thermal-receipt * { visibility: visible !important; }
+  .thermal-receipt {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    filter: grayscale(1) !important;
+  }
 }
