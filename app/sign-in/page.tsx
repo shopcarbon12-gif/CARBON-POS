@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -34,25 +34,75 @@ function SignInInner() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submitPin(value: string) {
-    setBusy(true);
-    setError(null);
-    const res = await signIn("pin", { pin: value, redirect: false });
-    setBusy(false);
-    if (res?.error) {
-      setError("That PIN doesn't match. Try again.");
-      setPin("");
+  // The PIN keypad now requires the user to press Enter (or hit the Enter key
+  // on a hardware keyboard) once 4 digits are entered, instead of auto-
+  // submitting. Backspace deletes the last digit; Clear wipes the field.
+  const pinRef = useRef(pin);
+  pinRef.current = pin;
+
+  const submitPin = useCallback(
+    async (value: string) => {
+      setBusy(true);
+      setError(null);
+      const res = await signIn("pin", { pin: value, redirect: false });
+      setBusy(false);
+      if (res?.error) {
+        setError("That PIN doesn't match. Try again.");
+        setPin("");
+        return;
+      }
+      router.replace(from);
+    },
+    [from, router],
+  );
+
+  const tapDigit = useCallback((d: string) => {
+    setPin((prev) => (prev + d).slice(0, 4));
+  }, []);
+
+  const tapEnter = useCallback(() => {
+    const v = pinRef.current;
+    if (v.length !== 4) {
+      setError("Enter all 4 digits, then press Enter.");
       return;
     }
-    router.replace(from);
-  }
+    void submitPin(v);
+  }, [submitPin]);
 
-  function tapDigit(d: string) {
-    if (busy) return;
-    const next = (pin + d).slice(0, 4);
-    setPin(next);
-    if (next.length === 4) submitPin(next);
-  }
+  const tapBackspace = useCallback(() => {
+    setPin((prev) => prev.slice(0, -1));
+  }, []);
+
+  // Hardware keyboard support on the PIN screen — digits append, Backspace
+  // deletes, Enter submits, Escape clears.
+  useEffect(() => {
+    if (mode !== "pin") return;
+    function onKey(e: KeyboardEvent) {
+      if (busy) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        tapDigit(e.key);
+        return;
+      }
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        tapBackspace();
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        tapEnter();
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setPin("");
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode, busy, tapDigit, tapBackspace, tapEnter]);
 
   async function submitPassword(e: React.FormEvent) {
     e.preventDefault();
@@ -136,6 +186,8 @@ function SignInInner() {
                 {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
                   <button
                     key={d}
+                    type="button"
+                    disabled={busy}
                     className="tap-lg carbon-btn-secondary text-2xl font-semibold"
                     onClick={() => tapDigit(d)}
                   >
@@ -143,24 +195,33 @@ function SignInInner() {
                   </button>
                 ))}
                 <button
+                  type="button"
+                  disabled={busy}
                   className="tap-lg carbon-btn-ghost text-carbon-text-muted text-sm font-semibold uppercase tracking-wider"
                   onClick={() => setPin("")}
                 >
                   Clear
                 </button>
                 <button
+                  type="button"
+                  disabled={busy}
                   className="tap-lg carbon-btn-secondary text-2xl font-semibold"
                   onClick={() => tapDigit("0")}
                 >
                   0
                 </button>
                 <button
-                  className="tap-lg carbon-btn-ghost text-carbon-text-muted text-sm font-semibold uppercase tracking-wider"
-                  onClick={() => setPin(pin.slice(0, -1))}
+                  type="button"
+                  disabled={busy || pin.length !== 4}
+                  className="tap-lg carbon-btn-primary text-sm font-bold uppercase tracking-wider"
+                  onClick={tapEnter}
                 >
-                  ←
+                  {busy ? "…" : "Enter"}
                 </button>
               </div>
+              <p className="text-[11px] text-carbon-text-muted text-center mt-3 uppercase tracking-wider">
+                You can also type your PIN on the keyboard.
+              </p>
               <button
                 className="w-full mt-8 text-xs uppercase tracking-wider font-bold text-carbon-blue hover:underline"
                 onClick={() => setMode("password")}
