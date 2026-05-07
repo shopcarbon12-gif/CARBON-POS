@@ -14,6 +14,10 @@ const schema = z.object({
  *
  * Returns one row per epc that has a sku. EPCs already marked "sold" are
  * skipped — the cashier sees a count of skipped tags.
+ *
+ * Schema notes: the WMS unified the old `epcs` table into `items` — each row
+ * has an `epc` column. The product name lives on `matrices.description`,
+ * the variant attributes (color, size) live on `custom_skus`.
  */
 export async function POST(req: Request) {
   const cashier = await currentCashier();
@@ -30,17 +34,18 @@ export async function POST(req: Request) {
   }
   const pool = getPool();
   const r = await pool.query(
-    `SELECT e.epc,
-            e.sku_id,
-            e.status,
-            s.sku,
-            s.item_name,
-            s.color,
-            s.size,
-            s.retail_price
-       FROM epcs e
-       LEFT JOIN custom_skus s ON s.id = e.sku_id
-      WHERE e.epc = ANY($1::text[])`,
+    `SELECT i.epc,
+            i.custom_sku_id     AS sku_id,
+            i.status,
+            cs.sku,
+            m.description       AS item_name,
+            cs.color_code       AS color,
+            cs.size,
+            cs.retail_price
+       FROM items i
+       LEFT JOIN custom_skus cs ON cs.id = i.custom_sku_id
+       LEFT JOIN matrices m     ON m.id = cs.matrix_id
+      WHERE i.epc = ANY($1::text[])`,
     [parsed.data.epcs],
   );
   const usable = r.rows.filter(

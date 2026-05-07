@@ -30,16 +30,17 @@ export async function GET(req: Request) {
   const pool = getPool();
   const rows = await pool.query(
     `SELECT sl.sku_id,
-            COALESCE(cs.item_name, sl.description) AS item_name,
-            cs.color, cs.size, cs.sku,
-            SUM(sl.quantity)::int                  AS qty,
-            COALESCE(SUM(sl.line_total), 0)        AS revenue
+            COALESCE(m.description, sl.description) AS item_name,
+            cs.color_code AS color, cs.size, cs.sku,
+            SUM(sl.quantity)::int                   AS qty,
+            COALESCE(SUM(sl.line_total), 0)         AS revenue
        FROM pos_sale_lines sl
-       JOIN pos_sales s   ON s.id = sl.sale_id
+       JOIN pos_sales s         ON s.id = sl.sale_id
        LEFT JOIN custom_skus cs ON cs.id = sl.sku_id
+       LEFT JOIN matrices m     ON m.id = cs.matrix_id
       WHERE s.status = 'completed'
         AND s.completed_at::date BETWEEN $1 AND $2
-      GROUP BY sl.sku_id, item_name, cs.color, cs.size, cs.sku
+      GROUP BY sl.sku_id, item_name, cs.color_code, cs.size, cs.sku
       ORDER BY revenue DESC
       LIMIT 500`,
     [from, to],

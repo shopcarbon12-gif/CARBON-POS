@@ -44,22 +44,26 @@ export default async function InventoryPage({
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
 
   const args: unknown[] = [cashier.lid];
-  const filters: string[] = [];
+  const filters: string[] = ["COALESCE(cs.archived, FALSE) = FALSE"];
   if (q.length > 0) {
     args.push(`%${q}%`);
     const i = args.length;
-    filters.push(`(cs.item_name ILIKE $${i} OR cs.sku ILIKE $${i} OR cs.upc ILIKE $${i})`);
+    filters.push(
+      `(m.description ILIKE $${i} OR cs.sku ILIKE $${i} OR cs.upc ILIKE $${i})`,
+    );
   }
   if (size.length > 0) {
     args.push(size);
     filters.push(`cs.size = $${args.length}`);
   }
-  const whereExtra = filters.length > 0 ? `AND ${filters.join(" AND ")}` : "";
+  const whereExtra = `AND ${filters.join(" AND ")}`;
 
   const pool = getPool();
 
   // Catalog rows + per-location in-stock counts. The LATERAL count keeps
   // the join from blowing up on locations with hundreds of EPCs per SKU.
+  // The product name lives in `matrices.description` (custom_skus only
+  // carries the variant attributes — sku, color_code, size, etc.).
   const offset = (page - 1) * PAGE_SIZE;
   args.push(PAGE_SIZE, offset);
   const limitIdx = args.length - 1;
@@ -71,6 +75,7 @@ export default async function InventoryPage({
       sku: string;
       upc: string | null;
       item_name: string;
+      category: string | null;
       color: string | null;
       size: string | null;
       retail_price: string | null;
@@ -79,12 +84,14 @@ export default async function InventoryPage({
       `SELECT cs.id::text,
               cs.sku,
               cs.upc,
-              cs.item_name,
-              cs.color,
+              m.description       AS item_name,
+              m.category          AS category,
+              cs.color_code       AS color,
               cs.size,
               cs.retail_price::text,
               COALESCE(c.n, 0)::text AS stock_count
          FROM custom_skus cs
+         JOIN matrices m ON m.id = cs.matrix_id
          LEFT JOIN LATERAL (
            SELECT COUNT(*) AS n
              FROM items i
@@ -94,16 +101,22 @@ export default async function InventoryPage({
          ) c ON TRUE
         WHERE TRUE
           ${whereExtra}
-        ORDER BY cs.item_name ASC, cs.sku ASC
+        ORDER BY m.description ASC, cs.sku ASC
         LIMIT $${limitIdx}::int OFFSET $${offsetIdx}::int`,
       args,
     ),
     pool.query<{ n: string }>(
-      `SELECT COUNT(*)::text AS n FROM custom_skus cs WHERE TRUE ${whereExtra}`,
+      `SELECT COUNT(*)::text AS n
+         FROM custom_skus cs
+         JOIN matrices m ON m.id = cs.matrix_id
+        WHERE TRUE ${whereExtra}`,
       args.slice(0, args.length - 2),
     ),
     pool.query<{ size: string }>(
-      `SELECT DISTINCT size FROM custom_skus WHERE size IS NOT NULL AND size <> '' ORDER BY size ASC LIMIT 50`,
+      `SELECT DISTINCT size FROM custom_skus
+        WHERE size IS NOT NULL AND size <> ''
+        ORDER BY size ASC
+        LIMIT 50`,
     ),
   ]);
 
