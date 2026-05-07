@@ -11,7 +11,6 @@ type Tab =
   | "inventory"
   | "reports"
   | "customers"
-  | "employees"
   | "settings";
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -21,7 +20,6 @@ const TAB_LABELS: Record<Tab, string> = {
   inventory: "Inventory",
   reports: "Reports",
   customers: "Customers",
-  employees: "Employees",
   settings: "Settings",
 };
 
@@ -32,12 +30,11 @@ const TAB_LABELS: Record<Tab, string> = {
  */
 const NAV: Array<{ key: Tab; icon: string; href: (code: string) => string }> = [
   { key: "dashboard", icon: "dashboard",     href: (c) => `/dashboard/${c}` },
-  { key: "sales",     icon: "receipt_long",  href: (c) => `/sales/${c}` },
   { key: "pos",       icon: "point_of_sale", href: (c) => `/sales/${c}/new` },
+  { key: "sales",     icon: "receipt_long",  href: (c) => `/sales/${c}` },
   { key: "inventory", icon: "inventory_2",   href: (c) => `/inventory/${c}` },
   { key: "reports",   icon: "monitoring",    href: (c) => `/reports/${c}` },
   { key: "customers", icon: "people",        href: (c) => `/customers/${c}` },
-  { key: "employees", icon: "badge",         href: (c) => `/employees/${c}` },
   { key: "settings",  icon: "settings",      href: (c) => `/settings/${c}` },
 ];
 
@@ -266,19 +263,40 @@ export function AdminShell({
           ))}
         </nav>
 
-        {/* Identity strip at the bottom of the sidebar. The pin toggle
-            now lives in the topbar (square button on the right) so it's
-            always discoverable without scrolling the sidebar. */}
-        <div className="border-t border-carbon-border-soft pt-4 mt-4 px-4">
-          <p className="text-xs text-carbon-text-muted truncate">
-            {email ?? ""}
-          </p>
-          <Link
-            href="/api/auth/signout"
-            className="text-xs text-carbon-text-muted hover:text-carbon-blue underline mt-1 inline-block"
+        {/* Identity strip at the bottom of the sidebar. Email + sign-out
+            on the left, pin/unpin square button on the right — kept
+            inside the sidebar so it doesn't crowd the topbar. */}
+        <div className="border-t border-carbon-border-soft pt-4 mt-4 px-4 flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs text-carbon-text-muted truncate">
+              {email ?? ""}
+            </p>
+            <Link
+              href="/api/auth/signout"
+              className="text-xs text-carbon-text-muted hover:text-carbon-blue underline mt-1 inline-block"
+            >
+              Sign out
+            </Link>
+          </div>
+          <button
+            type="button"
+            onClick={onTogglePin}
+            aria-pressed={pinned}
+            title={pinned ? "Unpin sidebar (foldable)" : "Pin sidebar open"}
+            className={`w-10 h-10 shrink-0 inline-flex items-center justify-center border transition-colors ${
+              pinned
+                ? "border-carbon-blue bg-[var(--carbon-blue-soft)] text-carbon-blue"
+                : "border-carbon-border text-carbon-text-muted hover:bg-[var(--carbon-surface-soft)] hover:text-carbon-blue"
+            }`}
           >
-            Sign out
-          </Link>
+            <span
+              className="material-symbols-outlined"
+              style={pinned ? { fontVariationSettings: '"FILL" 1' } : undefined}
+              aria-hidden
+            >
+              push_pin
+            </span>
+          </button>
         </div>
       </aside>
 
@@ -324,30 +342,7 @@ export function AdminShell({
               {headline}
             </h1>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
-            {rightSlot}
-            {/* Pin toggle — square button on the right side of the topbar.
-                Filled push_pin when pinned, outlined when not. */}
-            <button
-              type="button"
-              onClick={onTogglePin}
-              aria-pressed={pinned}
-              title={pinned ? "Unpin sidebar (foldable)" : "Pin sidebar open"}
-              className={`w-10 h-10 inline-flex items-center justify-center border transition-colors ${
-                pinned
-                  ? "border-carbon-blue bg-[var(--carbon-blue-soft)] text-carbon-blue"
-                  : "border-carbon-border text-carbon-text-muted hover:bg-[var(--carbon-surface-soft)] hover:text-carbon-blue"
-              }`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={pinned ? { fontVariationSettings: '"FILL" 1' } : undefined}
-                aria-hidden
-              >
-                push_pin
-              </span>
-            </button>
-          </div>
+          <div className="flex items-center gap-4 shrink-0">{rightSlot}</div>
         </header>
         <main className="flex-1">{children}</main>
       </div>

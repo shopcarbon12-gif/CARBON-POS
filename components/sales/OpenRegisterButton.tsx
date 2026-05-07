@@ -12,10 +12,9 @@ type Register = {
 };
 
 /**
- * Bill / coin denominations shown in the Open Register dialog. Per the
- * supplied screenshot we DO show cents and the "Extra" cash-in-hand line
- * at open time (it's the inverse of close — we want a precise starting
- * count, including odd change brought from the safe).
+ * Bill denominations shown in the Open Register dialog. Cents (25¢/10¢/
+ * 5¢/1¢) and the "Extra" cash-in-hand line are intentionally omitted —
+ * matches the close-register count input.
  */
 const DENOMS: Array<{ label: string; value: number }> = [
   { label: "$100 ×", value: 100 },
@@ -24,10 +23,6 @@ const DENOMS: Array<{ label: string; value: number }> = [
   { label: "$10 ×",  value: 10 },
   { label: "$5 ×",   value: 5 },
   { label: "$1 ×",   value: 1 },
-  { label: "25¢ ×",  value: 0.25 },
-  { label: "10¢ ×",  value: 0.1 },
-  { label: "5¢ ×",   value: 0.05 },
-  { label: "1¢ ×",   value: 0.01 },
 ];
 
 /**
@@ -129,7 +124,6 @@ function OpenRegisterDialog({
   onOpened: () => void;
 }) {
   const [counts, setCounts] = useState<Record<number, number>>({});
-  const [extra, setExtra] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,9 +132,8 @@ function OpenRegisterDialog({
       (sum, d) => sum + (counts[d.value] ?? 0) * d.value,
       0,
     );
-    const extraN = Number(extra) || 0;
-    return Math.round((denomTotal + extraN) * 100) / 100;
-  }, [counts, extra]);
+    return Math.round(denomTotal * 100) / 100;
+  }, [counts]);
 
   async function submit() {
     setBusy(true);
@@ -203,10 +196,6 @@ function OpenRegisterDialog({
             }
           />
         ))}
-        <span className="text-sm font-semibold text-carbon-text text-right">
-          Extra
-        </span>
-        <DollarInput value={extra} onChange={setExtra} />
         <span className="text-sm font-bold text-carbon-text text-right">
           Total
         </span>
@@ -275,30 +264,6 @@ function DenomRow({
         placeholder="0"
       />
     </>
-  );
-}
-
-function DollarInput({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-carbon-text font-semibold">$</span>
-      <input
-        type="number"
-        step="0.01"
-        min={0}
-        inputMode="decimal"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="0.00"
-        className="carbon-input text-right tabular-nums w-24 h-8 px-2 text-base font-semibold text-carbon-text"
-      />
-    </div>
   );
 }
 

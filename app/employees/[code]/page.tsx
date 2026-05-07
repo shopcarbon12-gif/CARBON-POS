@@ -10,7 +10,7 @@ export default async function EmployeesPage({
 }) {
   const { code } = await params;
   const cashier = await pageGuard(code, {
-    tab: "employees",
+    tab: "settings",
     from: `/employees/${code}`,
   }, { requireRole: ["manager", "admin"] });
   const pool = getPool();
@@ -21,7 +21,7 @@ export default async function EmployeesPage({
       ORDER BY pe.is_active DESC, u.email`,
   );
   return (
-    <AdminShell email={cashier.email} active="employees" code={code}>
+    <AdminShell email={cashier.email} active="settings" code={code} title="Employees">
       <section className="p-6">
         <div className="flex items-center justify-between mb-4">
           <p className="text-sm text-[var(--color-pos-muted)]">

@@ -24,6 +24,12 @@ export default async function SettingsHomePage({
       desc: "Add/rename tills and pair them with their Stripe Terminal reader.",
     },
     {
+      href: `/employees/${code}`,
+      title: "Employees",
+      desc:
+        "Cashiers and back-office staff. PINs are 4-digit codes used at the register.",
+    },
+    {
       href: `/settings/${code}/discounts`,
       title: "Discount rules",
       desc:

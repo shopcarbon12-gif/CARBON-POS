@@ -75,69 +75,123 @@ export function ItemSearch({
 
   return (
     <div className="relative">
+      <span
+        className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-carbon-text-muted text-2xl pointer-events-none"
+        aria-hidden
+      >
+        search
+      </span>
       <input
         ref={inputRef}
         type="text"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={onKey}
-        placeholder="Scan a barcode or type to search…"
-        className="tap-lg w-full rounded-2xl border border-[var(--color-pos-border)] bg-white px-5 text-lg"
+        placeholder="Scan a barcode or type any part of an item — SKU, UPC, name, color, size…"
+        className="carbon-input tap-lg w-full pl-14 pr-4 py-4 text-xl font-semibold text-carbon-text"
         autoComplete="off"
       />
       {q && results.length > 0 && (
-        <div className="absolute z-10 left-0 right-0 mt-2 bg-white border border-[var(--color-pos-border)] rounded-2xl shadow-lg max-h-80 overflow-auto">
-          {results.map((r) => {
-            const stock = r.stock_count ?? 0;
-            const stockLabel =
-              stock === 0
-                ? "Out of stock"
-                : stock <= 5
-                  ? `${stock} in stock`
-                  : `${stock} in stock`;
-            const stockCls =
-              stock === 0
-                ? "text-red-700"
-                : stock <= 5
-                  ? "text-amber-700"
-                  : "text-emerald-700";
-            return (
-              <button
-                key={r.id}
-                onClick={() => {
-                  onPick(r);
-                  setQ("");
-                  setResults([]);
-                }}
-                className="w-full text-left px-4 py-3 hover:bg-[var(--color-pos-bg)] border-b border-[var(--color-pos-border)] last:border-b-0"
-              >
-                <div className="flex justify-between">
-                  <span className="font-medium truncate pr-3">
-                    {r.item_name}
-                  </span>
-                  <span className="font-semibold tabular-nums shrink-0">
-                    {formatMoney(r.retail_price ?? 0)}
-                  </span>
-                </div>
-                <div className="text-xs text-[var(--color-pos-muted)] flex justify-between gap-3 mt-0.5">
-                  <span className="truncate">
-                    {[r.color, r.size, r.sku].filter(Boolean).join(" · ")}
-                    {r.upc ? ` · ${r.upc}` : ""}
-                  </span>
-                  <span className={`font-bold uppercase tracking-wider tabular-nums shrink-0 ${stockCls}`}>
-                    {stockLabel}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
+        <div className="absolute z-10 left-0 right-0 mt-2 carbon-card shadow-lg max-h-[28rem] overflow-auto">
+          <ul className="divide-y divide-carbon-border-soft">
+            {results.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onPick(r);
+                    setQ("");
+                    setResults([]);
+                  }}
+                  className="w-full text-left p-4 hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                >
+                  <div className="flex items-start gap-4">
+                    {/* Image placeholder — Phase 2 wires the WMS media bucket. */}
+                    <div className="w-16 h-16 bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-carbon-text-muted text-2xl">
+                        checkroom
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-lg font-bold text-carbon-text leading-snug truncate">
+                        {r.item_name}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-sm">
+                        <DetailField label="SKU">
+                          <span className="font-mono font-semibold text-carbon-text">
+                            {r.sku ?? "—"}
+                          </span>
+                        </DetailField>
+                        <DetailField label="UPC">
+                          <span className="font-mono font-semibold text-carbon-text">
+                            {r.upc ?? "—"}
+                          </span>
+                        </DetailField>
+                        <DetailField label="Color">
+                          <span className="font-semibold text-carbon-text">
+                            {r.color ?? "—"}
+                          </span>
+                        </DetailField>
+                        <DetailField label="Size">
+                          <span className="font-semibold text-carbon-text">
+                            {r.size ?? "—"}
+                          </span>
+                        </DetailField>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-base font-bold tabular-nums text-carbon-text">
+                        {formatMoney(r.retail_price ?? 0)}
+                      </div>
+                      {typeof r.stock_count === "number" ? (
+                        <StockChip n={r.stock_count} />
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {q && !loading && results.length === 0 && (
-        <div className="absolute z-10 left-0 right-0 mt-2 bg-white border border-[var(--color-pos-border)] rounded-2xl px-4 py-3 text-[var(--color-pos-muted)]">
-          No items match. Check the barcode and try again.
+        <div className="absolute z-10 left-0 right-0 mt-2 carbon-card px-4 py-6 text-center text-carbon-text-muted">
+          No matches. Try fewer characters.
         </div>
       )}
     </div>
+  );
+}
+
+function DetailField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-baseline gap-1.5 min-w-0">
+      <span className="text-[10px] uppercase tracking-wider font-bold text-carbon-text-muted shrink-0">
+        {label}
+      </span>
+      <span className="truncate">{children}</span>
+    </div>
+  );
+}
+
+function StockChip({ n }: { n: number }) {
+  const cls =
+    n === 0
+      ? "bg-red-50 text-red-800 ring-1 ring-red-600/30"
+      : n <= 5
+        ? "bg-amber-50 text-amber-900 ring-1 ring-amber-700/30"
+        : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-700/30";
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 mt-1 text-xs font-bold tabular-nums ${cls}`}
+    >
+      {n} in stock
+    </span>
   );
 }
