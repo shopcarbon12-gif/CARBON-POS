@@ -12,6 +12,43 @@ type Search = {
   size?: string;
   category?: string;
   page?: string;
+  /** Sort key — see SORT_SQL whitelist below. */
+  sort?: string;
+  /** "asc" | "desc". Defaults to "asc". */
+  dir?: string;
+};
+
+type SortKey =
+  | "item_name"
+  | "color"
+  | "size"
+  | "upc"
+  | "sku"
+  | "stock"
+  | "price";
+
+/**
+ * Whitelist of sortable columns → safe SQL fragment. Only keys in this
+ * record can drive ORDER BY (no user-supplied SQL ever reaches the query).
+ */
+const SORT_SQL: Record<SortKey, string> = {
+  item_name: "m.description",
+  color: "cs.color_code",
+  size: "cs.size",
+  upc: "cs.upc",
+  sku: "cs.sku",
+  stock: "COALESCE(c.n, 0)",
+  price: "cs.retail_price",
+};
+
+const SORT_LABELS: Record<SortKey, string> = {
+  item_name: "Item Name",
+  color: "Color",
+  size: "Size",
+  upc: "UPC",
+  sku: "SKU",
+  stock: "Stock",
+  price: "Price",
 };
 
 /**
@@ -42,6 +79,9 @@ export default async function InventoryPage({
   const q = (sp.q ?? "").trim();
   const size = (sp.size ?? "").trim();
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
+  const sort = (sp.sort && sp.sort in SORT_SQL ? sp.sort : "item_name") as SortKey;
+  const dir = sp.dir === "desc" ? "desc" : "asc";
+  const orderBy = `${SORT_SQL[sort]} ${dir.toUpperCase()} NULLS LAST, cs.sku ASC`;
 
   // Build the rows-query args + the count-query args separately so the
   // placeholder indices line up cleanly in each statement and pg never
@@ -122,7 +162,7 @@ export default async function InventoryPage({
          ) c ON TRUE
         WHERE TRUE
           ${rowsWhere}
-        ORDER BY m.description ASC, cs.sku ASC
+        ORDER BY ${orderBy}
         LIMIT $${limitIdx}::int OFFSET $${offsetIdx}::int`,
       rowsArgs,
     ),
@@ -208,102 +248,114 @@ export default async function InventoryPage({
             </form>
           </div>
 
-          {/* Table */}
-          <div className="carbon-card overflow-hidden">
-            <div className="grid grid-cols-[80px_2fr_1.2fr_1fr_1fr_100px] gap-4 px-4 py-3 border-b border-carbon-border-soft bg-[var(--carbon-surface-soft)]">
-              <div className="text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted">Image</div>
-              <div className="text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted">Product Details</div>
-              <div className="text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted">SKU</div>
-              <div className="text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted">Stock Level</div>
-              <div className="text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted text-right">Price</div>
-              <div className="text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted text-center">Actions</div>
-            </div>
-            <div className="divide-y divide-carbon-border-soft">
-              {rowsR.rows.length === 0 ? (
-                <p className="px-4 py-12 text-center text-carbon-text-muted">
-                  No products match your filters.
-                </p>
-              ) : (
-                rowsR.rows.map((row) => {
-                  const stock = Number(row.stock_count);
-                  const stockBadge =
-                    stock === 0
-                      ? {
-                          label: "Out of stock",
-                          cls: "bg-red-50 text-red-800 ring-1 ring-red-600/30",
-                        }
-                      : stock <= LOW_STOCK_THRESHOLD
-                        ? {
-                            label: `Low stock (${stock})`,
-                            cls: "bg-amber-50 text-amber-900 ring-1 ring-amber-700/30",
-                          }
-                        : {
-                            label: `In stock (${stock})`,
-                            cls: "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-700/30",
-                          };
-                  return (
-                    <div
-                      key={row.id}
-                      className={`grid grid-cols-[80px_2fr_1.2fr_1fr_1fr_100px] gap-4 px-4 py-4 items-center hover:bg-[var(--carbon-surface-soft)] transition-colors ${
-                        stock === 0 ? "opacity-75" : ""
-                      }`}
+          {/* Table — flat columns, sortable headers (A→Z / Z→A toggle). */}
+          <div className="carbon-card overflow-x-auto">
+            <table className="w-full min-w-[1200px] text-sm border-collapse">
+              <thead>
+                <tr className="bg-[var(--carbon-surface-soft)] border-b border-carbon-border-soft text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted">
+                  <th className="text-right px-3 py-3 w-12">#</th>
+                  <th className="text-left  px-3 py-3 w-20">Image</th>
+                  <SortHeader keyName="item_name" align="left"  q={q} size={size} sort={sort} dir={dir} code={code} />
+                  <SortHeader keyName="color"     align="left"  q={q} size={size} sort={sort} dir={dir} code={code} />
+                  <SortHeader keyName="size"      align="left"  q={q} size={size} sort={sort} dir={dir} code={code} />
+                  <SortHeader keyName="upc"       align="left"  q={q} size={size} sort={sort} dir={dir} code={code} />
+                  <SortHeader keyName="sku"       align="left"  q={q} size={size} sort={sort} dir={dir} code={code} />
+                  <SortHeader keyName="stock"     align="left"  q={q} size={size} sort={sort} dir={dir} code={code} />
+                  <SortHeader keyName="price"     align="right" q={q} size={size} sort={sort} dir={dir} code={code} />
+                  <th className="text-center px-3 py-3 w-24">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-carbon-border-soft">
+                {rowsR.rows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={10}
+                      className="px-4 py-12 text-center text-carbon-text-muted"
                     >
-                      <div className="w-12 h-12 bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center">
-                        <span className="material-symbols-outlined text-carbon-text-muted text-lg">
-                          checkroom
-                        </span>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold truncate">
+                      No products match your filters.
+                    </td>
+                  </tr>
+                ) : (
+                  rowsR.rows.map((row, idx) => {
+                    const stock = Number(row.stock_count);
+                    const pillCls =
+                      stock === 0
+                        ? "bg-red-50 text-red-800 ring-1 ring-red-600/30"
+                        : stock <= LOW_STOCK_THRESHOLD
+                          ? "bg-amber-50 text-amber-900 ring-1 ring-amber-700/30"
+                          : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-700/30";
+                    return (
+                      <tr
+                        key={row.id}
+                        className={`hover:bg-[var(--carbon-surface-soft)] transition-colors ${
+                          stock === 0 ? "opacity-75" : ""
+                        }`}
+                      >
+                        <td className="px-3 py-3 text-right tabular-nums text-carbon-text-muted">
+                          {showFrom + idx}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="w-12 h-12 bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center">
+                            <span className="material-symbols-outlined text-carbon-text-muted text-lg">
+                              checkroom
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 font-semibold text-carbon-text">
                           {row.item_name}
-                        </p>
-                        <p className="text-xs text-carbon-text-muted truncate">
-                          {[row.color, row.size]
-                            .filter(Boolean)
-                            .join(" · ") || "—"}
-                          {row.upc ? ` · UPC ${row.upc}` : ""}
-                        </p>
-                      </div>
-                      <div className="font-mono text-xs text-carbon-text-muted truncate">
-                        {row.sku}
-                      </div>
-                      <div>
-                        <span
-                          className={`inline-flex items-center px-2 py-1 text-[10px] uppercase tracking-wider font-bold ${stockBadge.cls}`}
-                        >
-                          {stockBadge.label}
-                        </span>
-                      </div>
-                      <div className="font-mono text-sm text-right tabular-nums">
-                        {row.retail_price
-                          ? formatMoney(row.retail_price)
-                          : "—"}
-                      </div>
-                      <div className="flex justify-center gap-2">
-                        <Link
-                          href={`/sales/${code}/lookup?q=${encodeURIComponent(row.sku)}`}
-                          className="text-carbon-text-muted hover:text-carbon-blue transition-colors"
-                          title="Lookup details"
-                        >
-                          <span className="material-symbols-outlined text-[20px]">
-                            visibility
+                        </td>
+                        <td className="px-3 py-3 text-carbon-text">
+                          {row.color ?? "—"}
+                        </td>
+                        <td className="px-3 py-3 text-carbon-text">
+                          {row.size ?? "—"}
+                        </td>
+                        <td className="px-3 py-3 font-mono text-sm font-medium text-carbon-text">
+                          {row.upc ?? "—"}
+                        </td>
+                        <td className="px-3 py-3 font-mono text-sm font-medium text-carbon-text">
+                          {row.sku}
+                        </td>
+                        <td className="px-3 py-3">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 text-sm font-bold tabular-nums ${pillCls}`}
+                          >
+                            {stock}
                           </span>
-                        </Link>
-                        <Link
-                          href={`/sales/${code}/new?seed=${encodeURIComponent(row.sku)}`}
-                          className="text-carbon-text-muted hover:text-carbon-blue transition-colors"
-                          title="Add to a new sale"
-                        >
-                          <span className="material-symbols-outlined text-[20px]">
-                            add_shopping_cart
-                          </span>
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                        </td>
+                        <td className="px-3 py-3 text-base font-semibold text-right tabular-nums text-carbon-text">
+                          {row.retail_price
+                            ? formatMoney(row.retail_price)
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex justify-center gap-2">
+                            <Link
+                              href={`/sales/${code}/lookup?q=${encodeURIComponent(row.sku)}`}
+                              className="text-carbon-text-muted hover:text-carbon-blue transition-colors"
+                              title="Lookup details"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">
+                                visibility
+                              </span>
+                            </Link>
+                            <Link
+                              href={`/sales/${code}/new?seed=${encodeURIComponent(row.sku)}`}
+                              className="text-carbon-text-muted hover:text-carbon-blue transition-colors"
+                              title="Add to a new sale"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">
+                                add_shopping_cart
+                              </span>
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
             <div className="p-4 border-t border-carbon-border-soft flex items-center justify-between flex-wrap gap-3">
               <p className="text-xs text-carbon-text-muted">
                 Showing {showFrom}–{showTo} of {total.toLocaleString()} products
@@ -320,6 +372,53 @@ export default async function InventoryPage({
         </div>
       </main>
     </AdminShell>
+  );
+}
+
+function SortHeader({
+  keyName,
+  align,
+  q,
+  size,
+  sort,
+  dir,
+  code,
+}: {
+  keyName: SortKey;
+  align: "left" | "right";
+  q: string;
+  size: string;
+  sort: SortKey;
+  dir: "asc" | "desc";
+  code: string;
+}) {
+  const active = sort === keyName;
+  // Click an inactive column → start at asc. Click the active column → flip.
+  const nextDir: "asc" | "desc" = active && dir === "asc" ? "desc" : "asc";
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (size) params.set("size", size);
+  params.set("sort", keyName);
+  params.set("dir", nextDir);
+  const arrow = active ? (dir === "asc" ? "↑" : "↓") : "↕";
+  return (
+    <th className={`px-3 py-3 ${align === "right" ? "text-right" : "text-left"}`}>
+      <Link
+        href={`/inventory/${code}?${params.toString()}`}
+        className={`inline-flex items-center gap-1 hover:text-carbon-blue transition-colors ${
+          active ? "text-carbon-blue" : ""
+        }`}
+        title={`Sort by ${SORT_LABELS[keyName]} ${active && dir === "asc" ? "Z–A" : "A–Z"}`}
+      >
+        <span>{SORT_LABELS[keyName]}</span>
+        <span
+          aria-hidden
+          className={`text-[10px] ${active ? "" : "opacity-40"}`}
+        >
+          {arrow}
+        </span>
+      </Link>
+    </th>
   );
 }
 
