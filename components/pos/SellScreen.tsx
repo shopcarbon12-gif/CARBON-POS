@@ -27,11 +27,9 @@ import type { CartLine } from "@/types/pos";
  */
 export function SellScreen({
   taxRate,
-  registerName,
   code,
 }: {
   taxRate: number;
-  registerName: string;
   /** Active location code (e.g. "003") — used to build navigation URLs. */
   code: string;
   /** Kept for backward-compat; the AdminShell now handles sign-out. */
@@ -170,27 +168,6 @@ export function SellScreen({
       {/* Breadcrumb */}
       <div className="text-xs text-[var(--carbon-muted)] font-bold uppercase tracking-wider">
         /POS — REGISTER SCREEN, {itemCount} ITEM{itemCount === 1 ? "" : "S"} IN CART
-      </div>
-
-      {/* Register header card */}
-      <div className="carbon-card p-5 flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold">{registerName}</h1>
-          <p className="text-sm text-[var(--carbon-muted)] mt-1">
-            Tax rate {(taxRate * 100).toFixed(2)}%
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-800 ring-1 ring-emerald-600/30">
-            Drawer open
-          </span>
-          <button
-            onClick={() => router.push(`/sales/${code}/register`)}
-            className="carbon-btn-secondary tap px-5 font-semibold"
-          >
-            Register
-          </button>
-        </div>
       </div>
 
       {/* Main POS area */}

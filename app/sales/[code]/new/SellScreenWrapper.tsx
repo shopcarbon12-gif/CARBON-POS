@@ -10,16 +10,13 @@ import { SellScreen } from "@/components/pos/SellScreen";
  */
 export function SellScreenWrapper({
   taxRate,
-  registerName,
 }: {
   taxRate: number;
-  registerName: string;
 }) {
   const { code } = useParams<{ code: string }>();
   return (
     <SellScreen
       taxRate={taxRate}
-      registerName={registerName}
       code={String(code ?? "")}
     />
   );

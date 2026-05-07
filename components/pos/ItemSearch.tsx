@@ -75,83 +75,84 @@ export function ItemSearch({
 
   return (
     <div className="relative">
-      <span
-        className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-carbon-text-muted text-2xl pointer-events-none"
-        aria-hidden
-      >
-        search
-      </span>
-      <input
-        ref={inputRef}
-        type="text"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onKeyDown={onKey}
-        placeholder="Scan a barcode or type any part of an item — SKU, UPC, name, color, size…"
-        className="carbon-input tap-lg w-full pl-14 pr-4 py-4 text-xl font-semibold text-carbon-text"
-        autoComplete="off"
-      />
+      {/* Icon + input as flex siblings (NOT absolutely-positioned overlay)
+          because `.carbon-input` declares `padding: 0 12px` as shorthand,
+          which silently wins over Tailwind's pl-* utility and collapsed
+          the icon on top of the typed text. */}
+      <div className="carbon-input tap-lg w-full flex items-center gap-3 pl-4 pr-2 py-2">
+        <span
+          className="material-symbols-outlined text-carbon-text-muted text-2xl shrink-0"
+          aria-hidden
+        >
+          search
+        </span>
+        <input
+          ref={inputRef}
+          type="text"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={onKey}
+          placeholder="Scan a barcode or type any part of an item — SKU, UPC, name, color, size…"
+          className="flex-1 bg-transparent border-0 outline-none p-0 text-xl font-semibold text-carbon-text placeholder:text-carbon-text-muted/70"
+          autoComplete="off"
+        />
+      </div>
       {q && results.length > 0 && (
         <div className="absolute z-10 left-0 right-0 mt-2 carbon-card shadow-lg max-h-[28rem] overflow-auto">
-          <ul className="divide-y divide-carbon-border-soft">
-            {results.map((r) => (
-              <li key={r.id}>
-                <button
-                  type="button"
+          <table className="w-full text-base text-carbon-text border-collapse">
+            <thead>
+              {/* Sticky header row — stays visible while the body
+                  scrolls so column meaning never gets lost. */}
+              <tr className="sticky top-0 z-10 bg-[var(--carbon-surface-soft)] text-xs uppercase tracking-wider font-bold text-carbon-text shadow-[0_1px_0_0_var(--carbon-border-soft)]">
+                <th className="text-left  px-4 py-3">Item</th>
+                <th className="text-left  px-4 py-3">SKU</th>
+                <th className="text-left  px-4 py-3">UPC</th>
+                <th className="text-left  px-4 py-3">Color</th>
+                <th className="text-left  px-4 py-3">Size</th>
+                <th className="text-right px-4 py-3">Price</th>
+                <th className="text-right px-4 py-3">Stock</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-carbon-border-soft">
+              {results.map((r) => (
+                <tr
+                  key={r.id}
                   onClick={() => {
                     onPick(r);
                     setQ("");
                     setResults([]);
                   }}
-                  className="w-full text-left p-4 hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                  className="hover:bg-[var(--carbon-surface-soft)] transition-colors cursor-pointer"
                 >
-                  <div className="flex items-start gap-4">
-                    {/* Image placeholder — Phase 2 wires the WMS media bucket. */}
-                    <div className="w-16 h-16 bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center shrink-0">
-                      <span className="material-symbols-outlined text-carbon-text-muted text-2xl">
-                        checkroom
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-lg font-bold text-carbon-text leading-snug truncate">
-                        {r.item_name}
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-sm">
-                        <DetailField label="SKU">
-                          <span className="font-mono font-semibold text-carbon-text">
-                            {r.sku ?? "—"}
-                          </span>
-                        </DetailField>
-                        <DetailField label="UPC">
-                          <span className="font-mono font-semibold text-carbon-text">
-                            {r.upc ?? "—"}
-                          </span>
-                        </DetailField>
-                        <DetailField label="Color">
-                          <span className="font-semibold text-carbon-text">
-                            {r.color ?? "—"}
-                          </span>
-                        </DetailField>
-                        <DetailField label="Size">
-                          <span className="font-semibold text-carbon-text">
-                            {r.size ?? "—"}
-                          </span>
-                        </DetailField>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-base font-bold tabular-nums text-carbon-text">
-                        {formatMoney(r.retail_price ?? 0)}
-                      </div>
-                      {typeof r.stock_count === "number" ? (
-                        <StockChip n={r.stock_count} />
-                      ) : null}
-                    </div>
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
+                  <td className="px-4 py-3 font-bold text-carbon-text">
+                    {r.item_name}
+                  </td>
+                  <td className="px-4 py-3 font-mono font-semibold text-carbon-text">
+                    {r.sku ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 font-mono font-semibold text-carbon-text">
+                    {r.upc ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-carbon-text">
+                    {r.color ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-carbon-text">
+                    {r.size ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums text-carbon-text">
+                    {formatMoney(r.retail_price ?? 0)}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {typeof r.stock_count === "number" ? (
+                      <StockChip n={r.stock_count} />
+                    ) : (
+                      <span className="text-carbon-text-muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       {q && !loading && results.length === 0 && (
@@ -159,23 +160,6 @@ export function ItemSearch({
           No matches. Try fewer characters.
         </div>
       )}
-    </div>
-  );
-}
-
-function DetailField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-baseline gap-1.5 min-w-0">
-      <span className="text-[10px] uppercase tracking-wider font-bold text-carbon-text-muted shrink-0">
-        {label}
-      </span>
-      <span className="truncate">{children}</span>
     </div>
   );
 }
