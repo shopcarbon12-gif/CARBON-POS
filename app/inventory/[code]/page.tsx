@@ -43,20 +43,41 @@ export default async function InventoryPage({
   const size = (sp.size ?? "").trim();
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
 
-  const args: unknown[] = [cashier.lid];
-  const filters: string[] = ["COALESCE(cs.archived, FALSE) = FALSE"];
+  // Build the rows-query args + the count-query args separately so the
+  // placeholder indices line up cleanly in each statement and pg never
+  // gets unused parameters (which trip "bind message supplies N parameters,
+  // but prepared statement requires M" errors on some pg versions).
+  //
+  // Rows query placeholders:   $1 = lid, $2.. = filters, then LIMIT, OFFSET.
+  // Count query placeholders:  $1.. = filters only (count doesn't need lid).
+  const rowsArgs: unknown[] = [cashier.lid];
+  const countArgs: unknown[] = [];
+  const rowsFilters: string[] = ["COALESCE(cs.archived, FALSE) = FALSE"];
+  const countFilters: string[] = ["COALESCE(cs.archived, FALSE) = FALSE"];
+
   if (q.length > 0) {
-    args.push(`%${q}%`);
-    const i = args.length;
-    filters.push(
-      `(m.description ILIKE $${i} OR cs.sku ILIKE $${i} OR cs.upc ILIKE $${i})`,
+    const like = `%${q}%`;
+    rowsArgs.push(like);
+    countArgs.push(like);
+    rowsFilters.push(
+      `(m.description ILIKE $${rowsArgs.length}
+        OR cs.sku ILIKE $${rowsArgs.length}
+        OR cs.upc ILIKE $${rowsArgs.length})`,
+    );
+    countFilters.push(
+      `(m.description ILIKE $${countArgs.length}
+        OR cs.sku ILIKE $${countArgs.length}
+        OR cs.upc ILIKE $${countArgs.length})`,
     );
   }
   if (size.length > 0) {
-    args.push(size);
-    filters.push(`cs.size = $${args.length}`);
+    rowsArgs.push(size);
+    countArgs.push(size);
+    rowsFilters.push(`cs.size = $${rowsArgs.length}`);
+    countFilters.push(`cs.size = $${countArgs.length}`);
   }
-  const whereExtra = `AND ${filters.join(" AND ")}`;
+  const rowsWhere = `AND ${rowsFilters.join(" AND ")}`;
+  const countWhere = `AND ${countFilters.join(" AND ")}`;
 
   const pool = getPool();
 
@@ -65,9 +86,9 @@ export default async function InventoryPage({
   // The product name lives in `matrices.description` (custom_skus only
   // carries the variant attributes — sku, color_code, size, etc.).
   const offset = (page - 1) * PAGE_SIZE;
-  args.push(PAGE_SIZE, offset);
-  const limitIdx = args.length - 1;
-  const offsetIdx = args.length;
+  rowsArgs.push(PAGE_SIZE, offset);
+  const limitIdx = rowsArgs.length - 1;
+  const offsetIdx = rowsArgs.length;
 
   const [rowsR, totalR, sizesR] = await Promise.all([
     pool.query<{
@@ -100,17 +121,17 @@ export default async function InventoryPage({
               AND i.status        = 'in-stock'
          ) c ON TRUE
         WHERE TRUE
-          ${whereExtra}
+          ${rowsWhere}
         ORDER BY m.description ASC, cs.sku ASC
         LIMIT $${limitIdx}::int OFFSET $${offsetIdx}::int`,
-      args,
+      rowsArgs,
     ),
     pool.query<{ n: string }>(
       `SELECT COUNT(*)::text AS n
          FROM custom_skus cs
          JOIN matrices m ON m.id = cs.matrix_id
-        WHERE TRUE ${whereExtra}`,
-      args.slice(0, args.length - 2),
+        WHERE TRUE ${countWhere}`,
+      countArgs,
     ),
     pool.query<{ size: string }>(
       `SELECT DISTINCT size FROM custom_skus
