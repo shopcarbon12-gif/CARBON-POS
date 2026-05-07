@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-type AdminTab =
+type Tab =
   | "dashboard"
   | "sales"
   | "reports"
@@ -8,64 +8,78 @@ type AdminTab =
   | "employees"
   | "settings";
 
-const NAV: Array<{ href: string; label: string; icon: string; key: AdminTab }> =
-  [
-    { href: "/admin",           label: "Dashboard", icon: "dashboard",     key: "dashboard" },
-    { href: "/admin/sales",     label: "Sales",     icon: "receipt_long",  key: "sales"     },
-    { href: "/admin/reports",   label: "Reports",   icon: "monitoring",    key: "reports"   },
-    { href: "/admin/customers", label: "Customers", icon: "people",        key: "customers" },
-    { href: "/admin/employees", label: "Employees", icon: "badge",         key: "employees" },
-    { href: "/admin/settings",  label: "Settings",  icon: "settings",      key: "settings"  },
-  ];
+const TAB_LABELS: Record<Tab, string> = {
+  dashboard: "Dashboard",
+  sales: "Sales",
+  reports: "Reports",
+  customers: "Customers",
+  employees: "Employees",
+  settings: "Settings",
+};
+
+const NAV: Array<{ key: Tab; icon: string }> = [
+  { key: "dashboard", icon: "dashboard" },
+  { key: "sales", icon: "receipt_long" },
+  { key: "reports", icon: "monitoring" },
+  { key: "customers", icon: "people" },
+  { key: "employees", icon: "badge" },
+  { key: "settings", icon: "settings" },
+];
 
 /**
- * Shared chrome for every /admin/* page. Renders the Carbon shell:
+ * Shared chrome for every authenticated page. Renders the Carbon shell:
  *   left sidebar (256px, white, brand box + nav)  +  topbar (80px, sticky).
- * Children fill the workspace.
+ *
+ * Every nav link is built off `code` so a user signed into location 003
+ * never accidentally lands on /dashboard/005. The page itself is responsible
+ * for redirecting on a code/lcode mismatch (handled by middleware as a
+ * defense-in-depth backstop).
  */
 export function AdminShell({
   email,
   active,
+  code,
   children,
   rightSlot,
-  title = "Carbon POS — Back Office",
+  title,
 }: {
   email: string | null;
-  active: AdminTab;
+  active: Tab;
+  /** Active location code from the URL — used to build all nav links. */
+  code: string;
   children: React.ReactNode;
   rightSlot?: React.ReactNode;
+  /** Override the topbar title. Defaults to "<Tab> · <code>". */
   title?: string;
 }) {
+  const headline = title ?? `${TAB_LABELS[active]} · ${code}`;
   return (
     <div className="flex min-h-screen bg-carbon-bg text-carbon-text">
       <aside className="carbon-sidebar fixed left-0 top-0 h-screen flex flex-col py-8 px-3 z-40">
-        <Link href="/admin" className="mb-10 px-3 flex items-center gap-3">
+        <Link
+          href={`/dashboard/${code}`}
+          className="mb-10 px-3 flex items-center gap-3"
+        >
           <span className="w-10 h-10 bg-carbon-blue text-white font-bold text-xl flex items-center justify-center">
             C
           </span>
           <span>
             <span className="block text-lg font-bold tracking-tight">Carbon</span>
-            <span className="block text-xs text-carbon-text-muted">Back Office</span>
+            <span className="block text-xs text-carbon-text-muted">
+              POS · {code}
+            </span>
           </span>
-        </Link>
-
-        <Link
-          href="/pos"
-          className="carbon-btn-primary mb-8 mx-1 py-3 px-4 flex items-center justify-center gap-2"
-        >
-          <span className="material-symbols-outlined text-base">point_of_sale</span>
-          <span>Open Register</span>
         </Link>
 
         <nav className="flex-1 flex flex-col gap-1">
           {NAV.map((item) => (
             <Link
               key={item.key}
-              href={item.href}
+              href={`/${item.key}/${code}`}
               className={`carbon-nav-item ${active === item.key ? "active" : ""}`}
             >
               <span className="material-symbols-outlined">{item.icon}</span>
-              <span>{item.label}</span>
+              <span>{TAB_LABELS[item.key]}</span>
             </Link>
           ))}
         </nav>
@@ -86,7 +100,7 @@ export function AdminShell({
         style={{ marginLeft: "var(--carbon-sidebar-w)" }}
       >
         <header className="carbon-topbar sticky top-0 z-30 flex items-center justify-between px-8">
-          <h1 className="text-lg font-bold tracking-tight">{title}</h1>
+          <h1 className="text-lg font-bold tracking-tight">{headline}</h1>
           <div className="flex items-center gap-4">{rightSlot}</div>
         </header>
         <main className="flex-1">{children}</main>

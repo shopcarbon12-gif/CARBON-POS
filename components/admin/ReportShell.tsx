@@ -3,18 +3,19 @@ import { currentCashier } from "@/lib/session";
 import { AdminShell } from "./AdminShell";
 
 /**
- * Page chrome for individual /admin/reports/* pages. Renders inside the
- * shared Carbon AdminShell so every page in the back office wears the same
- * sidebar + topbar — and exposes a per-page header strip with a back link
- * to the reports index plus an optional CSV download.
+ * Page chrome for individual /reports/{code}/* pages. Renders inside the
+ * shared Carbon AdminShell with code-aware nav. The page passes `code`
+ * through so the breadcrumb back to /reports/{code} matches the URL.
  */
 export async function ReportShell({
+  code,
   title,
   description,
   filters,
   csvHref,
   children,
 }: {
+  code: string;
   title: string;
   description?: string;
   filters: React.ReactNode;
@@ -26,7 +27,8 @@ export async function ReportShell({
     <AdminShell
       email={cashier?.email ?? null}
       active="reports"
-      title="Reports"
+      code={code}
+      title={`${title} · ${code}`}
       rightSlot={
         csvHref ? (
           <a
@@ -40,7 +42,7 @@ export async function ReportShell({
     >
       <div className="px-8 py-6 border-b border-carbon-border-soft bg-carbon-surface">
         <Link
-          href="/admin/reports"
+          href={`/reports/${code}`}
           className="text-xs uppercase tracking-wider font-bold text-carbon-blue hover:underline"
         >
           ← All reports

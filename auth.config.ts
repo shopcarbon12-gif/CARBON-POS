@@ -6,6 +6,10 @@ declare module "next-auth" {
       id: string;
       role: "cashier" | "supervisor" | "manager" | "admin";
       employee_id: number;
+      /** Active location id (UUID, text) — set at sign-in time. */
+      lid: string;
+      /** Active location code (e.g. "003") — used in URL paths. */
+      lcode: string;
       flow: "pin" | "password";
     } & DefaultSession["user"];
   }
@@ -32,6 +36,8 @@ export const authConfig: NextAuthConfig = {
       if (user) {
         token.role = (user as { role: string }).role;
         token.employee_id = (user as { employee_id: number }).employee_id;
+        token.lid = (user as { lid: string }).lid;
+        token.lcode = (user as { lcode: string }).lcode;
         token.flow = (user as { flow: "pin" | "password" }).flow;
       }
       return token;
@@ -45,6 +51,8 @@ export const authConfig: NextAuthConfig = {
           | "manager"
           | "admin";
         session.user.employee_id = Number(token.employee_id ?? 0);
+        session.user.lid = String(token.lid ?? "");
+        session.user.lcode = String(token.lcode ?? "");
         session.user.flow = (token.flow ?? "pin") as "pin" | "password";
       }
       return session;

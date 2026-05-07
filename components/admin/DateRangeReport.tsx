@@ -18,6 +18,7 @@ export type Column = {
 };
 
 export function DateRangeReport({
+  code,
   title,
   description,
   endpoint,
@@ -27,6 +28,7 @@ export function DateRangeReport({
   columns,
   extraFilters,
 }: {
+  code: string;
   title: string;
   description?: string;
   endpoint: string;
@@ -41,6 +43,7 @@ export function DateRangeReport({
   )}&to=${encodeURIComponent(to)}&format=csv`;
   return (
     <ReportShell
+      code={code}
       title={title}
       description={description}
       csvHref={csvHref}

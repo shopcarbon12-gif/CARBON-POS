@@ -17,10 +17,13 @@ import type { CartLine } from "@/types/pos";
 export function SellScreen({
   taxRate,
   registerName,
+  code,
   onSignOut,
 }: {
   taxRate: number;
   registerName: string;
+  /** Active location code (e.g. "003") — used to build navigation URLs. */
+  code: string;
   onSignOut: () => void;
 }) {
   const router = useRouter();
@@ -147,7 +150,7 @@ export function SellScreen({
     const cart = encodeURIComponent(
       JSON.stringify({ lines, totals, customerName, taxRate }),
     );
-    router.push(`/pos/payment?method=${method}&cart=${cart}`);
+    router.push(`/sales/${code}/payment?method=${method}&cart=${cart}`);
   }
 
   return (
@@ -161,7 +164,7 @@ export function SellScreen({
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => router.push("/pos/register")}
+            onClick={() => router.push(`/sales/${code}/register`)}
             className="tap rounded-xl border border-[var(--color-pos-border)] px-4 font-medium"
           >
             Register
