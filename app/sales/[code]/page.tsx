@@ -109,14 +109,20 @@ export default async function SalesPage({
       args,
     ),
     // Does *this cashier* currently have a register session open at this
-    // location? Drives the button-rail gating.
+    // location? Drives the button-rail gating. We pull the location's
+    // human-readable name in the same round-trip so the "Current register"
+    // header can read "Register 1 at Elementi Florida Mall".
     pool.query(
-      `SELECT s.id, r.name AS register_name
+      `SELECT s.id,
+              r.name AS register_name,
+              l.name AS location_name
          FROM pos_register_sessions s
          JOIN pos_registers r ON r.id = s.register_id
+         JOIN pos_locations pl ON pl.id = r.pos_location_id
+         JOIN locations l      ON l.id  = pl.wms_location_id
         WHERE s.opened_by = $1::uuid
           AND s.status = 'open'
-          AND r.pos_location_id IN (SELECT id FROM pos_locations WHERE wms_location_id = $2::uuid)
+          AND pl.wms_location_id = $2::uuid
         LIMIT 1`,
       [cashier.user_id, cashier.lid],
     ),
@@ -126,45 +132,48 @@ export default async function SalesPage({
   const openRegisterName = openSession.rows[0]?.register_name as
     | string
     | undefined;
+  const openLocationName = openSession.rows[0]?.location_name as
+    | string
+    | undefined;
 
   return (
     <AdminShell email={cashier.email} active="sales" code={code}>
       <section className="p-6">
-        {/* Action button rail */}
-        <div className="mb-6">
+        {/* ───── Section 1 — Current sale ─────
+            New Sale / Exchange / Refund / Lookup when a register is open;
+            Open Register / Lookup when none is. */}
+        <div className="mb-8">
+          <h2 className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted mb-3">
+            Current sale
+          </h2>
           {isRegisterOpen ? (
-            <>
-              <p className="text-xs text-[var(--color-pos-muted)] mb-3 uppercase tracking-wider font-bold">
-                Register: {openRegisterName} — open
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <ActionButton
-                  href={`/sales/${code}/new`}
-                  label="New Sale"
-                  icon="point_of_sale"
-                  primary
-                />
-                <ActionButton
-                  href={`/sales/${code}/exchange`}
-                  label="Exchange"
-                  icon="swap_horiz"
-                />
-                <ActionButton
-                  href={`/sales/${code}/refund`}
-                  label="Refund"
-                  icon="assignment_return"
-                />
-                <ActionButton
-                  href={`/sales/${code}/lookup`}
-                  label="Lookup"
-                  icon="search"
-                />
-              </div>
-            </>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <ActionButton
+                href={`/sales/${code}/new`}
+                label="New Sale"
+                icon="point_of_sale"
+                primary
+              />
+              <ActionButton
+                href={`/sales/${code}/exchange`}
+                label="Exchange"
+                icon="swap_horiz"
+              />
+              <ActionButton
+                href={`/sales/${code}/refund`}
+                label="Refund"
+                icon="assignment_return"
+              />
+              <ActionButton
+                href={`/sales/${code}/lookup`}
+                label="Lookup"
+                icon="search"
+              />
+            </div>
           ) : (
             <>
-              <p className="text-xs text-[var(--color-pos-muted)] mb-3 uppercase tracking-wider font-bold">
-                Register: closed
+              <p className="text-sm text-carbon-text-muted mb-3">
+                Open a register to start a sale.
               </p>
               <div className="grid grid-cols-2 gap-3 max-w-md">
                 <ActionButton
@@ -182,6 +191,49 @@ export default async function SalesPage({
             </>
           )}
         </div>
+
+        {/* ───── Section 2 — Current register (only shown when one is open) ───── */}
+        {isRegisterOpen ? (
+          <div className="mb-8">
+            <h2 className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted mb-1">
+              Current register is &quot;{openRegisterName}&quot;
+            </h2>
+            <p className="text-sm text-carbon-text-muted mb-3 max-w-3xl">
+              The register is where you do sales and refunds. You are
+              currently using{" "}
+              <span className="font-semibold text-carbon-text">
+                &quot;{openRegisterName}&quot;
+              </span>{" "}
+              at{" "}
+              <span className="font-semibold text-carbon-text">
+                &quot;{openLocationName ?? code}&quot;
+              </span>
+              .
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <ActionButton
+                href={`/sales/${code}/register?action=switch`}
+                label="Switch Register"
+                icon="swap_horizontal_circle"
+              />
+              <ActionButton
+                href={`/sales/${code}/register/close`}
+                label="Close Register"
+                icon="logout"
+              />
+              <ActionButton
+                href={`/sales/${code}/register?action=movement`}
+                label="Payout / Drop"
+                icon="payments"
+              />
+              <ActionButton
+                href={`/sales/${code}/register?action=add-amount`}
+                label="Add Amount"
+                icon="add_card"
+              />
+            </div>
+          </div>
+        ) : null}
 
         <form className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-5 items-end">
           <Field label="From">

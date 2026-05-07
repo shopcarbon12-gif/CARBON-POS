@@ -84,7 +84,7 @@ export default async function CustomerDetailPage({
       email={cashier.email}
       active="customers"
       code={code}
-      title={`${[customer.first_name, customer.last_name].filter(Boolean).join(" ")} · ${code}`}
+      title={[customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Customer"}
     >
       <section className="p-6 max-w-7xl">
         <Link

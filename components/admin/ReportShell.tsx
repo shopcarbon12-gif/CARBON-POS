@@ -28,7 +28,7 @@ export async function ReportShell({
       email={cashier?.email ?? null}
       active="reports"
       code={code}
-      title={`${title} · ${code}`}
+      title={title}
       rightSlot={
         csvHref ? (
           <a

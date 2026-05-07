@@ -117,7 +117,7 @@ export default async function InventoryPage({
       email={cashier.email}
       active="inventory"
       code={code}
-      title={`Inventory · ${code}`}
+      title="Inventory"
     >
       <main className="p-6 lg:p-10">
         <div className="max-w-[1440px] mx-auto">

@@ -49,7 +49,7 @@ export default async function PosHomePage({
       email={cashier.email}
       active="pos"
       code={code}
-      title={`Point of Sale · ${code}`}
+      title="Point of Sale"
     >
       <SellScreenWrapper
         taxRate={Number(row.tax_rate)}

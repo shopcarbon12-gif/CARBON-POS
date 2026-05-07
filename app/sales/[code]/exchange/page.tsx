@@ -28,7 +28,7 @@ export default async function ExchangePage({
       email={cashier.email}
       active="sales"
       code={code}
-      title={`Exchange · ${code}`}
+      title="Exchange"
     >
       <section className="p-6 max-w-2xl">
         <div className="carbon-card p-8 text-center">

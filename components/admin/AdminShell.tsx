@@ -60,10 +60,13 @@ export function AdminShell({
   code: string;
   children: React.ReactNode;
   rightSlot?: React.ReactNode;
-  /** Override the topbar title. Defaults to "<Tab> · <code>". */
+  /** Override the topbar title. Defaults to the tab label. */
   title?: string;
 }) {
-  const headline = title ?? `${TAB_LABELS[active]} · ${code}`;
+  // Topbar shows just the tab/page name. The active location is already
+  // visible in the sidebar brand block ("POS · 003"), so repeating the
+  // code in the header is noise.
+  const headline = title ?? TAB_LABELS[active];
   return (
     <div className="flex min-h-screen bg-carbon-bg text-carbon-text">
       <aside className="carbon-sidebar fixed left-0 top-0 h-screen flex flex-col py-8 px-3 z-40">

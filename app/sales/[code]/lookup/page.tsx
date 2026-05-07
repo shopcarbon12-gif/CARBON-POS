@@ -24,7 +24,7 @@ export default async function LookupPage({
       email={cashier.email}
       active="sales"
       code={code}
-      title={`Lookup · ${code}`}
+      title="Lookup"
     >
       <section className="p-6">
         <LookupClient locationId={cashier.lid} code={code} />
