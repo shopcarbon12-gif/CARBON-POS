@@ -1,9 +1,13 @@
 "use client";
 
-import { signOut } from "next-auth/react";
 import { useParams } from "next/navigation";
 import { SellScreen } from "@/components/pos/SellScreen";
 
+/**
+ * Sign-out lives in the AdminShell sidebar now, so the SellScreen no
+ * longer needs an onSignOut prop. The wrapper just threads `code` from
+ * the URL into the cart logic.
+ */
 export function SellScreenWrapper({
   taxRate,
   registerName,
@@ -17,7 +21,6 @@ export function SellScreenWrapper({
       taxRate={taxRate}
       registerName={registerName}
       code={String(code ?? "")}
-      onSignOut={() => signOut({ callbackUrl: "/sign-in" })}
     />
   );
 }

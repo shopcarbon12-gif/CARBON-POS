@@ -4,9 +4,10 @@ import { formatMoney } from "@/lib/utils";
 import type { CartTotals } from "@/types/pos";
 
 /**
- * Right panel of the sell screen. Subtotals + the big TOTAL number that
- * the cashier never has to hunt for, and the three primary payment
- * actions: Charge Card, Take Cash, Other.
+ * Right-side checkout panel per the carbon_sales_interface_active_cart_light
+ * reference. Top: customer + Change pill. Middle: Subtotal / Discount / Tax
+ * with a big Total row. Bottom: Apply discount + Charge Card + Take Cash +
+ * Other.
  */
 export function TotalPanel({
   totals,
@@ -28,61 +29,87 @@ export function TotalPanel({
   disabled: boolean;
 }) {
   return (
-    <aside className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-5 flex flex-col gap-4">
-      <button
-        onClick={onAddCustomer}
-        className="tap rounded-xl border border-dashed border-[var(--color-pos-border)] text-left px-4"
-      >
-        {customerName ? (
-          <span className="font-medium">{customerName}</span>
-        ) : (
-          <span className="text-[var(--color-pos-muted)]">+ Add customer</span>
-        )}
-      </button>
-
-      <div className="grid grid-cols-2 gap-y-2 text-sm">
-        <span className="text-[var(--color-pos-muted)]">Subtotal</span>
-        <span className="text-right">{formatMoney(totals.subtotal)}</span>
-        <span className="text-[var(--color-pos-muted)]">Discount</span>
-        <span className="text-right">−{formatMoney(totals.discount)}</span>
-        <span className="text-[var(--color-pos-muted)]">Tax</span>
-        <span className="text-right">{formatMoney(totals.tax)}</span>
-      </div>
-
-      <div className="border-t border-[var(--color-pos-border)] pt-3">
-        <p className="text-[var(--color-pos-muted)] text-sm">Total</p>
-        <p className="total-display text-5xl tabular-nums">
-          {formatMoney(totals.total)}
-        </p>
-      </div>
-
-      <button
-        onClick={onApplyDiscount}
-        disabled={disabled}
-        className="tap rounded-xl border border-[var(--color-pos-border)] font-medium"
-      >
-        Apply Discount to Sale
-      </button>
-
-      <div className="grid grid-cols-1 gap-2">
+    <aside className="carbon-card flex flex-col">
+      {/* Customer */}
+      <div className="p-6 border-b border-[var(--carbon-border-soft)] flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs text-[var(--carbon-muted)] mb-1 uppercase tracking-wider font-bold">
+            Customer
+          </div>
+          <div className="font-semibold text-lg truncate">
+            {customerName ?? "Walk-in"}
+          </div>
+        </div>
         <button
+          type="button"
+          onClick={onAddCustomer}
+          className="carbon-btn-secondary text-sm font-medium px-4 py-1.5 shrink-0"
+        >
+          Change
+        </button>
+      </div>
+
+      {/* Totals */}
+      <div className="p-6 space-y-3 flex-1">
+        <div className="flex justify-between text-[var(--carbon-muted)]">
+          <span>Subtotal</span>
+          <span className="font-medium text-carbon-text tabular-nums">
+            {formatMoney(totals.subtotal)}
+          </span>
+        </div>
+        {totals.discount > 0 ? (
+          <div className="flex justify-between text-emerald-700">
+            <span>Discount</span>
+            <span className="font-medium tabular-nums">
+              −{formatMoney(totals.discount)}
+            </span>
+          </div>
+        ) : null}
+        <div className="flex justify-between text-[var(--carbon-muted)] pb-4 border-b border-[var(--carbon-border-soft)]">
+          <span>Tax</span>
+          <span className="font-medium text-carbon-text tabular-nums">
+            {formatMoney(totals.tax)}
+          </span>
+        </div>
+        <div className="flex justify-between items-end pt-2">
+          <span className="text-xl font-bold">Total</span>
+          <span className="total-display text-4xl">
+            {formatMoney(totals.total)}
+          </span>
+        </div>
+      </div>
+
+      {/* Payment buttons */}
+      <div className="p-6 space-y-4 bg-[var(--carbon-surface-soft)] border-t border-[var(--carbon-border-soft)]">
+        <button
+          type="button"
+          onClick={onApplyDiscount}
+          disabled={disabled}
+          className="w-full carbon-btn-secondary tap font-semibold disabled:opacity-50"
+        >
+          Apply Discount to Sale
+        </button>
+        <button
+          type="button"
           onClick={onChargeCard}
           disabled={disabled}
-          className="tap-lg rounded-2xl bg-[var(--color-pos-accent)] text-white text-xl font-semibold disabled:opacity-50"
+          className="w-full carbon-btn-primary tap-lg text-lg font-bold disabled:opacity-50"
         >
           Charge Card
         </button>
         <button
+          type="button"
           onClick={onTakeCash}
           disabled={disabled}
-          className="tap-lg rounded-2xl bg-[var(--color-pos-accent-2)] text-white text-xl font-semibold disabled:opacity-50"
+          className="w-full carbon-btn-primary tap-lg text-lg font-bold disabled:opacity-50"
         >
           Take Cash
         </button>
         <button
+          type="button"
           onClick={onOtherPayment}
           disabled={disabled}
-          className="tap rounded-xl border border-[var(--color-pos-border)] font-medium"
+          className="w-full carbon-btn-secondary tap font-semibold disabled:opacity-50"
         >
           Other (Check, Store Credit)
         </button>

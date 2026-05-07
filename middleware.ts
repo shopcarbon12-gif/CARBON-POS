@@ -20,6 +20,7 @@ const { auth } = NextAuth(authConfig);
 const PROTECTED_TABS = [
   "/dashboard",
   "/sales",
+  "/inventory",
   "/reports",
   "/customers",
   "/employees",
@@ -75,6 +76,7 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/sales/:path*",
+    "/inventory/:path*",
     "/reports/:path*",
     "/customers/:path*",
     "/employees/:path*",

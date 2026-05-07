@@ -5,10 +5,9 @@ import { formatMoney } from "@/lib/utils";
 import type { CartLine } from "@/types/pos";
 
 /**
- * Left panel of the sell screen — the cart. One row per CartLine.
- * - Qty stepper for products.
- * - Click the price to edit a line discount.
- * - Trash button to remove a line.
+ * Left-side cart per the carbon_sales_interface_active_cart_light reference.
+ * Each row: title + EPC/SKU subtitle on the left, qty stepper + price + X
+ * remove on the right.
  */
 export function CartPanel({
   lines,
@@ -23,83 +22,102 @@ export function CartPanel({
 }) {
   if (lines.length === 0) {
     return (
-      <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-10 text-center">
-        <p className="text-[var(--color-pos-muted)]">
+      <div className="carbon-card flex-1 flex items-center justify-center min-h-[200px] p-10 text-center">
+        <p className="text-[var(--carbon-muted)]">
           Scan a barcode or search for an item to start a sale.
         </p>
       </div>
     );
   }
   return (
-    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl overflow-hidden">
-      <ul>
-        {lines.map((line) => {
-          const lineSubtotal = line.unit_price * line.quantity;
-          const lineTotal = lineSubtotal - line.discount_amount;
-          return (
-            <li
-              key={line.cart_id}
-              className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-pos-border)] last:border-b-0"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{line.description}</p>
-                <p className="text-xs text-[var(--color-pos-muted)]">
-                  {formatMoney(line.unit_price)} each
-                  {line.discount_amount > 0 && (
-                    <>
-                      {" · "}
+    <div className="carbon-card overflow-hidden flex-1 flex flex-col">
+      <div className="overflow-y-auto flex-1">
+        <ul>
+          {lines.map((line) => {
+            const lineSubtotal = line.unit_price * line.quantity;
+            const lineTotal = lineSubtotal - line.discount_amount;
+            const subtitle = [
+              line.epc ? `EPC ${line.epc}` : null,
+              line.line_type === "product" && line.quantity > 1
+                ? `${line.quantity} × ${formatMoney(line.unit_price)}`
+                : null,
+              line.discount_amount > 0
+                ? `−${formatMoney(line.discount_amount)} off`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <li
+                key={line.cart_id}
+                className="flex items-center justify-between px-4 py-4 border-b border-[var(--carbon-border-soft)] last:border-b-0 hover:bg-[var(--carbon-surface-soft)] transition-colors"
+              >
+                <div className="flex-1 min-w-0 pr-4">
+                  <h3 className="text-base font-semibold truncate">
+                    {line.description}
+                  </h3>
+                  <p className="text-xs text-[var(--carbon-muted)] mt-1 truncate">
+                    {subtitle ||
+                      (line.line_type === "product"
+                        ? formatMoney(line.unit_price)
+                        : "")}
+                  </p>
+                </div>
+                <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+                  {line.line_type === "product" ? (
+                    <div className="flex items-center border border-[var(--carbon-border)] bg-white">
                       <button
-                        onClick={() => onEditDiscount(line.cart_id)}
-                        className="text-[var(--color-pos-accent-2)] underline"
+                        type="button"
+                        onClick={() =>
+                          onChangeQty(
+                            line.cart_id,
+                            Math.max(1, line.quantity - 1),
+                          )
+                        }
+                        aria-label="Decrease quantity"
+                        className="px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
                       >
-                        −{formatMoney(line.discount_amount)} off
+                        <Minus size={16} />
                       </button>
-                    </>
+                      <span className="px-3 py-1 font-medium border-x border-[var(--carbon-border)] min-w-[2.5rem] text-center tabular-nums">
+                        {line.quantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onChangeQty(line.cart_id, line.quantity + 1)}
+                        aria-label="Increase quantity"
+                        className="px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-[var(--carbon-muted)] uppercase tracking-wider font-bold">
+                      Misc
+                    </span>
                   )}
-                </p>
-              </div>
-              {line.line_type === "product" && (
-                <div className="flex items-center gap-2">
                   <button
-                    onClick={() =>
-                      onChangeQty(line.cart_id, Math.max(1, line.quantity - 1))
-                    }
-                    className="tap w-12 rounded-lg border border-[var(--color-pos-border)] flex items-center justify-center"
-                    aria-label="Decrease quantity"
+                    type="button"
+                    onClick={() => onEditDiscount(line.cart_id)}
+                    className="text-right w-24 font-semibold tabular-nums hover:text-carbon-blue"
+                    title="Click to apply a line discount"
                   >
-                    <Minus size={18} />
+                    {formatMoney(lineTotal)}
                   </button>
-                  <span className="w-8 text-center font-semibold">
-                    {line.quantity}
-                  </span>
                   <button
-                    onClick={() => onChangeQty(line.cart_id, line.quantity + 1)}
-                    className="tap w-12 rounded-lg border border-[var(--color-pos-border)] flex items-center justify-center"
-                    aria-label="Increase quantity"
+                    type="button"
+                    onClick={() => onRemove(line.cart_id)}
+                    aria-label="Remove item"
+                    className="text-[var(--carbon-muted)] hover:text-carbon-danger transition-colors"
                   >
-                    <Plus size={18} />
+                    <Trash2 size={18} />
                   </button>
                 </div>
-              )}
-              <div className="w-24 text-right">
-                <button
-                  onClick={() => onEditDiscount(line.cart_id)}
-                  className="font-semibold text-lg"
-                >
-                  {formatMoney(lineTotal)}
-                </button>
-              </div>
-              <button
-                onClick={() => onRemove(line.cart_id)}
-                className="tap w-12 rounded-lg text-[var(--color-pos-muted)] hover:text-[var(--color-pos-danger)] flex items-center justify-center"
-                aria-label="Remove item"
-              >
-                <Trash2 size={18} />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }

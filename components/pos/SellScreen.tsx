@@ -10,21 +10,32 @@ import { calculateTotals } from "@/lib/tax";
 import type { CartLine } from "@/types/pos";
 
 /**
- * The sell screen. Holds cart state in memory until the cashier hits a
- * payment button. The cart is kept here (not persisted) until checkout —
- * Phase 2 adds parking/holding multiple sales.
+ * Sell screen. Renders inside the back-office AdminShell — the layout
+ * matches the carbon_sales_interface_active_cart_light reference:
+ *
+ *   [breadcrumb]
+ *   [register header card]
+ *   ┌──────────────── left ────────────────┐ ┌── right (420px) ──┐
+ *   │ search + RFID                         │ │ Customer           │
+ *   │ cart (item rows w/ qty stepper)       │ │ Subtotal/Disc/Tax  │
+ *   │ Misc · Hold · Clear                   │ │ Total              │
+ *   └───────────────────────────────────────┘ │ Apply discount     │
+ *                                             │ Charge Card        │
+ *                                             │ Take Cash          │
+ *                                             │ Other              │
+ *                                             └────────────────────┘
  */
 export function SellScreen({
   taxRate,
   registerName,
   code,
-  onSignOut,
 }: {
   taxRate: number;
   registerName: string;
   /** Active location code (e.g. "003") — used to build navigation URLs. */
   code: string;
-  onSignOut: () => void;
+  /** Kept for backward-compat; the AdminShell now handles sign-out. */
+  onSignOut?: () => void;
 }) {
   const router = useRouter();
   const [lines, setLines] = useState<CartLine[]>([]);
@@ -37,6 +48,7 @@ export function SellScreen({
     () => calculateTotals(lines, taxRate),
     [lines, taxRate],
   );
+  const itemCount = lines.reduce((n, l) => n + l.quantity, 0);
 
   function addProduct(item: SearchResultItem) {
     const price = Number(item.retail_price ?? 0);
@@ -154,59 +166,66 @@ export function SellScreen({
   }
 
   return (
-    <div className="min-h-screen p-4 sm:p-6">
-      <header className="flex items-center justify-between mb-4">
+    <div className="flex-1 overflow-y-auto p-6 flex flex-col space-y-6">
+      {/* Breadcrumb */}
+      <div className="text-xs text-[var(--carbon-muted)] font-bold uppercase tracking-wider">
+        /POS — REGISTER SCREEN, {itemCount} ITEM{itemCount === 1 ? "" : "S"} IN CART
+      </div>
+
+      {/* Register header card */}
+      <div className="carbon-card p-5 flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{registerName}</h1>
-          <p className="text-xs text-[var(--color-pos-muted)]">
+          <p className="text-sm text-[var(--carbon-muted)] mt-1">
             Tax rate {(taxRate * 100).toFixed(2)}%
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-800 ring-1 ring-emerald-600/30">
+            Drawer open
+          </span>
           <button
             onClick={() => router.push(`/sales/${code}/register`)}
-            className="tap rounded-xl border border-[var(--color-pos-border)] px-4 font-medium"
+            className="carbon-btn-secondary tap px-5 font-semibold"
           >
             Register
           </button>
-          <button
-            onClick={onSignOut}
-            className="tap text-[var(--color-pos-muted)] underline px-3"
-          >
-            Sign out
-          </button>
         </div>
-      </header>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <section className="lg:col-span-3 flex flex-col gap-3">
-          <div className="flex gap-2">
+      {/* Main POS area */}
+      <div className="flex flex-1 gap-6 min-h-0 flex-col xl:flex-row">
+        {/* Left column — search + cart + bottom actions */}
+        <div className="flex-1 flex flex-col space-y-4 min-w-0">
+          <div className="flex gap-4">
             <div className="flex-1">
               <ItemSearch onPick={addProduct} />
             </div>
             <button
               onClick={() => setShowRfid(true)}
-              className="tap-lg rounded-2xl bg-white border border-[var(--color-pos-border)] px-5 font-medium"
+              className="carbon-btn-secondary tap-lg px-6 font-semibold whitespace-nowrap"
             >
               Scan RFID
             </button>
           </div>
+
           <CartPanel
             lines={lines}
             onChangeQty={changeQty}
             onRemove={removeLine}
             onEditDiscount={(id) => setDiscountFor(id)}
           />
-          <div className="grid grid-cols-3 gap-2">
+
+          <div className="flex gap-4 pt-2">
             <button
               onClick={() => setShowMisc(true)}
-              className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-medium"
+              className="flex-1 carbon-btn-secondary tap font-semibold"
             >
               Misc Charge
             </button>
             <button
               disabled={lines.length === 0}
-              className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-medium disabled:opacity-50"
+              className="flex-1 carbon-btn-secondary tap font-semibold disabled:opacity-50"
               title="Phase 2"
             >
               Hold Sale
@@ -214,14 +233,15 @@ export function SellScreen({
             <button
               onClick={() => setLines([])}
               disabled={lines.length === 0}
-              className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-medium disabled:opacity-50"
+              className="flex-1 tap font-semibold border border-red-200 text-carbon-danger hover:bg-red-50 disabled:opacity-50 transition-colors"
             >
               Clear All
             </button>
           </div>
-        </section>
+        </div>
 
-        <section className="lg:col-span-2">
+        {/* Right column — checkout */}
+        <div className="xl:w-[420px] flex-shrink-0">
           <TotalPanel
             totals={totals}
             customerName={customerName}
@@ -237,7 +257,7 @@ export function SellScreen({
             onOtherPayment={() => startCheckout("other")}
             disabled={lines.length === 0}
           />
-        </section>
+        </div>
       </div>
 
       <RFIDScanModal
@@ -281,14 +301,14 @@ function MiscChargeModal({
   return (
     <BasicModal title="Misc Charge" onCancel={onCancel}>
       <p className="text-[var(--color-pos-muted)]">
-        For items not in the catalog. Don't use this if a barcode exists.
+        For items not in the catalog. Don&apos;t use this if a barcode exists.
       </p>
       <label className="block mt-3 text-sm font-medium">Description</label>
       <input
         autoFocus
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3 mt-1"
+        className="tap w-full border border-[var(--color-pos-border)] px-3 mt-1"
       />
       <label className="block mt-3 text-sm font-medium">Amount</label>
       <input
@@ -297,12 +317,12 @@ function MiscChargeModal({
         min="0"
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
-        className="tap-lg w-full rounded-xl border border-[var(--color-pos-border)] px-3 text-2xl font-semibold mt-1"
+        className="tap-lg w-full border border-[var(--color-pos-border)] px-3 text-2xl font-semibold mt-1"
       />
       <div className="mt-5 flex gap-2">
         <button
           onClick={onCancel}
-          className="tap rounded-xl border border-[var(--color-pos-border)] flex-1 font-medium"
+          className="tap border border-[var(--color-pos-border)] flex-1 font-medium"
         >
           Cancel
         </button>
@@ -312,7 +332,7 @@ function MiscChargeModal({
             if (!description.trim() || !Number.isFinite(n) || n <= 0) return;
             onAdd(description.trim(), n);
           }}
-          className="tap rounded-xl bg-[var(--color-pos-ink)] text-white flex-1 font-semibold"
+          className="tap carbon-btn-primary flex-1 font-semibold"
         >
           Add
         </button>
@@ -340,9 +360,9 @@ function DiscountModal({
       <div className="grid grid-cols-2 gap-2 mt-2">
         <button
           onClick={() => setMode("percent")}
-          className={`tap rounded-lg border ${
+          className={`tap border ${
             mode === "percent"
-              ? "bg-[var(--color-pos-ink)] text-white border-[var(--color-pos-ink)]"
+              ? "carbon-btn-primary"
               : "border-[var(--color-pos-border)]"
           }`}
         >
@@ -350,9 +370,9 @@ function DiscountModal({
         </button>
         <button
           onClick={() => setMode("fixed")}
-          className={`tap rounded-lg border ${
+          className={`tap border ${
             mode === "fixed"
-              ? "bg-[var(--color-pos-ink)] text-white border-[var(--color-pos-ink)]"
+              ? "carbon-btn-primary"
               : "border-[var(--color-pos-border)]"
           }`}
         >
@@ -367,7 +387,7 @@ function DiscountModal({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={mode === "percent" ? "10" : "5.00"}
-        className="tap-lg w-full rounded-xl border border-[var(--color-pos-border)] px-3 text-3xl font-semibold mt-3"
+        className="tap-lg w-full border border-[var(--color-pos-border)] px-3 text-3xl font-semibold mt-3"
       />
       {mode === "percent" && Number(value) > 20 && (
         <p className="text-xs text-amber-700 mt-2">
@@ -377,7 +397,7 @@ function DiscountModal({
       <div className="mt-5 flex gap-2">
         <button
           onClick={onCancel}
-          className="tap rounded-xl border border-[var(--color-pos-border)] flex-1 font-medium"
+          className="tap border border-[var(--color-pos-border)] flex-1 font-medium"
         >
           Cancel
         </button>
@@ -387,7 +407,7 @@ function DiscountModal({
             if (!Number.isFinite(n) || n <= 0) return;
             onApply(n, mode === "percent");
           }}
-          className="tap rounded-xl bg-[var(--color-pos-ink)] text-white flex-1 font-semibold"
+          className="tap carbon-btn-primary flex-1 font-semibold"
         >
           Apply
         </button>
@@ -407,7 +427,7 @@ function BasicModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white w-full sm:max-w-md rounded-2xl p-6 shadow-lg">
+      <div className="bg-white w-full sm:max-w-md p-6 shadow-lg">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-xl font-bold">{title}</h2>
           <button

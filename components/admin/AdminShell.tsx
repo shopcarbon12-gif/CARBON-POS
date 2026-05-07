@@ -3,6 +3,8 @@ import Link from "next/link";
 type Tab =
   | "dashboard"
   | "sales"
+  | "pos"
+  | "inventory"
   | "reports"
   | "customers"
   | "employees"
@@ -11,19 +13,28 @@ type Tab =
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: "Dashboard",
   sales: "Sales",
+  pos: "Point of Sale",
+  inventory: "Inventory",
   reports: "Reports",
   customers: "Customers",
   employees: "Employees",
   settings: "Settings",
 };
 
-const NAV: Array<{ key: Tab; icon: string }> = [
-  { key: "dashboard", icon: "dashboard" },
-  { key: "sales", icon: "receipt_long" },
-  { key: "reports", icon: "monitoring" },
-  { key: "customers", icon: "people" },
-  { key: "employees", icon: "badge" },
-  { key: "settings", icon: "settings" },
+/**
+ * `pos` is the cashier sell screen and `inventory` is the catalog browser —
+ * both have their own sidebar entries per the stitch_luxe_cloud_pos
+ * references. POS deep-links to /sales/{code}/new (the sell screen route).
+ */
+const NAV: Array<{ key: Tab; icon: string; href: (code: string) => string }> = [
+  { key: "dashboard", icon: "dashboard",     href: (c) => `/dashboard/${c}` },
+  { key: "sales",     icon: "receipt_long",  href: (c) => `/sales/${c}` },
+  { key: "pos",       icon: "point_of_sale", href: (c) => `/sales/${c}/new` },
+  { key: "inventory", icon: "inventory_2",   href: (c) => `/inventory/${c}` },
+  { key: "reports",   icon: "monitoring",    href: (c) => `/reports/${c}` },
+  { key: "customers", icon: "people",        href: (c) => `/customers/${c}` },
+  { key: "employees", icon: "badge",         href: (c) => `/employees/${c}` },
+  { key: "settings",  icon: "settings",      href: (c) => `/settings/${c}` },
 ];
 
 /**
@@ -75,7 +86,7 @@ export function AdminShell({
           {NAV.map((item) => (
             <Link
               key={item.key}
-              href={`/${item.key}/${code}`}
+              href={item.href(code)}
               className={`carbon-nav-item ${active === item.key ? "active" : ""}`}
             >
               <span className="material-symbols-outlined">{item.icon}</span>
