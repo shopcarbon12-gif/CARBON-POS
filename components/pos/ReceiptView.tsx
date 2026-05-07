@@ -114,6 +114,8 @@ export function humanMethod(m: string): string {
       cash: "Cash",
       check: "Check",
       store_credit: "Store credit",
+      account: "Account",
+      gift_card: "Gift card",
     }[m] ?? m
   );
 }

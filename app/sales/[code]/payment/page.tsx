@@ -212,13 +212,22 @@ function PaymentInner() {
         <OtherSection
           total={total}
           saving={saving}
-          onCheck={(checkNumber) =>
-            finishSale([
-              { method: "check", amount: total, check_number: checkNumber },
-            ])
-          }
           onStoreCredit={() =>
             finishSale([{ method: "store_credit", amount: total }])
+          }
+          onAccount={(reference) =>
+            finishSale([
+              { method: "account", amount: total, reference: reference || null },
+            ])
+          }
+          onGiftCard={(giftCardNumber) =>
+            finishSale([
+              {
+                method: "gift_card",
+                amount: total,
+                gift_card_number: giftCardNumber,
+              },
+            ])
           }
         />
       )}
@@ -315,7 +324,9 @@ type SubmitPayment =
     }
   | { method: "cash"; amount: number; cash_given: number }
   | { method: "check"; amount: number; check_number: string }
-  | { method: "store_credit"; amount: number };
+  | { method: "store_credit"; amount: number }
+  | { method: "account"; amount: number; reference: string | null }
+  | { method: "gift_card"; amount: number; gift_card_number: string };
 
 function MethodTab({
   active,
@@ -343,45 +354,81 @@ function MethodTab({
 function OtherSection({
   total,
   saving,
-  onCheck,
   onStoreCredit,
+  onAccount,
+  onGiftCard,
 }: {
   total: number;
   saving: boolean;
-  onCheck: (n: string) => void;
   onStoreCredit: () => void;
+  onAccount: (reference: string) => void;
+  onGiftCard: (cardNumber: string) => void;
 }) {
-  const [checkNumber, setCheckNumber] = useState("");
+  const [accountRef, setAccountRef] = useState("");
+  const [giftCardNumber, setGiftCardNumber] = useState("");
   return (
-    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6 flex flex-col gap-4">
+    <div className="carbon-card p-6 flex flex-col gap-5">
+      {/* Store Credit */}
       <div>
-        <p className="font-medium mb-1">Check</p>
-        <input
-          type="text"
-          value={checkNumber}
-          onChange={(e) => setCheckNumber(e.target.value)}
-          placeholder="Check number"
-          className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3"
-        />
-        <button
-          disabled={!checkNumber.trim() || saving}
-          onClick={() => onCheck(checkNumber.trim())}
-          className="tap rounded-xl bg-[var(--color-pos-ink)] text-white font-semibold mt-2 w-full disabled:opacity-50"
-        >
-          Take {formatMoney(total)} by check
-        </button>
-      </div>
-      <div className="border-t border-[var(--color-pos-border)] pt-4">
-        <p className="font-medium mb-1">Store Credit</p>
-        <p className="text-sm text-[var(--color-pos-muted)] mb-2">
+        <p className="font-bold text-carbon-text mb-1">Store Credit</p>
+        <p className="text-sm text-carbon-text-muted mb-3">
           Applies the customer&apos;s store credit balance to this sale.
         </p>
         <button
+          type="button"
           disabled={saving}
           onClick={onStoreCredit}
-          className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-semibold w-full"
+          className="carbon-btn-secondary tap w-full font-semibold disabled:opacity-50"
         >
           Use store credit ({formatMoney(total)})
+        </button>
+      </div>
+
+      {/* Account */}
+      <div className="border-t border-carbon-border-soft pt-5">
+        <p className="font-bold text-carbon-text mb-1">Charge to Account</p>
+        <p className="text-sm text-carbon-text-muted mb-3">
+          Charges the customer&apos;s house account on file. Reference is
+          optional (PO number, note for the receipt).
+        </p>
+        <input
+          type="text"
+          value={accountRef}
+          onChange={(e) => setAccountRef(e.target.value)}
+          placeholder="Reference (optional)"
+          className="carbon-input tap w-full px-3 mb-2"
+        />
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => onAccount(accountRef.trim())}
+          className="carbon-btn-primary tap w-full font-semibold disabled:opacity-50"
+        >
+          Charge {formatMoney(total)} to account
+        </button>
+      </div>
+
+      {/* Gift Card */}
+      <div className="border-t border-carbon-border-soft pt-5">
+        <p className="font-bold text-carbon-text mb-1">Gift Card</p>
+        <p className="text-sm text-carbon-text-muted mb-3">
+          Apply a gift card to this sale. Enter the card number / serial
+          printed on the back.
+        </p>
+        <input
+          type="text"
+          value={giftCardNumber}
+          onChange={(e) => setGiftCardNumber(e.target.value)}
+          placeholder="Gift card number"
+          className="carbon-input tap w-full px-3 mb-2"
+        />
+        <button
+          type="button"
+          disabled={!giftCardNumber.trim() || saving}
+          onClick={() => onGiftCard(giftCardNumber.trim())}
+          className="carbon-btn-primary tap w-full font-semibold disabled:opacity-50"
+        >
+          Pay {formatMoney(total)} with gift card
         </button>
       </div>
     </div>

@@ -40,6 +40,20 @@ const storeCreditPayment = z.object({
   amount: z.number().positive(),
 });
 
+const accountPayment = z.object({
+  method: z.literal("account"),
+  amount: z.number().positive(),
+  /** Optional reference (PO number, customer note) — printed on the receipt. */
+  reference: z.string().max(120).optional().nullable(),
+});
+
+const giftCardPayment = z.object({
+  method: z.literal("gift_card"),
+  amount: z.number().positive(),
+  /** Card number / serial — recorded on the payment row. */
+  gift_card_number: z.string().min(1).max(64),
+});
+
 const schema = z.object({
   register_id: z.number().int().positive(),
   customer_id: z.number().int().positive().nullable().optional(),
@@ -47,7 +61,14 @@ const schema = z.object({
   lines: z.array(lineSchema).min(1),
   payments: z
     .array(
-      z.union([cardPayment, cashPayment, checkPayment, storeCreditPayment]),
+      z.union([
+        cardPayment,
+        cashPayment,
+        checkPayment,
+        storeCreditPayment,
+        accountPayment,
+        giftCardPayment,
+      ]),
     )
     .min(1),
 });
@@ -217,6 +238,7 @@ export async function POST(req: Request) {
         let intentId: string | null = null;
         let readerId: string | null = null;
         let checkNumber: string | null = null;
+        let reference: string | null = null;
         if (p.method === "cash") {
           cashGiven = p.cash_given;
           changeGiven = round(Math.max(0, p.cash_given - p.amount));
@@ -228,13 +250,19 @@ export async function POST(req: Request) {
         if (p.method === "check") {
           checkNumber = p.check_number;
         }
+        if (p.method === "account") {
+          reference = p.reference?.trim() || null;
+        }
+        if (p.method === "gift_card") {
+          reference = p.gift_card_number.trim();
+        }
         await client.query(
           `INSERT INTO pos_payments
              (sale_id, method, amount,
               stripe_payment_intent_id, stripe_reader_id,
               cash_given, change_given, check_number,
-              status, processed_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'completed', now())`,
+              reference, status, processed_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'completed', now())`,
           [
             sale.id,
             p.method,
@@ -244,6 +272,7 @@ export async function POST(req: Request) {
             cashGiven,
             changeGiven,
             checkNumber,
+            reference,
           ],
         );
       }

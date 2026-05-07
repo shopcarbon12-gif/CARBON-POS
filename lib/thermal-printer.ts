@@ -31,7 +31,7 @@ type LineRow = {
 };
 
 type PaymentRow = {
-  method: "card" | "cash" | "check" | "store_credit";
+  method: "card" | "cash" | "check" | "store_credit" | "account" | "gift_card";
   amount: string;
   change_given: string | null;
 };
@@ -161,6 +161,12 @@ function humanMethod(m: PaymentRow["method"]): string {
       return "Check";
     case "store_credit":
       return "Store credit";
+    default:
+      // 'account' / 'gift_card' / future methods — fall back to a
+      // tidied capitalisation rather than printing the raw enum.
+      return String(m)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 }
 
