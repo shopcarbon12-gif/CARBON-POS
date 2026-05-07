@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export type CustomerFormInitial = {
   id?: number;
@@ -53,6 +53,7 @@ export function CustomerForm({
   initial: CustomerFormInitial | null;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const isEdit = Boolean(initial?.id);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -164,8 +165,35 @@ export function CustomerForm({
       setDone(true);
       router.refresh();
     } else {
-      const j = (await res.json()) as { customer?: { id?: number } };
-      const newId = j.customer?.id;
+      const j = (await res.json()) as {
+        customer?: {
+          id?: number;
+          first_name?: string;
+          last_name?: string | null;
+          email?: string | null;
+          mobile_phone?: string | null;
+          phone?: string | null;
+        };
+      };
+      const c = j.customer;
+      const newId = c?.id;
+      // ?next=…  round-trip — used by the POS sell screen so a new
+      // customer gets attached to the in-progress sale on return.
+      const next = searchParams.get("next");
+      if (newId && next && next.startsWith("/")) {
+        const fullName = [c?.first_name, c?.last_name]
+          .filter(Boolean)
+          .join(" ");
+        const params = new URLSearchParams();
+        params.set("customer_id", String(newId));
+        params.set("customer_name", fullName);
+        if (c?.email) params.set("customer_email", c.email);
+        const phone = c?.mobile_phone || c?.phone;
+        if (phone) params.set("customer_phone", phone);
+        const sep = next.includes("?") ? "&" : "?";
+        router.replace(`${next}${sep}${params.toString()}`);
+        return;
+      }
       router.replace(
         newId ? `/customers/${code}/${newId}` : `/customers/${code}`,
       );

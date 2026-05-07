@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { stripe } from "@/lib/stripe-terminal";
 import { withTransaction, getPool } from "@/lib/db";
+import { queueLoyaltyCall } from "@/lib/loyalty-client";
 import { currentCashier } from "@/lib/session";
 import { formatSaleNumber } from "@/lib/utils";
 
@@ -13,7 +14,7 @@ const lineSchema = z.object({
   unit_price: z.number().nonnegative(),
   discount_amount: z.number().nonnegative(),
   tax_rate: z.number().nonnegative(),
-  line_type: z.enum(["product", "misc", "gift_card"]),
+  line_type: z.enum(["product", "misc", "gift_card", "loyalty_redemption"]),
 });
 
 const cardPayment = z.object({
@@ -289,6 +290,45 @@ export async function POST(req: Request) {
             WHERE epc = ANY($1::text[])`,
           [epcs],
         );
+      }
+
+      // Loyalty hook — queue earn + (optional) redemption rows in
+      // pos_loyalty_outbox so a worker can drain them async without
+      // blocking the cashier on loyalty.shopcarbon.com latency.
+      // Only fires when a customer is attached (walk-in sales skip).
+      if (data.customer_id != null) {
+        const giftCardLineValue = data.lines
+          .filter((l) => l.line_type === "gift_card")
+          .reduce((s, l) => s + l.unit_price * l.quantity, 0);
+        const eligibleAmount = Math.max(0, subtotal - discount - giftCardLineValue);
+        if (eligibleAmount > 0) {
+          await queueLoyaltyCall(client, "/api/v1/earn", {
+            customer_id: data.customer_id,
+            sale_id: sale.id,
+            location_id: null, // wms_location_id is on locations, not pos_locations
+            eligible_amount: eligibleAmount,
+            occurred_at: new Date().toISOString(),
+          });
+        }
+        // Detect redemption lines and queue separately. line_type
+        // 'loyalty_redemption' is added in the same shipment.
+        const redemptionLine = data.lines.find(
+          (l) => (l as { line_type: string }).line_type === "loyalty_redemption",
+        );
+        if (redemptionLine) {
+          // unit_price is negative on redemption lines; convert back to
+          // positive points using the in-cart-encoded ratio (we'll store
+          // the points count in description for now; B2 polishes this).
+          const ptsMatch = redemptionLine.description.match(/(\d+)\s*pts?/i);
+          const pts = ptsMatch ? Number(ptsMatch[1]) : 0;
+          if (pts > 0) {
+            await queueLoyaltyCall(client, "/api/v1/redeem", {
+              customer_id: data.customer_id,
+              sale_id: sale.id,
+              points: pts,
+            });
+          }
+        }
       }
 
       // Best-effort audit row. Schema for audit_log varies by deployment;

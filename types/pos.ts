@@ -161,7 +161,7 @@ export type PosSaleLine = {
   tax_rate: string;
   tax_amount: string;
   line_total: string;
-  line_type: "product" | "misc" | "gift_card";
+  line_type: "product" | "misc" | "gift_card" | "loyalty_redemption";
 };
 
 export type PosPayment = {
@@ -216,7 +216,7 @@ export type CartLine = {
   unit_price: number;
   discount_amount: number;
   tax_rate: number;
-  line_type: "product" | "misc" | "gift_card";
+  line_type: "product" | "misc" | "gift_card" | "loyalty_redemption";
 };
 
 export type CartTotals = {

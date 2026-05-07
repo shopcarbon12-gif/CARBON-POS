@@ -11,6 +11,7 @@ type CartPayload = {
   lines: CartLine[];
   totals: CartTotals;
   customerName: string | null;
+  customerId?: number | null;
   taxRate: number;
 };
 
@@ -108,6 +109,7 @@ function PaymentInner() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         register_id: registerId,
+        customer_id: cart.customerId ?? null,
         lines: cart.lines.map((l) => ({
           sku_id: l.sku_id,
           epc: l.epc,
@@ -128,6 +130,12 @@ function PaymentInner() {
       return;
     }
     const data = await res.json();
+    // Clear the persisted SellScreen cart so the next sale starts empty.
+    try {
+      window.localStorage.removeItem(`pos:cart:${code}`);
+    } catch {
+      /* ignore */
+    }
     router.replace(`/sales/${code}/receipt?sale=${data.sale.id}`);
   }
 

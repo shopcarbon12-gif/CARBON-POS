@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ItemSearch, type SearchResultItem } from "./ItemSearch";
 import { CartPanel } from "./CartPanel";
-import { TotalPanel } from "./TotalPanel";
+import { TotalPanel, type PickedCustomer } from "./TotalPanel";
+import { RedeemPointsModal } from "./RedeemPointsModal";
 import { RFIDScanModal, type RfidResolvedItem } from "./RFIDScanModal";
 import { calculateTotals } from "@/lib/tax";
 import type { CartLine } from "@/types/pos";
@@ -36,17 +37,135 @@ export function SellScreen({
   onSignOut?: () => void;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [lines, setLines] = useState<CartLine[]>([]);
   const [showRfid, setShowRfid] = useState(false);
   const [showMisc, setShowMisc] = useState(false);
   const [discountFor, setDiscountFor] = useState<string | "sale" | null>(null);
-  const [customerName, setCustomerName] = useState<string | null>(null);
+  const [customer, setCustomer] = useState<PickedCustomer | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  const cartKey = `pos:cart:${code}`;
+
+  // Hydrate cart + customer from localStorage; if the URL carries
+  // ?customer_id&customer_name (return trip from /customers/{code}/new),
+  // honor those over whatever was persisted.
+  useEffect(() => {
+    let restoredLines: CartLine[] = [];
+    let restoredCustomer: PickedCustomer | null = null;
+    try {
+      const raw = window.localStorage.getItem(cartKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          lines?: CartLine[];
+          customer?: PickedCustomer | null;
+        };
+        if (Array.isArray(parsed.lines)) restoredLines = parsed.lines;
+        if (parsed.customer) restoredCustomer = parsed.customer;
+      }
+    } catch {
+      /* corrupt LS — start fresh */
+    }
+    const urlId = searchParams.get("customer_id");
+    const urlName = searchParams.get("customer_name");
+    const urlEmail = searchParams.get("customer_email");
+    const urlPhone = searchParams.get("customer_phone");
+    if (urlId && urlName) {
+      restoredCustomer = {
+        id: Number(urlId),
+        name: urlName,
+        email: urlEmail || null,
+        phone: urlPhone || null,
+      };
+      // Strip the params from the URL so a refresh doesn't re-attach.
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete("customer_id");
+      next.delete("customer_name");
+      next.delete("customer_email");
+      next.delete("customer_phone");
+      const qs = next.toString();
+      router.replace(`/sales/${code}/new${qs ? `?${qs}` : ""}`);
+    }
+    if (restoredLines.length) setLines(restoredLines);
+    if (restoredCustomer) setCustomer(restoredCustomer);
+    setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist whenever cart or customer changes.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(
+        cartKey,
+        JSON.stringify({ lines, customer }),
+      );
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [lines, customer, hydrated, cartKey]);
 
   const totals = useMemo(
     () => calculateTotals(lines, taxRate),
     [lines, taxRate],
   );
   const itemCount = lines.reduce((n, l) => n + l.quantity, 0);
+
+  // ── Loyalty integration ─────────────────────────────────────────────
+  // When a customer is attached, fetch their balance from
+  // /api/pos/loyalty/balance (a thin proxy on POS that calls
+  // loyalty.shopcarbon.com server-side with the API key). Cleared on
+  // detach. RedeemPointsModal is gated on having a balance + subtotal.
+  const [loyaltyBalance, setLoyaltyBalance] = useState<number | null>(null);
+  const [redeemSettings, setRedeemSettings] = useState<{
+    redeemPointsPerDollar: number;
+    redeemIncrement: number;
+    minRedeemPoints: number;
+    maxPctOfOrder: number;
+  }>({ redeemPointsPerDollar: 10, redeemIncrement: 100, minRedeemPoints: 100, maxPctOfOrder: 50 });
+  const [showRedeem, setShowRedeem] = useState(false);
+
+  useEffect(() => {
+    if (!customer) {
+      setLoyaltyBalance(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(`/api/pos/loyalty/balance?customer_id=${customer.id}`);
+        if (!r.ok) return;
+        const data = (await r.json()) as {
+          balance?: number;
+          settings?: typeof redeemSettings;
+        };
+        if (cancelled) return;
+        if (typeof data.balance === "number") setLoyaltyBalance(data.balance);
+        if (data.settings) setRedeemSettings(data.settings);
+      } catch {
+        /* swallow — loyalty offline; cashier proceeds without points */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [customer]);
+
+  function applyRedemption(points: number, dollars: number) {
+    setLines((prev) => [
+      ...prev.filter((l) => l.line_type !== "loyalty_redemption"),
+      {
+        cart_id: cryptoId(),
+        sku_id: null,
+        epc: null,
+        description: `Loyalty redemption · ${points} pts`,
+        quantity: 1,
+        unit_price: 0,
+        discount_amount: dollars,
+        tax_rate: 0,
+        line_type: "loyalty_redemption",
+      },
+    ]);
+    setShowRedeem(false);
+  }
 
   function addProduct(item: SearchResultItem) {
     const price = Number(item.retail_price ?? 0);
@@ -158,7 +277,13 @@ export function SellScreen({
   function startCheckout(method: "card" | "cash" | "other") {
     if (lines.length === 0) return;
     const cart = encodeURIComponent(
-      JSON.stringify({ lines, totals, customerName, taxRate }),
+      JSON.stringify({
+        lines,
+        totals,
+        customerName: customer?.name ?? null,
+        customerId: customer?.id ?? null,
+        taxRate,
+      }),
     );
     router.push(`/sales/${code}/payment?method=${method}&cart=${cart}`);
   }
@@ -221,19 +346,41 @@ export function SellScreen({
         <div className="xl:w-[420px] flex-shrink-0">
           <TotalPanel
             totals={totals}
-            customerName={customerName}
-            onAddCustomer={() => {
-              const name = window.prompt(
-                "Customer name (optional, helps for receipts):",
+            customer={customer}
+            loyaltyBalance={loyaltyBalance}
+            onPickCustomer={setCustomer}
+            onClearCustomer={() => setCustomer(null)}
+            onNewCustomer={() => {
+              // Round-trip: cart + customer are already persisted to LS.
+              // CustomerForm appends ?customer_id&customer_name on its
+              // post-create redirect when ?next= is present.
+              router.push(
+                `/customers/${code}/new?next=${encodeURIComponent(
+                  `/sales/${code}/new`,
+                )}`,
               );
-              if (name && name.trim()) setCustomerName(name.trim());
             }}
+            onRedeemPoints={() => setShowRedeem(true)}
             onApplyDiscount={() => setDiscountFor("sale")}
             onChargeCard={() => startCheckout("card")}
             onTakeCash={() => startCheckout("cash")}
             onOtherPayment={() => startCheckout("other")}
             disabled={lines.length === 0}
           />
+          {customer && loyaltyBalance !== null ? (
+            <RedeemPointsModal
+              open={showRedeem}
+              customer={{ name: customer.name }}
+              balance={loyaltyBalance}
+              subtotal={totals.subtotal}
+              redeemPointsPerDollar={redeemSettings.redeemPointsPerDollar}
+              redeemIncrement={redeemSettings.redeemIncrement}
+              minRedeemPoints={redeemSettings.minRedeemPoints}
+              maxPctOfOrder={redeemSettings.maxPctOfOrder}
+              onConfirm={applyRedemption}
+              onClose={() => setShowRedeem(false)}
+            />
+          ) : null}
         </div>
       </div>
 
