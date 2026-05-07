@@ -208,7 +208,7 @@ export function AdminShell({
         <Link
           href={`/dashboard/${code}`}
           onClick={onNavClick}
-          className="mb-10 px-3 flex items-center gap-3"
+          className="mb-10 px-3 flex items-end gap-3"
         >
           {/* Brand logo. Drop the source file at public/logo.jpg — the
               <img> tag falls back to a colored "C" tile if the file is
@@ -217,7 +217,7 @@ export function AdminShell({
           <img
             src="/logo.jpg"
             alt="Carbon"
-            className="w-10 h-10 object-cover"
+            className="w-24 h-24 object-cover shrink-0"
             onError={(e) => {
               const el = e.currentTarget;
               el.style.display = "none";
@@ -226,11 +226,13 @@ export function AdminShell({
             }}
           />
           <span
-            className="w-10 h-10 bg-carbon-blue text-white font-bold text-xl items-center justify-center hidden"
+            className="w-24 h-24 bg-carbon-blue text-white font-bold text-4xl items-center justify-center hidden shrink-0"
           >
             C
           </span>
-          <span className="carbon-wordmark text-2xl font-semibold tracking-tight text-carbon-text">
+          {/* Bottom-aligned wordmark — sits flush with the bottom edge of
+              the logo so the two read as a single lockup. */}
+          <span className="carbon-wordmark text-2xl font-semibold tracking-tight text-carbon-text leading-none pb-1">
             CarbonPOS
           </span>
         </Link>
@@ -395,8 +397,10 @@ function LocationBox({
     </>
   );
 
+  // mb-20 = ~80px of breathing room (≈ two nav-button heights) so the
+  // location box clearly separates from the Dashboard nav item.
   const baseCls =
-    "mb-4 mx-1 px-3 py-2.5 flex items-center gap-2 border bg-[var(--carbon-blue-soft)] border-carbon-blue/30";
+    "mb-20 mx-1 px-3 py-2.5 flex items-center gap-2 border bg-[var(--carbon-blue-soft)] border-carbon-blue/30";
 
   if (canSwitch) {
     return (

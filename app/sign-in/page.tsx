@@ -171,11 +171,19 @@ function SignInInner() {
         className="hidden lg:flex flex-col justify-between p-12 text-white"
         style={{ background: "var(--carbon-blue)" }}
       >
-        <div className="flex items-center gap-3">
-          <span className="w-10 h-10 bg-white text-carbon-blue font-bold text-xl flex items-center justify-center">
-            C
+        <div className="flex items-end gap-4">
+          {/* Logo lockup — bigger logo with the CarbonPOS wordmark in
+              Neuzeit Grotesk bottom-aligned beside it. Wordmark color
+              is black per spec. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.jpg"
+            alt="Carbon"
+            className="w-40 h-40 object-cover shrink-0"
+          />
+          <span className="carbon-wordmark text-5xl font-semibold tracking-tight leading-none pb-2 text-black">
+            CarbonPOS
           </span>
-          <span className="text-xl font-bold tracking-tight">Carbon</span>
         </div>
         <div>
           <h2 className="text-4xl font-bold leading-tight tracking-tight">
@@ -195,11 +203,16 @@ function SignInInner() {
 
       <section className="flex items-center justify-center p-6">
         <div className="carbon-card w-full max-w-md p-10">
-          <div className="lg:hidden flex items-center gap-3 mb-8">
-            <span className="w-10 h-10 bg-carbon-blue text-white font-bold text-xl flex items-center justify-center">
-              C
+          <div className="lg:hidden flex items-end gap-4 mb-8">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.jpg"
+              alt="Carbon"
+              className="w-32 h-32 object-cover shrink-0"
+            />
+            <span className="carbon-wordmark text-4xl font-semibold tracking-tight leading-none pb-1.5 text-black">
+              CarbonPOS
             </span>
-            <span className="text-xl font-bold">Carbon POS</span>
           </div>
 
           {stage === "creds" ? (

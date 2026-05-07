@@ -11,7 +11,9 @@ import { SellScreenWrapper } from "./SellScreenWrapper";
  * carbon_sales_interface_active_cart_light reference.
  *
  * Server-side gate: if the cashier doesn't have an open register session
- * yet, bounce them to /sales/{code}/register.
+ * yet, bounce them to /sales/{code} — the Sales tab carries the new
+ * "Open Register" button + denomination dialog. The legacy picker at
+ * /sales/{code}/register is no longer the entry point.
  */
 export default async function PosHomePage({
   params,
@@ -42,7 +44,7 @@ export default async function PosHomePage({
   );
   const row = r.rows[0];
   if (!row) {
-    redirect(`/sales/${code}/register`);
+    redirect(`/sales/${code}`);
   }
   return (
     <AdminShell
@@ -53,7 +55,6 @@ export default async function PosHomePage({
     >
       <SellScreenWrapper
         taxRate={Number(row.tax_rate)}
-        registerName={row.register_name}
       />
     </AdminShell>
   );

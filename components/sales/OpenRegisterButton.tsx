@@ -72,8 +72,10 @@ export function OpenRegisterButton({ code }: { code: string }) {
       setShowDialog(true);
       return;
     }
-    // 2+ → fall through to the existing picker page.
-    router.push(`/sales/${code}/register`);
+    // 2+ registers — open the dialog on the first eligible one for now.
+    // (Multi-register picker is deferred; matches the "Switch Register
+    // disabled" decision in RegisterActionsClient.)
+    setShowDialog(true);
   }
 
   const onlyRegister = eligible && eligible.length === 1 ? eligible[0] : null;

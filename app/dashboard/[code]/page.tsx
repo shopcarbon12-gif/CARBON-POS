@@ -3,6 +3,7 @@ import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { formatMoney } from "@/lib/utils";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { OpenRegisterButton } from "@/components/sales/OpenRegisterButton";
 
 /**
  * Authenticated landing page after PIN sign-in. Bento layout from the
@@ -265,7 +266,7 @@ export default async function DashboardPage({
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-base font-semibold">Open registers</h3>
                     <Link
-                      href={`/sales/${code}/register`}
+                      href={`/sales/${code}`}
                       className="text-[11px] uppercase tracking-wider font-bold text-carbon-blue hover:underline"
                     >
                       Manage →
@@ -274,12 +275,12 @@ export default async function DashboardPage({
                   {openSessions.length === 0 ? (
                     <div className="text-sm text-carbon-text-muted">
                       <p>No registers are open right now.</p>
-                      <Link
-                        href={`/sales/${code}/register`}
-                        className="carbon-btn-primary tap inline-flex items-center justify-center px-4 mt-3 text-sm"
-                      >
-                        Open a register
-                      </Link>
+                      {/* Renders the same client-side denomination dialog
+                          as the Sales tab — single click opens the popup
+                          directly here, no detour through /sales/{code}. */}
+                      <div className="mt-3">
+                        <OpenRegisterButton code={code} />
+                      </div>
                     </div>
                   ) : (
                     <ul className="divide-y divide-carbon-border-soft">
