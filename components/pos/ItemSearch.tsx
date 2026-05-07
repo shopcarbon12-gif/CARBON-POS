@@ -11,7 +11,8 @@ export type SearchResultItem = {
   color: string | null;
   size: string | null;
   retail_price: string | null;
-  bin: string | null;
+  /** Units in stock at the active location (0 = out of stock). */
+  stock_count?: number;
 };
 
 /**
@@ -86,27 +87,50 @@ export function ItemSearch({
       />
       {q && results.length > 0 && (
         <div className="absolute z-10 left-0 right-0 mt-2 bg-white border border-[var(--color-pos-border)] rounded-2xl shadow-lg max-h-80 overflow-auto">
-          {results.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => {
-                onPick(r);
-                setQ("");
-                setResults([]);
-              }}
-              className="w-full text-left px-4 py-3 hover:bg-[var(--color-pos-bg)] border-b border-[var(--color-pos-border)] last:border-b-0"
-            >
-              <div className="flex justify-between">
-                <span className="font-medium">{r.item_name}</span>
-                <span className="font-semibold">
-                  {formatMoney(r.retail_price ?? 0)}
-                </span>
-              </div>
-              <div className="text-xs text-[var(--color-pos-muted)]">
-                {[r.color, r.size, r.sku].filter(Boolean).join(" · ")}
-              </div>
-            </button>
-          ))}
+          {results.map((r) => {
+            const stock = r.stock_count ?? 0;
+            const stockLabel =
+              stock === 0
+                ? "Out of stock"
+                : stock <= 5
+                  ? `${stock} in stock`
+                  : `${stock} in stock`;
+            const stockCls =
+              stock === 0
+                ? "text-red-700"
+                : stock <= 5
+                  ? "text-amber-700"
+                  : "text-emerald-700";
+            return (
+              <button
+                key={r.id}
+                onClick={() => {
+                  onPick(r);
+                  setQ("");
+                  setResults([]);
+                }}
+                className="w-full text-left px-4 py-3 hover:bg-[var(--color-pos-bg)] border-b border-[var(--color-pos-border)] last:border-b-0"
+              >
+                <div className="flex justify-between">
+                  <span className="font-medium truncate pr-3">
+                    {r.item_name}
+                  </span>
+                  <span className="font-semibold tabular-nums shrink-0">
+                    {formatMoney(r.retail_price ?? 0)}
+                  </span>
+                </div>
+                <div className="text-xs text-[var(--color-pos-muted)] flex justify-between gap-3 mt-0.5">
+                  <span className="truncate">
+                    {[r.color, r.size, r.sku].filter(Boolean).join(" · ")}
+                    {r.upc ? ` · ${r.upc}` : ""}
+                  </span>
+                  <span className={`font-bold uppercase tracking-wider tabular-nums shrink-0 ${stockCls}`}>
+                    {stockLabel}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
       {q && !loading && results.length === 0 && (
