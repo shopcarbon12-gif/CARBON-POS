@@ -76,10 +76,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null;
         const { email, password } = parsed.data;
         const pool = getPool();
+        // Prefer pos_employees.pos_password_hash (added by WMS migration 0058
+        // — POS-only password, independent of users.password_hash). Fall back
+        // to users.password_hash when the POS-specific hash hasn't been set
+        // (legacy rows + bootstrap path). The column may not exist on older
+        // DBs that haven't run 0058 yet, so we probe information_schema first
+        // and pick the SELECT shape accordingly.
+        const colCheck = await pool.query(
+          `SELECT EXISTS (
+             SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'pos_employees' AND column_name = 'pos_password_hash'
+           ) AS exists`,
+        );
+        const hasPosPwd = !!colCheck.rows[0]?.exists;
+        const posPwdSelect = hasPosPwd ? "pe.pos_password_hash" : "NULL::text AS pos_password_hash";
         const result = await pool.query(
           `SELECT u.id          AS user_id,
                   u.email,
                   u.password_hash,
+                  ${posPwdSelect},
                   pe.id          AS employee_id,
                   pe.role
              FROM users u
@@ -89,8 +104,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           [email],
         );
         const row = result.rows[0];
-        if (!row || !row.password_hash) return null;
-        if (!(await bcrypt.compare(password, row.password_hash))) return null;
+        if (!row) return null;
+        const hashToCheck = row.pos_password_hash || row.password_hash;
+        if (!hashToCheck) return null;
+        if (!(await bcrypt.compare(password, hashToCheck))) return null;
 
         // Bootstrap path: if there are zero pos_employees in the system, the
         // very first WMS user that signs in here gets auto-promoted to admin
