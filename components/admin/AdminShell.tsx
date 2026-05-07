@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 type Tab =
@@ -116,12 +117,39 @@ export function AdminShell({
   const [pinned, setPinned] = useState(DEFAULT_STATE.pinned);
   const [open, setOpen] = useState(DEFAULT_STATE.open);
   const [hydrated, setHydrated] = useState(false);
+  // Location-box context — fetched once per mount. The chrome falls back
+  // to the URL `code` while loading so the layout is stable.
+  const [locName, setLocName] = useState<string | null>(null);
+  const [canSwitchLoc, setCanSwitchLoc] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     const s = readState();
     setPinned(s.pinned);
     setOpen(s.open);
     setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/pos/auth/me");
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          location_name?: string;
+          can_switch_location?: boolean;
+        };
+        if (cancelled) return;
+        if (data.location_name) setLocName(data.location_name);
+        setCanSwitchLoc(Boolean(data.can_switch_location));
+      } catch {
+        /* ignore — chrome falls back to the URL code */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -185,18 +213,44 @@ export function AdminShell({
           onClick={onNavClick}
           className="mb-10 px-3 flex items-center gap-3"
         >
-          <span className="w-10 h-10 bg-carbon-blue text-white font-bold text-xl flex items-center justify-center">
+          {/* Brand logo. Drop the source file at public/logo.jpg — the
+              <img> tag falls back to a colored "C" tile if the file is
+              missing so the chrome doesn't break before the asset lands. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.jpg"
+            alt="Carbon"
+            className="w-10 h-10 object-cover"
+            onError={(e) => {
+              const el = e.currentTarget;
+              el.style.display = "none";
+              const fallback = el.nextElementSibling as HTMLElement | null;
+              if (fallback) fallback.style.display = "flex";
+            }}
+          />
+          <span
+            className="w-10 h-10 bg-carbon-blue text-white font-bold text-xl items-center justify-center hidden"
+          >
             C
           </span>
-          <span>
-            <span className="block text-lg font-bold tracking-tight">
-              Carbon
-            </span>
-            <span className="block text-xs text-carbon-text-muted">
-              POS · {code}
-            </span>
+          <span className="carbon-wordmark text-2xl font-semibold tracking-tight text-carbon-text">
+            CarbonPOS
           </span>
         </Link>
+
+        {/* Highlighted location box. Sits between the logo and the
+            Dashboard nav item. Click → /locations/{code} *only* when the
+            user has access to multiple locations — otherwise it stays
+            disabled (no point sending them somewhere they can't act on). */}
+        <LocationBox
+          code={code}
+          name={locName ?? code}
+          canSwitch={canSwitchLoc}
+          onNavigate={() => {
+            onNavClick();
+            router.push(`/locations/${code}`);
+          }}
+        />
 
         <nav className="flex-1 flex flex-col gap-1">
           {NAV.map((item) => (
@@ -212,36 +266,19 @@ export function AdminShell({
           ))}
         </nav>
 
-        {/* Pin toggle + identity strip at the bottom of the sidebar. */}
-        <div className="border-t border-carbon-border-soft pt-4 mt-4 px-4 space-y-3">
-          <button
-            type="button"
-            onClick={onTogglePin}
-            className="flex items-center gap-2 text-xs uppercase tracking-wider font-bold text-carbon-text-muted hover:text-carbon-blue transition-colors"
-            aria-pressed={pinned}
-            title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
+        {/* Identity strip at the bottom of the sidebar. The pin toggle
+            now lives in the topbar (square button on the right) so it's
+            always discoverable without scrolling the sidebar. */}
+        <div className="border-t border-carbon-border-soft pt-4 mt-4 px-4">
+          <p className="text-xs text-carbon-text-muted truncate">
+            {email ?? ""}
+          </p>
+          <Link
+            href="/api/auth/signout"
+            className="text-xs text-carbon-text-muted hover:text-carbon-blue underline mt-1 inline-block"
           >
-            <span
-              className={`material-symbols-outlined text-base ${
-                pinned ? "text-carbon-blue" : ""
-              }`}
-              style={pinned ? { fontVariationSettings: '"FILL" 1' } : undefined}
-            >
-              push_pin
-            </span>
-            <span>{pinned ? "Pinned" : "Pin sidebar"}</span>
-          </button>
-          <div>
-            <p className="text-xs text-carbon-text-muted truncate">
-              {email ?? ""}
-            </p>
-            <Link
-              href="/api/auth/signout"
-              className="text-xs text-carbon-text-muted hover:text-carbon-blue underline mt-1 inline-block"
-            >
-              Sign out
-            </Link>
-          </div>
+            Sign out
+          </Link>
         </div>
       </aside>
 
@@ -264,11 +301,14 @@ export function AdminShell({
       >
         <header className="carbon-topbar sticky top-0 z-20 flex items-center justify-between px-6 lg:px-8 gap-4">
           <div className="flex items-center gap-3 min-w-0">
+            {/* Hamburger only shows when the sidebar is unpinned — pinning
+                hides it per spec ("If the menu is pinned, the hamburger
+                disappears"). */}
             {!pinned ? (
               <button
                 type="button"
                 onClick={onHamburger}
-                aria-label="Open sidebar"
+                aria-label={open ? "Close sidebar" : "Open sidebar"}
                 className="text-carbon-text hover:text-carbon-blue transition-colors"
               >
                 <span className="material-symbols-outlined">menu</span>
@@ -284,10 +324,104 @@ export function AdminShell({
               {headline}
             </h1>
           </div>
-          <div className="flex items-center gap-4 shrink-0">{rightSlot}</div>
+          <div className="flex items-center gap-3 shrink-0">
+            {rightSlot}
+            {/* Pin toggle — square button on the right side of the topbar.
+                Filled push_pin when pinned, outlined when not. */}
+            <button
+              type="button"
+              onClick={onTogglePin}
+              aria-pressed={pinned}
+              title={pinned ? "Unpin sidebar (foldable)" : "Pin sidebar open"}
+              className={`w-10 h-10 inline-flex items-center justify-center border transition-colors ${
+                pinned
+                  ? "border-carbon-blue bg-[var(--carbon-blue-soft)] text-carbon-blue"
+                  : "border-carbon-border text-carbon-text-muted hover:bg-[var(--carbon-surface-soft)] hover:text-carbon-blue"
+              }`}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={pinned ? { fontVariationSettings: '"FILL" 1' } : undefined}
+                aria-hidden
+              >
+                push_pin
+              </span>
+            </button>
+          </div>
         </header>
         <main className="flex-1">{children}</main>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Highlighted location card under the logo. Always shows the location
+ * name; click navigates to /locations/{code} *only* when the user has
+ * access to multiple locations. Single-location users see it disabled
+ * (cursor not-allowed, no hover state) so the box still communicates
+ * "you are at X" without offering a switcher dead-end.
+ */
+function LocationBox({
+  code,
+  name,
+  canSwitch,
+  onNavigate,
+}: {
+  code: string;
+  name: string;
+  canSwitch: boolean;
+  onNavigate: () => void;
+}) {
+  const Inner = (
+    <>
+      <span
+        className="material-symbols-outlined text-carbon-blue text-xl"
+        aria-hidden
+      >
+        store
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[10px] uppercase tracking-wider font-bold text-carbon-text-muted">
+          Location
+        </span>
+        <span className="block text-sm font-bold text-carbon-text truncate">
+          {name}
+        </span>
+      </span>
+      {canSwitch ? (
+        <span
+          className="material-symbols-outlined text-carbon-text-muted text-base"
+          aria-hidden
+        >
+          unfold_more
+        </span>
+      ) : null}
+    </>
+  );
+
+  const baseCls =
+    "mb-4 mx-1 px-3 py-2.5 flex items-center gap-2 border bg-[var(--carbon-blue-soft)] border-carbon-blue/30";
+
+  if (canSwitch) {
+    return (
+      <button
+        type="button"
+        onClick={onNavigate}
+        className={`${baseCls} text-left hover:bg-[color-mix(in_srgb,var(--carbon-blue)_15%,transparent)] transition-colors`}
+        title={`${name} — switch location`}
+      >
+        {Inner}
+      </button>
+    );
+  }
+  return (
+    <div
+      className={`${baseCls} cursor-not-allowed opacity-90`}
+      title={`${name} — only one location available`}
+      aria-disabled
+    >
+      {Inner}
     </div>
   );
 }

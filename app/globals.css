@@ -44,11 +44,29 @@
   --radius-4xl:  0px;
   --radius-full: 0px;
 
-  /* Type scale + Inter as the only family. */
+  /* Type scale + Inter as the body family. */
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
                "Segoe UI", Roboto, sans-serif;
+  /* Display family used for the CarbonPOS wordmark in the sidebar. */
+  --font-display: "Neuzeit Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
 
   --spacing-gutter: 20px;
+}
+
+/* Neuzeit Grotesk — used for the CarbonPOS brand wordmark. Drop the OTF
+ * file at public/fonts/NeuzeitGrotesk.otf for it to load; otherwise the
+ * font stack falls back to Inter and nothing visually breaks. */
+@font-face {
+  font-family: "Neuzeit Grotesk";
+  src: url("/fonts/NeuzeitGrotesk.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+.carbon-wordmark {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 /* ============================================================

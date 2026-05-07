@@ -26,7 +26,7 @@ const credentialsSchema = z.object({
   locationId: z.string().uuid(),
 });
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut, unstable_update: update } = NextAuth({
   ...authConfig,
   providers: [
     Credentials({
