@@ -13,8 +13,9 @@ const closeSchema = z.object({
  * Closes a register session. Computes:
  *   expected_cash = opening_cash
  *                 + sum(cash payments collected during the session)
+ *                 + sum(cash adds)      (cash *in* during shift)
  *                 - sum(cash drops)
- *                 + sum(cash payouts)   (payouts are cash leaving — subtract)
+ *                 - sum(cash payouts)   (payouts are cash leaving — subtract)
  *   cash_over_short = closing_cash_counted - expected_cash
  *
  * Wrapped in a transaction so the math and the status flip happen together.
@@ -65,7 +66,8 @@ export async function POST(
       const dropRes = await client.query(
         `SELECT
             COALESCE(SUM(CASE WHEN type = 'drop'   THEN amount ELSE 0 END), 0) AS drops,
-            COALESCE(SUM(CASE WHEN type = 'payout' THEN amount ELSE 0 END), 0) AS payouts
+            COALESCE(SUM(CASE WHEN type = 'payout' THEN amount ELSE 0 END), 0) AS payouts,
+            COALESCE(SUM(CASE WHEN type = 'add'    THEN amount ELSE 0 END), 0) AS adds
            FROM pos_cash_movements
           WHERE register_session_id = $1`,
         [sessionId],
@@ -75,8 +77,8 @@ export async function POST(
       const cashTaken = Number(cashRes.rows[0].cash_taken);
       const drops = Number(dropRes.rows[0].drops);
       const payouts = Number(dropRes.rows[0].payouts);
-      // Drops and payouts both remove cash from the drawer.
-      const expected = opening + cashTaken - drops - payouts;
+      const adds = Number(dropRes.rows[0].adds);
+      const expected = opening + cashTaken + adds - drops - payouts;
       const counted = parsed.data.closing_cash_counted;
       const overShort = Number((counted - expected).toFixed(2));
 

@@ -3,6 +3,8 @@ import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { formatMoney } from "@/lib/utils";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { RegisterActionsClient } from "@/components/sales/RegisterActionsClient";
+import { OpenRegisterButton } from "@/components/sales/OpenRegisterButton";
 
 type Search = {
   from?: string;
@@ -135,6 +137,10 @@ export default async function SalesPage({
   const openLocationName = openSession.rows[0]?.location_name as
     | string
     | undefined;
+  const openSessionId = openSession.rows[0]?.id as number | undefined;
+  // How many active registers exist at this location? Drives whether
+  // "Switch Register" is enabled (only useful when there are 2+).
+  const registerCount = registers.rows.length;
 
   return (
     <AdminShell email={cashier.email} active="sales" code={code}>
@@ -176,12 +182,7 @@ export default async function SalesPage({
                 Open a register to start a sale.
               </p>
               <div className="grid grid-cols-2 gap-3 max-w-md">
-                <ActionButton
-                  href={`/sales/${code}/register`}
-                  label="Open Register"
-                  icon="login"
-                  primary
-                />
+                <OpenRegisterButton code={code} />
                 <ActionButton
                   href={`/sales/${code}/lookup`}
                   label="Lookup"
@@ -210,28 +211,11 @@ export default async function SalesPage({
               </span>
               .
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <ActionButton
-                href={`/sales/${code}/register?action=switch`}
-                label="Switch Register"
-                icon="swap_horizontal_circle"
-              />
-              <ActionButton
-                href={`/sales/${code}/register/close`}
-                label="Close Register"
-                icon="logout"
-              />
-              <ActionButton
-                href={`/sales/${code}/register?action=movement`}
-                label="Payout / Drop"
-                icon="payments"
-              />
-              <ActionButton
-                href={`/sales/${code}/register?action=add-amount`}
-                label="Add Amount"
-                icon="add_card"
-              />
-            </div>
+            <RegisterActionsClient
+              code={code}
+              sessionId={Number(openSessionId)}
+              registerCount={registerCount}
+            />
           </div>
         ) : null}
 

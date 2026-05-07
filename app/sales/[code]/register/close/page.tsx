@@ -73,9 +73,10 @@ export default async function CloseRegisterPage({
         GROUP BY p.method`,
       [session.register_id, session.opened_at],
     ),
-    pool.query<{ drops: string; payouts: string }>(
+    pool.query<{ drops: string; payouts: string; adds: string }>(
       `SELECT COALESCE(SUM(CASE WHEN type = 'drop'   THEN amount ELSE 0 END), 0)::text AS drops,
-              COALESCE(SUM(CASE WHEN type = 'payout' THEN amount ELSE 0 END), 0)::text AS payouts
+              COALESCE(SUM(CASE WHEN type = 'payout' THEN amount ELSE 0 END), 0)::text AS payouts,
+              COALESCE(SUM(CASE WHEN type = 'add'    THEN amount ELSE 0 END), 0)::text AS adds
          FROM pos_cash_movements
         WHERE register_session_id = $1::int`,
       [session.session_id],
@@ -86,12 +87,14 @@ export default async function CloseRegisterPage({
   for (const r of paymentsR.rows) paymentBy.set(r.method, Number(r.total));
   const drops = Number(movementsR.rows[0]?.drops ?? 0);
   const payouts = Number(movementsR.rows[0]?.payouts ?? 0);
+  const adds = Number(movementsR.rows[0]?.adds ?? 0);
 
   const opening = Number(session.opening_cash);
   const cashPayments = paymentBy.get("cash") ?? 0;
-  // Drops and payouts both remove cash from the drawer.
+  // Drops and payouts both remove cash from the drawer; adds put cash in.
+  const cashStartAdds = opening + adds;
   const cashWithdraws = drops + payouts;
-  const cashExpected = opening + cashPayments - cashWithdraws;
+  const cashExpected = cashStartAdds + cashPayments - cashWithdraws;
 
   const cardPayments = paymentBy.get("card") ?? 0;
 
@@ -99,7 +102,7 @@ export default async function CloseRegisterPage({
     {
       key: "cash",
       label: "Cash",
-      startAdds: opening,
+      startAdds: cashStartAdds,
       payments: cashPayments,
       withdraws: cashWithdraws,
       remaining: cashExpected,

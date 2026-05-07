@@ -4,15 +4,16 @@ import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
 
 const schema = z.object({
-  type: z.enum(["drop", "payout"]),
+  type: z.enum(["drop", "payout", "add"]),
   amount: z.number().positive(),
   reason: z.string().max(500).optional(),
 });
 
 /**
  * POST /api/pos/sessions/:id/cash-movement
- * Logs a cash drop (to safe/bank) or a payout (cash out for petty cash, etc).
- * The drop/payout amount is reflected in the expected_cash math at close.
+ * Logs a cash drop (to safe/bank), payout (cash out for petty cash), or
+ * add (cash *in* — e.g. extra change from the safe). Drops + payouts
+ * subtract from expected_cash at close; adds are added.
  */
 export async function POST(
   req: Request,

@@ -163,3 +163,226 @@ function humanMethod(m: PaymentRow["method"]): string {
       return "Store credit";
   }
 }
+
+/**
+ * Build a node-thermal-printer instance + return null if no printer is
+ * configured. Centralises the host/port/connection check so the helpers
+ * below all share the same fallback behavior in dev.
+ */
+async function connectPrinter(): Promise<Printer | null> {
+  const host = process.env.THERMAL_PRINTER_HOST?.trim();
+  if (!host) return null;
+  const port = Number(process.env.THERMAL_PRINTER_PORT ?? 9100);
+  const printer = new Printer({
+    type: PrinterTypes.EPSON,
+    interface: `tcp://${host}:${port}`,
+    options: { timeout: 5_000 },
+    width: 48,
+  });
+  const isConnected = await printer.isPrinterConnected();
+  if (!isConnected) {
+    throw new Error(`Printer at ${host}:${port} is not reachable.`);
+  }
+  return printer;
+}
+
+type CashMovementSlip = {
+  type: "drop" | "payout" | "add";
+  amount: string;
+  reason: string | null;
+  done_at: string;
+  done_by_name: string;
+  location_name: string;
+  register_name: string;
+};
+
+/**
+ * Print a small audit slip for a cash drop / payout / add. Receipt-paper
+ * sized — header + four lines + cut. The intent is to leave a paper trail
+ * the manager can staple to the till count at end of day.
+ */
+export async function printCashMovementSlip(
+  slip: CashMovementSlip,
+): Promise<{ ok: true } | { skipped: true }> {
+  const printer = await connectPrinter();
+  if (!printer) return { skipped: true };
+
+  const verb =
+    slip.type === "add"
+      ? "CASH ADDED TO DRAWER"
+      : slip.type === "drop"
+        ? "CASH DROP"
+        : "CASH PAYOUT";
+
+  printer.alignCenter();
+  printer.bold(true);
+  printer.println(verb);
+  printer.bold(false);
+  printer.println(slip.location_name);
+  printer.println(slip.register_name);
+  printer.drawLine();
+
+  printer.alignLeft();
+  printer.bold(true);
+  printer.tableCustom([
+    { text: "Amount", align: "LEFT", width: 0.5 },
+    { text: formatMoney(slip.amount), align: "RIGHT", width: 0.5 },
+  ]);
+  printer.bold(false);
+  if (slip.reason) {
+    printer.tableCustom([
+      { text: "Reason", align: "LEFT", width: 0.3 },
+      { text: slip.reason, align: "LEFT", width: 0.7 },
+    ]);
+  }
+  printer.println(`By:    ${slip.done_by_name}`);
+  printer.println(`When:  ${new Date(slip.done_at).toLocaleString()}`);
+  printer.drawLine();
+
+  printer.alignCenter();
+  printer.println("Keep with the till count.");
+  printer.cut();
+
+  await printer.execute();
+  return { ok: true };
+}
+
+type OpenSlip = {
+  opening_cash: string;
+  opened_at: string;
+  opened_by_name: string;
+  location_name: string;
+  register_name: string;
+};
+
+/**
+ * Print a small "register opened with $X" audit slip. Same intent as the
+ * cash-movement slip — paper trail for the till.
+ */
+export async function printRegisterOpenSlip(
+  slip: OpenSlip,
+): Promise<{ ok: true } | { skipped: true }> {
+  const printer = await connectPrinter();
+  if (!printer) return { skipped: true };
+
+  printer.alignCenter();
+  printer.bold(true);
+  printer.println("REGISTER OPENED");
+  printer.bold(false);
+  printer.println(slip.location_name);
+  printer.println(slip.register_name);
+  printer.drawLine();
+
+  printer.alignLeft();
+  printer.bold(true);
+  printer.tableCustom([
+    { text: "Opening cash", align: "LEFT", width: 0.6 },
+    { text: formatMoney(slip.opening_cash), align: "RIGHT", width: 0.4 },
+  ]);
+  printer.bold(false);
+  printer.println(`By:    ${slip.opened_by_name}`);
+  printer.println(`When:  ${new Date(slip.opened_at).toLocaleString()}`);
+  printer.drawLine();
+
+  printer.alignCenter();
+  printer.println("Start of shift.");
+  printer.cut();
+
+  await printer.execute();
+  return { ok: true };
+}
+
+type EodRow = {
+  label: string;
+  calculated: string;
+  counted: string;
+  over_short: string;
+};
+
+type EodSlip = {
+  closed_at: string;
+  closed_by_name: string;
+  opened_at: string;
+  location_name: string;
+  register_name: string;
+  rows: EodRow[];
+  total_calculated: string;
+  total_counted: string;
+  total_over_short: string;
+  note: string | null;
+};
+
+/**
+ * Print the End-of-Day report on receipt paper at close. Compact layout —
+ * three columns (Calc / Counted / +/-) so the cashier can staple it to
+ * the deposit slip.
+ */
+export async function printRegisterCloseEod(
+  slip: EodSlip,
+): Promise<{ ok: true } | { skipped: true }> {
+  const printer = await connectPrinter();
+  if (!printer) return { skipped: true };
+
+  printer.alignCenter();
+  printer.bold(true);
+  printer.println("END OF DAY");
+  printer.bold(false);
+  printer.println(slip.location_name);
+  printer.println(slip.register_name);
+  printer.drawLine();
+
+  printer.alignLeft();
+  printer.println(
+    `Open:  ${new Date(slip.opened_at).toLocaleString()}`,
+  );
+  printer.println(
+    `Close: ${new Date(slip.closed_at).toLocaleString()}`,
+  );
+  printer.println(`By:    ${slip.closed_by_name}`);
+  printer.drawLine();
+
+  printer.tableCustom([
+    { text: "Type",  align: "LEFT",  width: 0.34 },
+    { text: "Calc",  align: "RIGHT", width: 0.22 },
+    { text: "Count", align: "RIGHT", width: 0.22 },
+    { text: "+/-",   align: "RIGHT", width: 0.22 },
+  ]);
+  for (const r of slip.rows) {
+    printer.tableCustom([
+      { text: r.label,             align: "LEFT",  width: 0.34 },
+      { text: formatMoney(r.calculated), align: "RIGHT", width: 0.22 },
+      { text: formatMoney(r.counted),    align: "RIGHT", width: 0.22 },
+      { text: formatSigned(r.over_short), align: "RIGHT", width: 0.22 },
+    ]);
+  }
+  printer.drawLine();
+  printer.bold(true);
+  printer.tableCustom([
+    { text: "TOTAL",                       align: "LEFT",  width: 0.34 },
+    { text: formatMoney(slip.total_calculated), align: "RIGHT", width: 0.22 },
+    { text: formatMoney(slip.total_counted),    align: "RIGHT", width: 0.22 },
+    { text: formatSigned(slip.total_over_short), align: "RIGHT", width: 0.22 },
+  ]);
+  printer.bold(false);
+  printer.drawLine();
+
+  if (slip.note) {
+    printer.alignLeft();
+    printer.println("Notes:");
+    printer.println(slip.note);
+    printer.drawLine();
+  }
+
+  printer.alignCenter();
+  printer.println("End of shift.");
+  printer.cut();
+
+  await printer.execute();
+  return { ok: true };
+}
+
+function formatSigned(amount: string | number): string {
+  const n = Number(amount);
+  if (n === 0) return formatMoney(0);
+  return n > 0 ? `+${formatMoney(n)}` : `-${formatMoney(Math.abs(n))}`;
+}
