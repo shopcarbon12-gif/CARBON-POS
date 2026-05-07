@@ -1,16 +1,8 @@
+import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
-import { pageGuard } from "@/lib/page-guard";
-import { AdminShell } from "@/components/admin/AdminShell";
-import { InventoryTable, type Row } from "@/components/inventory/InventoryTable";
+import { currentCashier } from "@/lib/session";
 
 const PAGE_SIZE = 25;
-
-type Search = {
-  q?: string;
-  sort?: string;
-  dir?: string;
-  page?: string;
-};
 
 type SortKey =
   | "item_name"
@@ -32,33 +24,27 @@ const SORT_SQL: Record<SortKey, string> = {
 };
 
 /**
- * Inventory tab — catalog browser scoped to the active location's stock.
+ * GET /api/pos/inventory?q=...&sort=...&dir=...&page=...
  *
- * Search is partial across every catalog field, results render live
- * directly in the table (no dropdown). Image cell is clickable — opens
- * a popup with the product photo or a "Picture not available" placeholder.
- *
- * The server does the first paint so the page is meaningful without JS;
- * the InventoryTable client takes over once the user types or pages.
+ * Drives the live search on the Inventory tab. The search is partial
+ * (ILIKE %q%) across every catalog field a cashier might type — name,
+ * SKU, UPC, color, size, brand, vendor, category. Results are scoped to
+ * the active location's in-stock count.
  */
-export default async function InventoryPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ code: string }>;
-  searchParams: Promise<Search>;
-}) {
-  const { code } = await params;
-  const sp = await searchParams;
-  const cashier = await pageGuard(code, {
-    tab: "inventory",
-    from: `/inventory/${code}`,
-  });
+export async function GET(req: Request) {
+  const cashier = await currentCashier();
+  if (!cashier) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const url = new URL(req.url);
+  const q = (url.searchParams.get("q") ?? "").trim();
+  const sortParam = url.searchParams.get("sort") ?? "item_name";
+  const sort: SortKey =
+    sortParam in SORT_SQL ? (sortParam as SortKey) : "item_name";
+  const dir = url.searchParams.get("dir") === "desc" ? "desc" : "asc";
+  const page = Math.max(1, Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+  const offset = (page - 1) * PAGE_SIZE;
 
-  const q = (sp.q ?? "").trim();
-  const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
-  const sort = (sp.sort && sp.sort in SORT_SQL ? sp.sort : "item_name") as SortKey;
-  const dir = sp.dir === "desc" ? "desc" : "asc";
   const orderBy = `${SORT_SQL[sort]} ${dir.toUpperCase()} NULLS LAST, cs.sku ASC`;
 
   const rowsArgs: unknown[] = [cashier.lid];
@@ -70,6 +56,8 @@ export default async function InventoryPage({
     const like = `%${q}%`;
     rowsArgs.push(like);
     countArgs.push(like);
+    // Mirror the broad partial-match behaviour of /api/pos/items/search:
+    // every catalog field a cashier might pattern-match against.
     rowsFilters.push(
       `(m.description ILIKE $${rowsArgs.length}
         OR cs.sku        ILIKE $${rowsArgs.length}
@@ -94,7 +82,6 @@ export default async function InventoryPage({
     );
   }
 
-  const offset = (page - 1) * PAGE_SIZE;
   rowsArgs.push(PAGE_SIZE, offset);
   const limitIdx = rowsArgs.length - 1;
   const offsetIdx = rowsArgs.length;
@@ -145,40 +132,21 @@ export default async function InventoryPage({
     ),
   ]);
 
-  const initialRows: Row[] = rowsR.rows.map((r) => ({
-    id: r.id,
-    sku: r.sku,
-    upc: r.upc,
-    item_name: r.item_name,
-    category: r.category,
-    color: r.color,
-    size: r.size,
-    retail_price: r.retail_price,
-    stock_count: Number(r.stock_count),
-    image_url: null,
-  }));
-
-  return (
-    <AdminShell
-      email={cashier.email}
-      active="inventory"
-      code={code}
-      title="Inventory"
-    >
-      <main className="p-6 lg:p-10">
-        <div className="max-w-[1440px] mx-auto">
-          <InventoryTable
-            code={code}
-            initialRows={initialRows}
-            initialQ={q}
-            initialSort={sort}
-            initialDir={dir}
-            initialPage={page}
-            pageSize={PAGE_SIZE}
-            initialTotal={Number(totalR.rows[0]?.n ?? 0)}
-          />
-        </div>
-      </main>
-    </AdminShell>
-  );
+  return NextResponse.json({
+    rows: rowsR.rows.map((r) => ({
+      id: r.id,
+      sku: r.sku,
+      upc: r.upc,
+      item_name: r.item_name,
+      category: r.category,
+      color: r.color,
+      size: r.size,
+      retail_price: r.retail_price,
+      stock_count: Number(r.stock_count),
+      // Catalog doesn't carry image_url today — Phase-2 hooks the WMS
+      // media bucket. The popup falls back to "Picture not available".
+      image_url: null,
+    })),
+    total: Number(totalR.rows[0]?.n ?? 0),
+  });
 }
