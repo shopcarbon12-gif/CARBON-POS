@@ -1,13 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+
+type PosRole = { id: number; name: string };
 
 export default function NewEmployeePage() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [posRoles, setPosRoles] = useState<PosRole[]>([]);
+  const [selectedPosRoleId, setSelectedPosRoleId] = useState<string>("");
+
+  useEffect(() => {
+    void fetch("/api/pos/user-roles")
+      .then((r) => (r.ok ? r.json() : { roles: [] }))
+      .then((d) => {
+        const rows: PosRole[] = Array.isArray(d?.roles) ? d.roles : [];
+        setPosRoles(rows);
+        if (rows[0]) setSelectedPosRoleId(String(rows[0].id));
+      })
+      .catch(() => setPosRoles([]));
+  }, []);
+
+  // Map a POS role *name* down to the legacy four-value enum stored on
+  // pos_employees.role so the rest of the codebase (which still keys off
+  // that text column) keeps working. Anything we can't map is treated as
+  // a cashier.
+  function legacyRoleFor(name: string): "cashier" | "supervisor" | "manager" | "admin" {
+    const n = name.trim().toLowerCase();
+    if (n === "super admin" || n === "admin") return "admin";
+    if (n === "manager") return "manager";
+    if (n === "supervisor") return "supervisor";
+    return "cashier";
+  }
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -15,14 +42,13 @@ export default function NewEmployeePage() {
     setError(null);
     const fd = new FormData(e.currentTarget);
     const password = String(fd.get("set_password") || "");
-    const payload = {
+    const posRoleId = selectedPosRoleId ? Number(selectedPosRoleId) : null;
+    const posRoleName = posRoles.find((r) => r.id === posRoleId)?.name ?? "";
+    const payload: Record<string, unknown> = {
       email: String(fd.get("email") || ""),
       pin: String(fd.get("pin") || ""),
-      role: String(fd.get("role") || "cashier") as
-        | "cashier"
-        | "supervisor"
-        | "manager"
-        | "admin",
+      role: legacyRoleFor(posRoleName),
+      ...(posRoleId ? { pos_role_id: posRoleId } : {}),
       ...(password.trim().length >= 8 ? { set_password: password.trim() } : {}),
     };
     const res = await fetch("/api/pos/employees", {
@@ -58,19 +84,25 @@ export default function NewEmployeePage() {
         <Field label="Email" name="email" type="email" required />
         <Field label="Register PIN (4 digits)" name="pin" required pattern="\d{4}" />
         <label className="text-sm font-medium">
-          <span className="block mb-1">Role</span>
+          <span className="block mb-1">POS role</span>
           <select
-            name="role"
-            defaultValue="cashier"
+            value={selectedPosRoleId}
+            onChange={(e) => setSelectedPosRoleId(e.target.value)}
             className="tap rounded-lg border border-[var(--color-pos-border)] px-3 w-full"
           >
-            <option value="cashier">Cashier</option>
-            <option value="supervisor">Supervisor</option>
-            <option value="manager">Manager</option>
-            <option value="admin">Admin</option>
+            {posRoles.length === 0 ? (
+              <option value="">— No POS roles available —</option>
+            ) : (
+              posRoles.map((r) => (
+                <option key={r.id} value={String(r.id)}>
+                  {r.name}
+                </option>
+              ))
+            )}
           </select>
           <span className="block text-xs text-[var(--color-pos-muted)] mt-1">
-            Manager and Admin can sign in to the back office.
+            POS roles are configured by the admin from the WMS back office. Super
+            Admin and Manager are reserved and don&apos;t appear in this list.
           </span>
         </label>
         <Field
@@ -88,7 +120,7 @@ export default function NewEmployeePage() {
           </Link>
           <button
             type="submit"
-            disabled={busy}
+            disabled={busy || posRoles.length === 0}
             className="tap rounded-xl bg-[var(--color-pos-ink)] text-white font-semibold px-5"
           >
             {busy ? "Saving…" : "Add employee"}
