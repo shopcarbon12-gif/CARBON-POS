@@ -93,12 +93,12 @@ export async function POST(req: Request) {
         email, email_2, phone, home_phone, work_phone, mobile_phone,
         country, address_line1, address_line2, city, state, zip,
         tags, contact_consent, contact_email_ok, contact_mail_ok, contact_call_ok,
-        customer_type, pos_location_id, notes, created_by_user_id)
+        customer_type, pos_location_id, notes, created_by_user_id, created_via)
      VALUES ($1,$2,$3,$4,
              $5,$6,$7,$8,$9,$10,
              $11,$12,$13,$14,$15,$16,
              $17,$18,$19,$20,$21,
-             $22,$23,$24,$25::uuid)
+             $22,$23,$24,$25::uuid,'pos')
      RETURNING *`,
     [
       d.first_name,
