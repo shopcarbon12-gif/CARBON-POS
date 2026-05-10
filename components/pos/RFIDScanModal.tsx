@@ -13,12 +13,12 @@ export type RfidResolvedItem = {
 };
 
 /**
- * Connects to the WMS Hardware SDK Server-Sent Events stream of EPC reads,
- * resolves each new EPC to its SKU via /api/pos/items/by-epc, and lets the
- * cashier "Done" them all into the cart at once.
- *
- * The SSE endpoint is exposed by the WMS app at /api/hardware/epcs/stream.
- * Set NEXT_PUBLIC_WMS_RFID_STREAM_URL to override.
+ * Connects to the POS-side SSE bridge at /api/hardware/epcs/stream (which
+ * server-side proxies the WMS edge-scan stream — see the route file for the
+ * upstream auth + payload reshape), resolves each new EPC to its SKU via
+ * /api/pos/items/by-epc, and lets the cashier "Done" them all into the cart
+ * at once. Same-origin keeps the cashier's session cookie attached and the
+ * upstream Bearer token off the wire to the browser.
  */
 export function RFIDScanModal({
   open,
@@ -40,10 +40,9 @@ export function RFIDScanModal({
       setStreamErr(null);
       return;
     }
-    const url =
-      process.env.NEXT_PUBLIC_WMS_RFID_STREAM_URL ||
-      "/api/hardware/epcs/stream";
-    const es = new EventSource(url, { withCredentials: true });
+    const es = new EventSource("/api/hardware/epcs/stream", {
+      withCredentials: true,
+    });
     const seen = new Set<string>();
     const buffer: string[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;

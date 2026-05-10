@@ -15,6 +15,7 @@ export async function currentCashier() {
     employee_id: session.user.employee_id,
     role: session.user.role,
     email: session.user.email ?? null,
+    tid: session.user.tid,
     lid: session.user.lid,
     lcode: session.user.lcode,
     flow: session.user.flow,
