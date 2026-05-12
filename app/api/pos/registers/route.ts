@@ -17,6 +17,7 @@ export async function GET() {
     `SELECT r.id,
             r.name,
             r.pos_location_id,
+            r.stripe_reader_id,
             r.stripe_reader_label,
             l.name AS location_name,
             (

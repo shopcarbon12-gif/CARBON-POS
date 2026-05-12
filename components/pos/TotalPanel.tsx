@@ -131,32 +131,44 @@ export function TotalPanel({
           type="button"
           onClick={onApplyDiscount}
           disabled={disabled}
-          className="w-full carbon-btn-secondary tap font-semibold disabled:opacity-50"
+          className="w-full carbon-btn-secondary tap font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2"
         >
+          <span className="material-symbols-outlined text-[20px]" aria-hidden>
+            sell
+          </span>
           Apply Discount to Sale
         </button>
         <button
           type="button"
           onClick={onChargeCard}
           disabled={disabled}
-          className="w-full carbon-btn-primary tap-lg text-lg font-bold disabled:opacity-50"
+          className="w-full carbon-btn-primary tap-lg text-lg font-bold disabled:opacity-50 inline-flex items-center justify-center gap-2"
         >
+          <span className="material-symbols-outlined text-[22px]" aria-hidden>
+            credit_card
+          </span>
           Charge Card
         </button>
         <button
           type="button"
           onClick={onTakeCash}
           disabled={disabled}
-          className="w-full carbon-btn-primary tap-lg text-lg font-bold disabled:opacity-50"
+          className="w-full carbon-btn-primary tap-lg text-lg font-bold disabled:opacity-50 inline-flex items-center justify-center gap-2"
         >
+          <span className="material-symbols-outlined text-[22px]" aria-hidden>
+            payments
+          </span>
           Take Cash
         </button>
         <button
           type="button"
           onClick={onOtherPayment}
           disabled={disabled}
-          className="w-full carbon-btn-secondary tap font-semibold disabled:opacity-50"
+          className="w-full carbon-btn-secondary tap font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2"
         >
+          <span className="material-symbols-outlined text-[20px]" aria-hidden>
+            more_horiz
+          </span>
           Other (Store Credit, Account, Gift Card)
         </button>
       </div>

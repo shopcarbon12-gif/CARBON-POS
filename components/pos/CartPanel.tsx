@@ -22,15 +22,23 @@ export function CartPanel({
 }) {
   if (lines.length === 0) {
     return (
-      <div className="carbon-card flex-1 flex items-center justify-center min-h-[200px] p-10 text-center">
-        <p className="text-[var(--carbon-muted)]">
-          Scan a barcode or search for an item to start a sale.
-        </p>
+      <div className="carbon-card flex-1 flex flex-col min-h-[200px]">
+        <div className="px-4 py-3 border-b border-[var(--carbon-border-soft)] text-xs uppercase tracking-wider font-bold text-[var(--carbon-muted)]">
+          Cart
+        </div>
+        <div className="flex-1 flex items-center justify-center p-10 text-center">
+          <p className="text-[var(--carbon-muted)]">
+            Scan a barcode or search for an item to start a sale.
+          </p>
+        </div>
       </div>
     );
   }
   return (
     <div className="carbon-card overflow-hidden flex-1 flex flex-col">
+      <div className="px-4 py-3 border-b border-[var(--carbon-border-soft)] text-xs uppercase tracking-wider font-bold text-[var(--carbon-muted)]">
+        Cart
+      </div>
       <div className="overflow-y-auto flex-1">
         <ul>
           {lines.map((line) => {
@@ -52,6 +60,18 @@ export function CartPanel({
                 key={line.cart_id}
                 className="flex items-center justify-between px-4 py-4 border-b border-[var(--carbon-border-soft)] last:border-b-0 hover:bg-[var(--carbon-surface-soft)] transition-colors"
               >
+                {/* Thumbnail tile — placeholder gray box with a shirt icon.
+                    Hidden on misc/loyalty lines since there's no product. */}
+                {line.line_type === "product" ? (
+                  <div
+                    className="w-14 h-14 shrink-0 mr-4 flex items-center justify-center bg-[var(--carbon-surface-soft)] border border-[var(--carbon-border-soft)]"
+                    aria-hidden
+                  >
+                    <span className="material-symbols-outlined text-[28px] text-[var(--carbon-muted)]">
+                      checkroom
+                    </span>
+                  </div>
+                ) : null}
                 <div className="flex-1 min-w-0 pr-4">
                   <h3 className="text-base font-semibold truncate">
                     {line.description}

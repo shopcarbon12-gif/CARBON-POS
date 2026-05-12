@@ -86,7 +86,7 @@
   --carbon-danger:       #ba1a1a;
   --carbon-success:      #168a3f;
   --carbon-sidebar-w:    304px;
-  --carbon-topbar-h:     80px;
+  --carbon-topbar-h:     64px;
 }
 
 html, body {
@@ -199,7 +199,7 @@ textarea.carbon-input {
   box-shadow: 0 0 0 1px var(--carbon-blue);
 }
 
-/* Sidebar nav link. */
+/* Sidebar nav link (legacy — kept for any leftover consumers). */
 .carbon-nav-item {
   display: flex;
   align-items: center;
@@ -216,6 +216,50 @@ textarea.carbon-input {
   color: var(--carbon-blue);
   border-left-color: var(--carbon-blue);
   font-weight: 700;
+}
+
+/* Top-nav tab — solid blue pill when active, muted with hover wash when not. */
+.carbon-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  color: var(--carbon-muted);
+  font-weight: 500;
+  font-size: 14px;
+  border: 1px solid transparent;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  white-space: nowrap;
+}
+.carbon-tab:hover { background: var(--carbon-surface-soft); color: var(--carbon-text); }
+.carbon-tab-active {
+  background: var(--carbon-blue);
+  color: #ffffff;
+  border-color: var(--carbon-blue);
+  font-weight: 700;
+}
+.carbon-tab-active:hover {
+  background: var(--carbon-blue-hover);
+  color: #ffffff;
+}
+
+/* Hide horizontal scrollbar for the tab strip. */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Small "pill" chip used for inline status (e.g., "1 item in cart"). */
+.carbon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--carbon-surface);
+  border: 1px solid var(--carbon-border);
+  color: var(--carbon-text);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Stat / KPI card — left-bordered. */
