@@ -11,15 +11,12 @@ const schema = z.object({
  * POST /api/pos/loyalty/lookup
  *
  * Takes a phone number collected on the reader and returns the matching
- * pos_customers row, or creates a placeholder row if none exists.
+ * pos_customers row if one exists. Never creates — the cashier confirms
+ * creation explicitly via /api/pos/loyalty/create-customer with the "+"
+ * button on the sell screen.
  *
- *   { found: true,  is_new: false, customer: {...} }   — existing match
- *   { found: false, is_new: true,  customer: {...} }   — auto-created
- *
- * In the auto-create case, first_name is the placeholder "Loyalty Guest"
- * (the cashier UI immediately prompts for the real name). Cashier role
- * is sufficient here — this is a customer-driven flow, not a
- * cashier-driven CRUD, so we don't require the manager-gated POST.
+ *   { found: true,  customer: {...} }                      — existing
+ *   { found: false, phone: "<normalized>" }                — no match
  */
 function normalizePhone(p: string): string {
   return p.replace(/[^\d+]/g, "");
@@ -53,26 +50,7 @@ export async function POST(req: Request) {
     [phone],
   );
   if (hit.rowCount && hit.rowCount > 0) {
-    return NextResponse.json({
-      found: true,
-      is_new: false,
-      customer: hit.rows[0],
-    });
+    return NextResponse.json({ found: true, customer: hit.rows[0] });
   }
-
-  // Create a placeholder customer so the sale can be attached. The
-  // cashier's inline name prompt will PATCH this row with real first/last
-  // name (or be skipped).
-  const created = await pool.query(
-    `INSERT INTO pos_customers (first_name, mobile_phone, phone, created_by_user_id, created_via)
-     VALUES ('Loyalty Guest', $1, $1, $2::uuid, 'pos_reader_prompt')
-     RETURNING id, first_name, last_name, email, phone, mobile_phone,
-               customer_type, store_credit_balance`,
-    [phone, cashier.user_id],
-  );
-  return NextResponse.json({
-    found: false,
-    is_new: true,
-    customer: created.rows[0],
-  });
+  return NextResponse.json({ found: false, phone });
 }

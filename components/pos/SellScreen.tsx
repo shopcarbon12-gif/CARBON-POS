@@ -45,20 +45,22 @@ export function SellScreen({
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  // Loyalty phone-prompt on the customer's card reader. Triggers on the
-  // first scan of a new sale if no customer is already attached. The
-  // customer can't skip on the reader; the cashier can with the banner's
-  // Skip button.
-  type PromptStatus =
-    | "idle"
-    | "collecting"
-    | "looking-up"
-    | "name-needed"
-    | "done";
+  // Loyalty phone-prompt on the customer's card reader. The flow:
+  //   sale opens (no customer) → reader shows phone prompt
+  //   customer enters → POS looks up by phone
+  //     match found → attach customer
+  //     no match → pendingPhone is set; cashier sees blinking phone box
+  //       w/ "+" and a drawer for first/last name. Drawer can send the
+  //       name prompt to the reader for the customer to fill on pin pad.
+  //       Clicking "+" creates the customer + enrolls in loyalty.
+  type PromptStatus = "idle" | "collecting" | "looking-up" | "done";
   const [phonePromptStatus, setPhonePromptStatus] =
     useState<PromptStatus>("idle");
-  const [newCustomerId, setNewCustomerId] = useState<number | null>(null);
-  const [newCustomerName, setNewCustomerName] = useState("");
+  const [pendingPhone, setPendingPhone] = useState<string | null>(null);
+  const [pendingFirstName, setPendingFirstName] = useState("");
+  const [pendingLastName, setPendingLastName] = useState("");
+  const [nameDrawerOpen, setNameDrawerOpen] = useState(false);
+  const [nameSendingToReader, setNameSendingToReader] = useState(false);
   const promptedForCartRef = useRef(false);
 
   const cartKey = `pos:cart:${code}`;
@@ -125,7 +127,6 @@ export function SellScreen({
     () => calculateTotals(lines, taxRate),
     [lines, taxRate],
   );
-  const itemCount = lines.reduce((n, l) => n + l.quantity, 0);
 
   // Live-mirror the cart to the customer's card reader display. Debounced so
   // we don't hammer Stripe while the cashier scans rapidly. Clears the
@@ -135,7 +136,8 @@ export function SellScreen({
   const promptIsActive =
     phonePromptStatus === "collecting" ||
     phonePromptStatus === "looking-up" ||
-    phonePromptStatus === "name-needed";
+    pendingPhone !== null ||
+    nameSendingToReader;
   useEffect(() => {
     if (!hydrated) return;
     if (promptIsActive) return;
@@ -183,8 +185,11 @@ export function SellScreen({
     if (wasNonEmpty && isEmpty) {
       promptedForCartRef.current = false;
       setPhonePromptStatus("idle");
-      setNewCustomerId(null);
-      setNewCustomerName("");
+      setPendingPhone(null);
+      setPendingFirstName("");
+      setPendingLastName("");
+      setNameDrawerOpen(false);
+      setNameSendingToReader(false);
     }
   }, [lines.length]);
 
@@ -206,7 +211,7 @@ export function SellScreen({
       .catch(() => setPhonePromptStatus("idle"));
   }, [hydrated, customer, phonePromptStatus]);
 
-  // Poll the reader's collect_inputs status while collecting.
+  // Poll the reader's collect_inputs status while collecting the phone.
   useEffect(() => {
     if (phonePromptStatus !== "collecting") return;
     let stopped = false;
@@ -225,7 +230,7 @@ export function SellScreen({
             body: JSON.stringify({ phone: r.phone }),
           }).then((r) => r.json());
           if (stopped) return;
-          if (lookup.customer) {
+          if (lookup.found && lookup.customer) {
             const c = lookup.customer;
             const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
             setCustomer({
@@ -234,14 +239,12 @@ export function SellScreen({
               email: c.email ?? null,
               phone: c.mobile_phone ?? c.phone ?? null,
             });
-            if (lookup.is_new) {
-              setNewCustomerId(c.id);
-              setNewCustomerName("");
-              setPhonePromptStatus("name-needed");
-            } else {
-              setPhonePromptStatus("done");
-            }
+            setPhonePromptStatus("done");
           } else {
+            // No match — surface the pending phone for cashier confirmation.
+            setPendingPhone(lookup.phone ?? r.phone);
+            setPendingFirstName("");
+            setPendingLastName("");
             setPhonePromptStatus("idle");
           }
         } else if (
@@ -252,7 +255,7 @@ export function SellScreen({
           setPhonePromptStatus("idle");
         }
       } catch {
-        // network blip — keep polling
+        /* network blip — keep polling */
       }
     };
     const id = setInterval(tick, 1500);
@@ -262,6 +265,39 @@ export function SellScreen({
     };
   }, [phonePromptStatus]);
 
+  // Poll the reader's name-prompt action while the cashier has it open.
+  useEffect(() => {
+    if (!nameSendingToReader) return;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped) return;
+      try {
+        const r = await fetch(
+          "/api/pos/loyalty/reader-name-prompt/status",
+        ).then((r) => r.json());
+        if (stopped) return;
+        if (r.status === "succeeded") {
+          if (r.first_name) setPendingFirstName(r.first_name);
+          if (r.last_name) setPendingLastName(r.last_name);
+          setNameSendingToReader(false);
+        } else if (
+          r.status === "canceled" ||
+          r.status === "failed" ||
+          r.status === "idle"
+        ) {
+          setNameSendingToReader(false);
+        }
+      } catch {
+        /* keep polling */
+      }
+    };
+    const id = setInterval(tick, 1500);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
+  }, [nameSendingToReader]);
+
   // Cashier-side skip: cancels the reader action and stops the prompt.
   const cancelPhonePrompt = () => {
     setPhonePromptStatus("idle");
@@ -270,9 +306,8 @@ export function SellScreen({
     );
   };
 
-  // If the cashier picks a customer through the regular picker while the
-  // reader is still waiting for a phone, cancel the reader prompt so the
-  // cart-mirror can take over the screen.
+  // If the cashier picks a customer manually while the reader is still
+  // collecting the phone, cancel the reader prompt.
   useEffect(() => {
     if (customer && phonePromptStatus === "collecting") {
       cancelPhonePrompt();
@@ -281,34 +316,71 @@ export function SellScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer]);
 
-  // Save the cashier-entered name onto the newly-created placeholder
-  // customer row. If the cashier clicks "Skip name", we just leave the
-  // placeholder "Loyalty Guest" and continue.
-  const saveNewCustomerName = async () => {
-    if (!newCustomerId) {
-      setPhonePromptStatus("done");
-      return;
-    }
-    const name = newCustomerName.trim();
-    if (!name) {
-      setPhonePromptStatus("done");
-      return;
-    }
-    const [first, ...rest] = name.split(/\s+/);
-    const last = rest.join(" ") || null;
+  // ── Pending-phone flow handlers ────────────────────────────────────
+  const cancelPendingPhone = () => {
+    setPendingPhone(null);
+    setPendingFirstName("");
+    setPendingLastName("");
+    setNameDrawerOpen(false);
+    setNameSendingToReader(false);
+    fetch("/api/pos/loyalty/reader-prompt", { method: "DELETE" }).catch(
+      () => {},
+    );
+  };
+
+  const sendNameToReader = async () => {
+    setNameSendingToReader(true);
     try {
-      await fetch(`/api/pos/customers/${newCustomerId}`, {
-        method: "PATCH",
+      const res = await fetch("/api/pos/loyalty/reader-name-prompt", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ first_name: first, last_name: last }),
+        body: JSON.stringify({}),
       });
-      if (customer) {
-        setCustomer({ ...customer, name });
+      const data = await res.json();
+      if (data.error) setNameSendingToReader(false);
+    } catch {
+      setNameSendingToReader(false);
+    }
+  };
+
+  const confirmCreateCustomer = async () => {
+    if (!pendingPhone) return;
+    const first = pendingFirstName.trim();
+    if (!first) return;
+    try {
+      const res = await fetch("/api/pos/loyalty/create-customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: pendingPhone,
+          first_name: first,
+          last_name: pendingLastName.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (data.customer) {
+        const c = data.customer;
+        const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
+        setCustomer({
+          id: c.id,
+          name,
+          email: c.email ?? null,
+          phone: c.mobile_phone ?? c.phone ?? null,
+        });
+        // Cancel any in-flight reader action so cart-mirror can take over.
+        fetch("/api/pos/loyalty/reader-prompt", { method: "DELETE" }).catch(
+          () => {},
+        );
+        setPendingPhone(null);
+        setPendingFirstName("");
+        setPendingLastName("");
+        setNameDrawerOpen(false);
+        setNameSendingToReader(false);
+        setPhonePromptStatus("done");
       }
     } catch {
-      /* don't block the sale on a naming hiccup */
+      /* leave UI as-is so cashier can retry */
     }
-    setPhonePromptStatus("done");
   };
 
   // ── Loyalty integration ─────────────────────────────────────────────
@@ -490,79 +562,11 @@ export function SellScreen({
 
   return (
     <div className="flex-1 overflow-y-auto p-6 flex flex-col space-y-6">
-      {/* Status chip — small pill that mirrors the cart count. */}
-      <div>
-        <span className="carbon-chip">
-          <span
-            className="material-symbols-outlined text-[16px] text-carbon-blue"
-            aria-hidden
-          >
-            shopping_cart
-          </span>
-          {itemCount} item{itemCount === 1 ? "" : "s"} in cart
-        </span>
-      </div>
-
-      {/* Loyalty phone prompt — appears while the reader is collecting
-          the customer's phone, then again as a name-capture form if the
-          phone wasn't already in our system. */}
-      {(phonePromptStatus === "collecting" ||
-        phonePromptStatus === "looking-up") && (
-        <div className="rounded-2xl border border-[var(--color-carbon-blue)] bg-[var(--color-carbon-blue-soft)] px-5 py-4 flex items-center justify-between">
-          <div>
-            <p className="font-semibold text-[var(--color-carbon-blue)]">
-              {phonePromptStatus === "collecting"
-                ? "Waiting for customer to enter phone on the reader…"
-                : "Looking up customer…"}
-            </p>
-            <p className="text-sm text-[var(--color-carbon-text-muted)] mt-1">
-              The customer is being asked for their phone to earn rewards
-              on this sale.
-            </p>
-          </div>
-          <button
-            onClick={cancelPhonePrompt}
-            className="tap rounded-xl border border-[var(--color-pos-border)] bg-white px-4 font-medium"
-          >
-            Skip
-          </button>
-        </div>
-      )}
-      {phonePromptStatus === "name-needed" && (
-        <div className="rounded-2xl border border-[var(--color-carbon-blue)] bg-white px-5 py-4 space-y-3">
-          <div>
-            <p className="font-semibold">
-              New customer — {customer?.phone ?? ""}
-            </p>
-            <p className="text-sm text-[var(--color-carbon-text-muted)]">
-              We didn&rsquo;t find this phone in your customer list. Take
-              their name to finish creating the record (or skip).
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <input
-              autoFocus
-              value={newCustomerName}
-              onChange={(e) => setNewCustomerName(e.target.value)}
-              placeholder="First and last name"
-              className="flex-1 tap rounded-xl border border-[var(--color-pos-border)] px-4"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") saveNewCustomerName();
-              }}
-            />
-            <button
-              onClick={saveNewCustomerName}
-              className="tap rounded-xl bg-[var(--color-carbon-blue)] text-white px-5 font-semibold"
-            >
-              Save
-            </button>
-            <button
-              onClick={() => setPhonePromptStatus("done")}
-              className="tap rounded-xl border border-[var(--color-pos-border)] bg-white px-4 font-medium"
-            >
-              Skip
-            </button>
-          </div>
+      {/* "Hello, Elior" — appears when a customer is attached and we have
+          at least one item in cart. Sits above the cart per design. */}
+      {customer && lines.length > 0 && (
+        <div className="text-2xl font-semibold text-carbon-text">
+          Hello {customer.name.split(" ")[0]},
         </div>
       )}
 
@@ -646,6 +650,22 @@ export function SellScreen({
             onTakeCash={() => startCheckout("cash")}
             onOtherPayment={() => startCheckout("other")}
             disabled={lines.length === 0}
+            pendingPhone={pendingPhone}
+            pendingFirstName={pendingFirstName}
+            pendingLastName={pendingLastName}
+            nameDrawerOpen={nameDrawerOpen}
+            nameSendingToReader={nameSendingToReader}
+            phonePromptCollecting={
+              phonePromptStatus === "collecting" ||
+              phonePromptStatus === "looking-up"
+            }
+            onChangePendingFirstName={setPendingFirstName}
+            onChangePendingLastName={setPendingLastName}
+            onToggleNameDrawer={() => setNameDrawerOpen((v) => !v)}
+            onSendNameToReader={sendNameToReader}
+            onConfirmCreateCustomer={confirmCreateCustomer}
+            onCancelPendingPhone={cancelPendingPhone}
+            onCancelPhonePrompt={cancelPhonePrompt}
           />
           {customer && loyaltyBalance !== null ? (
             <RedeemPointsModal

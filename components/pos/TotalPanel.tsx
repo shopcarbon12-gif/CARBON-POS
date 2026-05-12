@@ -42,6 +42,19 @@ export function TotalPanel({
   onTakeCash,
   onOtherPayment,
   disabled,
+  pendingPhone,
+  pendingFirstName,
+  pendingLastName,
+  nameDrawerOpen,
+  nameSendingToReader,
+  phonePromptCollecting,
+  onChangePendingFirstName,
+  onChangePendingLastName,
+  onToggleNameDrawer,
+  onSendNameToReader,
+  onConfirmCreateCustomer,
+  onCancelPendingPhone,
+  onCancelPhonePrompt,
 }: {
   totals: CartTotals;
   customer: PickedCustomer | null;
@@ -56,6 +69,24 @@ export function TotalPanel({
   onTakeCash: () => void;
   onOtherPayment: () => void;
   disabled: boolean;
+  /** Loyalty: phone entered on reader but customer not yet attached. */
+  pendingPhone: string | null;
+  pendingFirstName: string;
+  pendingLastName: string;
+  nameDrawerOpen: boolean;
+  /** True while the reader is collecting the name (pin pad in use). */
+  nameSendingToReader: boolean;
+  /** True while the reader is collecting the customer's phone. Drives
+   *  the in-line "Customer is entering phone number" placeholder that
+   *  replaces the search row. */
+  phonePromptCollecting: boolean;
+  onChangePendingFirstName: (s: string) => void;
+  onChangePendingLastName: (s: string) => void;
+  onToggleNameDrawer: () => void;
+  onSendNameToReader: () => void;
+  onConfirmCreateCustomer: () => void;
+  onCancelPendingPhone: () => void;
+  onCancelPhonePrompt: () => void;
 }) {
   return (
     <aside className="carbon-card flex flex-col">
@@ -87,6 +118,22 @@ export function TotalPanel({
               </div>
             ) : null}
           </>
+        ) : pendingPhone ? (
+          <PendingPhoneBox
+            phone={pendingPhone}
+            firstName={pendingFirstName}
+            lastName={pendingLastName}
+            drawerOpen={nameDrawerOpen}
+            sending={nameSendingToReader}
+            onChangeFirst={onChangePendingFirstName}
+            onChangeLast={onChangePendingLastName}
+            onToggleDrawer={onToggleNameDrawer}
+            onSendToReader={onSendNameToReader}
+            onConfirm={onConfirmCreateCustomer}
+            onCancel={onCancelPendingPhone}
+          />
+        ) : phonePromptCollecting ? (
+          <CollectingPhoneRow onSkip={onCancelPhonePrompt} />
         ) : (
           <CustomerSearchRow
             onPick={onPickCustomer}
@@ -346,6 +393,175 @@ function CustomerSearchRow({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Loyalty: phone was entered on the reader but no matching customer was
+ * found in pos_customers. Renders the entered phone in a blinking box
+ * with a "+" to confirm-create, and a drawer for first/last name. The
+ * drawer's send-to-reader icon kicks off a 2-step name prompt on the
+ * BBPOS pin pad; values come back here when the customer finishes.
+ */
+function PendingPhoneBox({
+  phone,
+  firstName,
+  lastName,
+  drawerOpen,
+  sending,
+  onChangeFirst,
+  onChangeLast,
+  onToggleDrawer,
+  onSendToReader,
+  onConfirm,
+  onCancel,
+}: {
+  phone: string;
+  firstName: string;
+  lastName: string;
+  drawerOpen: boolean;
+  sending: boolean;
+  onChangeFirst: (s: string) => void;
+  onChangeLast: (s: string) => void;
+  onToggleDrawer: () => void;
+  onSendToReader: () => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  // Format the phone visually as (XXX) XXX-XXXX if 10 digits.
+  const digits = phone.replace(/[^\d]/g, "");
+  const display =
+    digits.length === 10
+      ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+      : phone;
+  const canConfirm = firstName.trim().length > 0;
+  return (
+    <div>
+      <div className="flex items-stretch gap-2">
+        {/* Blinking phone display */}
+        <div className="flex-1 relative">
+          <div className="px-3 py-2 border border-carbon-blue bg-white tabular-nums text-base font-semibold text-carbon-text flex items-center gap-2 animate-pulse">
+            <span className="material-symbols-outlined text-carbon-blue text-base" aria-hidden>
+              call
+            </span>
+            {display}
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-carbon-border text-carbon-text-muted text-xs flex items-center justify-center hover:bg-carbon-surface-soft"
+            title="Cancel"
+            aria-label="Cancel"
+          >
+            ×
+          </button>
+        </div>
+        {/* Confirm/create "+" button on the right */}
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={!canConfirm}
+          title={canConfirm ? "Create customer + enroll in rewards" : "Add a name first"}
+          className="w-12 bg-carbon-blue text-white text-2xl font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-carbon-blue/90 transition-colors"
+        >
+          +
+        </button>
+      </div>
+
+      {/* Drawer toggle */}
+      <button
+        type="button"
+        onClick={onToggleDrawer}
+        className="mt-2 flex items-center gap-1 text-xs text-carbon-text-muted hover:text-carbon-text font-medium"
+      >
+        <span
+          className="material-symbols-outlined text-base"
+          aria-hidden
+        >
+          {drawerOpen ? "expand_less" : "expand_more"}
+        </span>
+        Add name
+      </button>
+
+      {/* Drawer */}
+      {drawerOpen ? (
+        <div className="mt-2 pt-3 border-t border-carbon-border-soft space-y-2">
+          <div className="flex gap-2 items-center">
+            <input
+              value={firstName}
+              onChange={(e) => onChangeFirst(e.target.value)}
+              placeholder="First name"
+              className="flex-1 carbon-input px-3 py-2 text-sm"
+            />
+            <input
+              value={lastName}
+              onChange={(e) => onChangeLast(e.target.value)}
+              placeholder="Last name"
+              className="flex-1 carbon-input px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={onSendToReader}
+              disabled={sending}
+              title="Have the customer type their name on the reader"
+              aria-label="Send to reader"
+              className="w-9 h-9 flex items-center justify-center bg-carbon-blue text-white disabled:opacity-50"
+            >
+              <span
+                className="material-symbols-outlined text-base"
+                aria-hidden
+              >
+                {sending ? "more_horiz" : "send"}
+              </span>
+            </button>
+          </div>
+          {sending ? (
+            <p className="text-xs text-carbon-blue font-medium">
+              Customer is entering their name on the reader…
+            </p>
+          ) : (
+            <p className="text-xs text-carbon-text-muted">
+              Type in here, or send to the reader for the customer to fill.
+              Click&nbsp;<span className="font-bold text-carbon-blue">+</span>&nbsp;
+              when ready to enroll.
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Loyalty: shown in the customer slot while the reader is asking the
+ * customer for their phone. Replaces the search row so the cashier
+ * doesn't have two competing inputs at once. The right-side arrow
+ * cancels the reader action and falls back to the search row.
+ */
+function CollectingPhoneRow({ onSkip }: { onSkip: () => void }) {
+  return (
+    <div className="flex items-stretch gap-2">
+      <div className="flex-1 px-3 py-2 border border-carbon-blue bg-carbon-blue-soft text-sm font-medium text-carbon-blue flex items-center gap-2 animate-pulse">
+        <span
+          className="material-symbols-outlined text-carbon-blue text-base"
+          aria-hidden
+        >
+          smartphone
+        </span>
+        Customer is entering phone number
+      </div>
+      <button
+        type="button"
+        onClick={onSkip}
+        title="Skip — show customer search instead"
+        aria-label="Skip"
+        className="w-12 flex items-center justify-center border border-carbon-border bg-white text-carbon-text-muted hover:bg-carbon-surface-soft transition-colors"
+      >
+        <span className="material-symbols-outlined text-lg" aria-hidden>
+          arrow_forward
+        </span>
+      </button>
     </div>
   );
 }

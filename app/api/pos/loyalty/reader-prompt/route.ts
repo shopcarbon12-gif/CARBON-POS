@@ -57,7 +57,7 @@ export async function POST() {
     "inputs[0][required]": "true",
     "inputs[0][custom_text][title]": "⬢ CARBON REWARDS",
     "inputs[0][custom_text][description]":
-      "Enter your phone number to earn points on this purchase.",
+      "Check your discounts with us today with Carbon Rewards. Enter your phone number.",
     "inputs[0][custom_text][submit_button]": "Continue",
   });
 
