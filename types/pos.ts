@@ -211,6 +211,12 @@ export type CartLine = {
   cart_id: string;
   sku_id: string | null;
   epc: string | null;
+  /** Custom SKU code (human-readable, e.g. "C125414090903"). Shown
+   *  in the cart row subtitle. Optional for back-compat with rows
+   *  hydrated from older localStorage states. */
+  sku?: string | null;
+  /** UPC barcode. Shown alongside SKU in the cart row subtitle. */
+  upc?: string | null;
   description: string;
   quantity: number;
   unit_price: number;

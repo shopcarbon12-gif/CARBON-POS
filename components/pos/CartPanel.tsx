@@ -44,30 +44,50 @@ export function CartPanel({
           {lines.map((line) => {
             const lineSubtotal = line.unit_price * line.quantity;
             const lineTotal = lineSubtotal - line.discount_amount;
-            const subtitle = [
-              line.epc ? `EPC ${line.epc}` : null,
-              line.line_type === "product" && line.quantity > 1
-                ? `${line.quantity} × ${formatMoney(line.unit_price)}`
-                : null,
-              line.discount_amount > 0
+            // Subtitle: SKU · UPC for product lines (no EPC, no price —
+            // price already shows on the right). Misc/loyalty lines keep
+            // their quantity/discount detail since they have no SKU/UPC.
+            const idParts = line.line_type === "product"
+              ? [
+                  line.sku ? `SKU ${line.sku}` : null,
+                  line.upc ? `UPC ${line.upc}` : null,
+                ].filter(Boolean)
+              : [];
+            const miscMeta = line.line_type !== "product"
+              ? [
+                  line.quantity > 1
+                    ? `${line.quantity} × ${formatMoney(line.unit_price)}`
+                    : null,
+                  line.discount_amount > 0
+                    ? `−${formatMoney(line.discount_amount)} off`
+                    : null,
+                ].filter(Boolean)
+              : [];
+            const discountSuffix =
+              line.line_type === "product" && line.discount_amount > 0
                 ? `−${formatMoney(line.discount_amount)} off`
-                : null,
+                : null;
+            const subtitle = [
+              ...idParts,
+              ...miscMeta,
+              discountSuffix,
             ]
               .filter(Boolean)
               .join(" · ");
             return (
               <li
                 key={line.cart_id}
-                className="flex items-center justify-between px-4 py-4 border-b border-[var(--carbon-border-soft)] last:border-b-0 hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                className="flex items-center justify-between px-4 py-2 border-b border-[var(--carbon-border-soft)] last:border-b-0 hover:bg-[var(--carbon-surface-soft)] transition-colors"
               >
-                {/* Thumbnail tile — placeholder gray box with a shirt icon.
-                    Hidden on misc/loyalty lines since there's no product. */}
+                {/* Thumbnail — bigger square (was w-14 h-14). Row vertical
+                    padding dropped from py-4 → py-2 so the row height is
+                    the same as before (image now dictates it). */}
                 {line.line_type === "product" ? (
                   <div
-                    className="w-14 h-14 shrink-0 mr-4 flex items-center justify-center bg-[var(--carbon-surface-soft)] border border-[var(--carbon-border-soft)]"
+                    className="w-20 h-20 shrink-0 mr-4 flex items-center justify-center bg-[var(--carbon-surface-soft)] border border-[var(--carbon-border-soft)]"
                     aria-hidden
                   >
-                    <span className="material-symbols-outlined text-[28px] text-[var(--carbon-muted)]">
+                    <span className="material-symbols-outlined text-[40px] text-[var(--carbon-muted)]">
                       checkroom
                     </span>
                   </div>
@@ -76,12 +96,11 @@ export function CartPanel({
                   <h3 className="text-base font-semibold truncate">
                     {line.description}
                   </h3>
-                  <p className="text-xs text-[var(--carbon-muted)] mt-1 truncate">
-                    {subtitle ||
-                      (line.line_type === "product"
-                        ? formatMoney(line.unit_price)
-                        : "")}
-                  </p>
+                  {subtitle && (
+                    <p className="text-xs text-[var(--carbon-muted)] mt-1 truncate">
+                      {subtitle}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-4 sm:gap-6 shrink-0">
                   {line.line_type === "product" ? (

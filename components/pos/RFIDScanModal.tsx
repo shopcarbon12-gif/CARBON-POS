@@ -7,6 +7,7 @@ export type RfidResolvedItem = {
   epc: string;
   sku_id: string;
   sku: string | null;
+  upc: string | null;
   item_name: string;
   color: string | null;
   size: string | null;

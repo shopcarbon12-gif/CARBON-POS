@@ -565,6 +565,8 @@ export function SellScreen({
           cart_id: cryptoId(),
           sku_id: item.id,
           epc: null,
+          sku: item.sku ?? null,
+          upc: item.upc ?? null,
           description: [item.item_name, item.color, item.size]
             .filter(Boolean)
             .join(" · "),
@@ -585,6 +587,8 @@ export function SellScreen({
         cart_id: cryptoId(),
         sku_id: it.sku_id,
         epc: it.epc,
+        sku: it.sku,
+        upc: it.upc,
         description: [it.item_name, it.color, it.size]
           .filter(Boolean)
           .join(" · "),

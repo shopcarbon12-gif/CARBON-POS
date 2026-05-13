@@ -69,6 +69,7 @@ export async function POST(req: Request) {
     item_status: string;
     sku_id: string | null;
     sku: string | null;
+    upc: string | null;
     item_name: string | null;
     color: string | null;
     size: string | null;
@@ -79,14 +80,15 @@ export async function POST(req: Request) {
     super_admin_locked: boolean | null;
   }>(
     `SELECT i.epc,
-            i.status                  AS item_status,
-            i.custom_sku_id           AS sku_id,
+            i.status                       AS item_status,
+            i.custom_sku_id                AS sku_id,
             cs.sku,
-            m.description             AS item_name,
-            cs.color_code             AS color,
+            COALESCE(cs.upc, m.upc)        AS upc,
+            m.description                  AS item_name,
+            cs.color_code                  AS color,
             cs.size,
             cs.retail_price,
-            sl.name                   AS label_name,
+            sl.name                        AS label_name,
             sl.is_sellable,
             sl.is_visible_to_scanner,
             sl.super_admin_locked
@@ -114,6 +116,7 @@ export async function POST(req: Request) {
     epc: string;
     sku_id: string;
     sku: string | null;
+    upc: string | null;
     item_name: string | null;
     color: string | null;
     size: string | null;
@@ -137,6 +140,7 @@ export async function POST(req: Request) {
       epc: r.epc,
       sku_id: r.sku_id,
       sku: r.sku,
+      upc: r.upc,
       item_name: r.item_name,
       color: r.color,
       size: r.size,
