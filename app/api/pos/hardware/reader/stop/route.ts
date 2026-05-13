@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { currentCashier } from "@/lib/session";
 import {
-  agentIdForCurrentSession,
+  agentAndReadersForCurrentSession,
   callAgentLiveScan,
+  setReaderPause,
 } from "@/lib/reader-control";
 
 /**
@@ -20,16 +21,25 @@ export async function POST() {
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const agentId = await agentIdForCurrentSession(cashier.user_id);
-  if (!agentId) {
+  const linked = await agentAndReadersForCurrentSession(cashier.user_id);
+  if (!linked) {
     return NextResponse.json({ ok: true, skipped: true, reason: "no_agent" });
   }
-  const result = await callAgentLiveScan(cashier, agentId, "stop");
+  // Symmetric with start: also stamp scan_paused_at on every reader
+  // under the agent so the supervisor stops spawning the binary even
+  // if some other path leaves live_scan_active=true behind.
+  await setReaderPause(linked.reader_ids, cashier.user_id);
+  const result = await callAgentLiveScan(cashier, linked.agent_id, "stop");
   if (!result.ok) {
     return NextResponse.json(
       { error: result.error, message: result.message },
       { status: result.status },
     );
   }
-  return NextResponse.json({ ok: true, agent_id: agentId, wms: result.data });
+  return NextResponse.json({
+    ok: true,
+    agent_id: linked.agent_id,
+    reader_ids: linked.reader_ids,
+    wms: result.data,
+  });
 }

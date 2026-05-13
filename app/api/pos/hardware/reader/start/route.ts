@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { currentCashier } from "@/lib/session";
 import {
-  agentIdForCurrentSession,
+  agentAndReadersForCurrentSession,
   callAgentLiveScan,
+  clearReaderPause,
 } from "@/lib/reader-control";
 
 /**
@@ -23,18 +24,27 @@ export async function POST() {
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const agentId = await agentIdForCurrentSession(cashier.user_id);
-  if (!agentId) {
-    // No reader linked to this register — succeed quietly so the
-    // sell-screen mount effect doesn't show an error toast.
+  const linked = await agentAndReadersForCurrentSession(cashier.user_id);
+  if (!linked) {
     return NextResponse.json({ ok: true, skipped: true, reason: "no_agent" });
   }
-  const result = await callAgentLiveScan(cashier, agentId, "start");
+  // 1. Clear devices.scan_paused_at on every reader under the agent —
+  //    same write Hardware Config's Start button does. Without this,
+  //    the CDM supervisor's "should I spawn?" check stays false even
+  //    after live_scan_active=true.
+  await clearReaderPause(linked.reader_ids);
+  // 2. Flip the agent's live_scan_active to true via WMS.
+  const result = await callAgentLiveScan(cashier, linked.agent_id, "start");
   if (!result.ok) {
     return NextResponse.json(
       { error: result.error, message: result.message },
       { status: result.status },
     );
   }
-  return NextResponse.json({ ok: true, agent_id: agentId, wms: result.data });
+  return NextResponse.json({
+    ok: true,
+    agent_id: linked.agent_id,
+    reader_ids: linked.reader_ids,
+    wms: result.data,
+  });
 }

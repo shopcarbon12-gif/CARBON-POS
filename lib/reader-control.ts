@@ -1,28 +1,87 @@
 import { getPool } from "@/lib/db";
 import { wmsFetch, type CashierForWmsFetch } from "@/lib/wms-fetch";
 
+export type AgentAndReaders = {
+  agent_id: string;
+  reader_ids: string[];
+};
+
 /**
- * Look up the CDM agent UUID for the cashier's currently-open register.
- * Returns null when:
+ * Look up the CDM agent + all reader UUIDs for the cashier's currently-
+ * open register. Returns null when:
  *   - the cashier has no open session (e.g. just signed in)
  *   - the register has no agent linked (cash/barcode-only register)
  *
- * Callers should treat null as "no reader to control" and respond 200 with
- * a skipped flag rather than erroring — the sell-screen badge handles
- * the UI state.
+ * The reader_ids list is what we toggle scan_paused_at on — the agent's
+ * `live_scan_active` is one of TWO gates the CDM supervisor checks
+ * before spawning the reader binary; `devices.scan_paused_at` is the
+ * other. Hardware Config's Start/Stop button only flips the latter, so
+ * POS has to flip BOTH to reliably bring a reader up or down.
  */
+export async function agentAndReadersForCurrentSession(
+  userId: string,
+): Promise<AgentAndReaders | null> {
+  const r = await getPool().query<{ agent_id: string; reader_id: string }>(
+    `SELECT reg.cdm_agent_id::text AS agent_id,
+            d.id::text             AS reader_id
+       FROM pos_register_sessions s
+       JOIN pos_registers reg ON reg.id = s.register_id
+       JOIN devices d         ON d.cdm_agent_id = reg.cdm_agent_id
+                            AND d.device_type IN
+                                ('fixed_reader','transaction_reader','door_reader')
+      WHERE s.status = 'open' AND s.opened_by = $1
+      ORDER BY s.opened_at DESC`,
+    [userId],
+  );
+  if (r.rowCount === 0) return null;
+  return {
+    agent_id: r.rows[0].agent_id,
+    reader_ids: r.rows.map((row) => row.reader_id),
+  };
+}
+
+/** Back-compat wrapper for callers that only need the agent id. */
 export async function agentIdForCurrentSession(
   userId: string,
 ): Promise<string | null> {
-  const r = await getPool().query<{ cdm_agent_id: string | null }>(
-    `SELECT reg.cdm_agent_id
-       FROM pos_register_sessions s
-       JOIN pos_registers reg ON reg.id = s.register_id
-      WHERE s.status = 'open' AND s.opened_by = $1
-      ORDER BY s.opened_at DESC LIMIT 1`,
-    [userId],
+  const v = await agentAndReadersForCurrentSession(userId);
+  return v?.agent_id ?? null;
+}
+
+/**
+ * Clear the Hardware-Config pause flag on every reader under the
+ * cashier's agent. Combined with live_scan_active=true on the agent,
+ * this makes the CDM supervisor spawn the reader binary. Done as a
+ * direct DB write so non-admin cashiers can use it without escalating
+ * to the WMS admin-gated /api/hardware-config/readers/{id}/resume.
+ */
+export async function clearReaderPause(readerIds: string[]): Promise<void> {
+  if (readerIds.length === 0) return;
+  await getPool().query(
+    `UPDATE devices
+        SET scan_paused_at = NULL,
+            scan_paused_by = NULL,
+            updated_at     = now()
+      WHERE id = ANY($1::uuid[])`,
+    [readerIds],
   );
-  return r.rows[0]?.cdm_agent_id ?? null;
+}
+
+/** Set the Hardware-Config pause flag — symmetric with clearReaderPause. */
+export async function setReaderPause(
+  readerIds: string[],
+  cashierUserId: string,
+): Promise<void> {
+  if (readerIds.length === 0) return;
+  await getPool().query(
+    `UPDATE devices
+        SET scan_paused_at = now(),
+            scan_paused_by = $2::uuid,
+            updated_at     = now()
+      WHERE id = ANY($1::uuid[])
+        AND scan_paused_at IS NULL`,
+    [readerIds, cashierUserId],
+  );
 }
 
 /**
