@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { formatMoney } from "@/lib/utils";
 
 export type RfidResolvedItem = {
   epc: string;
@@ -37,6 +38,23 @@ export function RFIDScanModal({
     [],
   );
   const [streamErr, setStreamErr] = useState<string | null>(null);
+  // De-dupe set held in a ref so the trash + Rescan handlers can mutate
+  // it (an item removed from the cart should be re-scannable; Rescan
+  // clears everything).
+  const seenRef = useRef<Set<string>>(new Set());
+
+  const removeItem = (epc: string) => {
+    setScanned((prev) => prev.filter((it) => it.epc !== epc));
+    seenRef.current.delete(epc);
+  };
+  const rescan = () => {
+    setScanned([]);
+    setUnknownCount(0);
+    setFilteredCount(0);
+    setPromoted(0);
+    setBlocked([]);
+    seenRef.current.clear();
+  };
 
   useEffect(() => {
     if (!open) {
@@ -46,12 +64,12 @@ export function RFIDScanModal({
       setPromoted(0);
       setBlocked([]);
       setStreamErr(null);
+      seenRef.current.clear();
       return;
     }
     const es = new EventSource("/api/hardware/epcs/stream", {
       withCredentials: true,
     });
-    const seen = new Set<string>();
     const buffer: string[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -92,8 +110,8 @@ export function RFIDScanModal({
       try {
         const payload = JSON.parse(e.data) as { epc?: string };
         const epc = payload.epc;
-        if (!epc || seen.has(epc)) return;
-        seen.add(epc);
+        if (!epc || seenRef.current.has(epc)) return;
+        seenRef.current.add(epc);
         buffer.push(epc);
         if (!flushTimer) flushTimer = setTimeout(flush, 200);
       } catch {
@@ -139,22 +157,45 @@ export function RFIDScanModal({
             </div>
           ) : (
             <ul>
-              {scanned.map((it) => (
-                <li
-                  key={it.epc}
-                  className="flex items-center justify-between px-4 py-2 border-b border-[var(--color-pos-border)] last:border-b-0"
-                >
-                  <div>
-                    <p className="font-medium">{it.item_name}</p>
-                    <p className="text-xs text-[var(--color-pos-muted)]">
-                      {[it.color, it.size, it.sku].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                  <span className="text-xs font-mono text-[var(--color-pos-muted)]">
-                    {it.epc.slice(-6)}
-                  </span>
-                </li>
-              ))}
+              {scanned.map((it) => {
+                const price = it.retail_price ? formatMoney(Number(it.retail_price)) : null;
+                const meta = [it.sku, it.color, it.size, price].filter(Boolean);
+                return (
+                  <li
+                    key={it.epc}
+                    className="flex items-center justify-between gap-3 px-4 py-2 border-b border-[var(--color-pos-border)] last:border-b-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm leading-tight">
+                        <span className="font-semibold text-carbon-text">
+                          {it.item_name}
+                        </span>
+                        {meta.length > 0 && (
+                          <span className="text-carbon-text-muted">
+                            {meta.map((m, idx) => (
+                              <span key={idx}>
+                                <span className="mx-1.5 opacity-50">·</span>
+                                {m}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(it.epc)}
+                      aria-label="Remove from list"
+                      title="Remove from list"
+                      className="shrink-0 w-9 h-9 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[20px]" aria-hidden>
+                        delete
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -165,9 +206,7 @@ export function RFIDScanModal({
             </p>
             <ul className="text-xs text-red-700 space-y-0.5 max-h-24 overflow-auto">
               {blocked.slice(0, 8).map((b) => (
-                <li key={b.epc}>
-                  <span className="font-mono">{b.epc.slice(-6)}</span> — {b.status}
-                </li>
+                <li key={b.epc}>{b.status}</li>
               ))}
               {blocked.length > 8 && (
                 <li className="italic">+ {blocked.length - 8} more</li>
@@ -178,11 +217,20 @@ export function RFIDScanModal({
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-[var(--color-pos-muted)]">
             {scanned.length} ready to add
-            {promoted > 0 && ` · ${promoted} promoted at checkout`}
-            {unknownCount > 0 && ` · ${unknownCount} unknown tag${unknownCount === 1 ? "" : "s"}`}
-            {filteredCount > 0 && ` · ${filteredCount} hidden`}
           </p>
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={rescan}
+              disabled={scanned.length === 0 && blocked.length === 0}
+              className="tap rounded-xl border border-[var(--color-pos-border)] px-4 font-medium disabled:opacity-50 inline-flex items-center gap-1.5"
+              title="Clear list and start scanning again"
+            >
+              <span className="material-symbols-outlined text-[18px]" aria-hidden>
+                refresh
+              </span>
+              Rescan
+            </button>
             <button
               onClick={onClose}
               className="tap rounded-xl border border-[var(--color-pos-border)] px-4 font-medium"

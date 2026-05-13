@@ -679,16 +679,17 @@ export function SellScreen({
         </div>
       )}
 
-      {/* Reader status badge — small chip at the top of the sell-screen.
-          Click toggles power; updates also poll from /reader/state every
-          20 s so the truth always wins. */}
-      <ReaderStatusBadge
-        state={readerState}
-        onToggle={() => {
-          if (readerState === "on") void stopReader();
-          else if (readerState === "off") void startReader();
-        }}
-      />
+      {/* Reader status badge + antenna power slider — top of sell screen. */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <ReaderStatusBadge
+          state={readerState}
+          onToggle={() => {
+            if (readerState === "on") void stopReader();
+            else if (readerState === "off") void startReader();
+          }}
+        />
+        <AntennaPowerSlider />
+      </div>
 
       {/* Main POS area */}
       <div className="flex flex-1 gap-6 min-h-0 flex-col xl:flex-row">
@@ -1067,5 +1068,89 @@ function ReaderStatusBadge({
       <span className={`w-2 h-2 rounded-full ${s.dot}`} aria-hidden />
       {s.label}
     </button>
+  );
+}
+
+/**
+ * Small inline slider next to the reader badge that sets the transmit
+ * power (dBm) on every antenna under the cashier's register's reader.
+ * Loads on mount and on a poll interval; writes via debounced PATCH so
+ * dragging doesn't hammer the DB. POS-set values override anything WMS
+ * has unless the chip wedges and triggers a supervisor sweep.
+ */
+function AntennaPowerSlider() {
+  const [power, setPower] = useState<number | null>(null);
+  const [skipped, setSkipped] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fetch("/api/pos/hardware/antenna-power").then((r) =>
+          r.json(),
+        );
+        if (cancelled) return;
+        if (r.skipped) setSkipped(true);
+        else if (typeof r.power_dbm === "number") setPower(r.power_dbm);
+      } catch {
+        /* ignore */
+      }
+    };
+    void load();
+    const id = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  const onSlide = (next: number) => {
+    setPower(next);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      setSaving(true);
+      try {
+        await fetch("/api/pos/hardware/antenna-power", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ power_dbm: next }),
+        });
+      } catch {
+        /* leave the slider where it is; next poll will reconcile */
+      }
+      setSaving(false);
+    }, 300);
+  };
+
+  if (skipped) return null;
+  if (power == null) {
+    return (
+      <div className="text-xs text-carbon-text-muted">Loading antenna power…</div>
+    );
+  }
+  return (
+    <div className="inline-flex items-center gap-3 px-3 py-1.5 border border-carbon-border-soft bg-white rounded-full">
+      <span className="material-symbols-outlined text-[18px] text-carbon-blue" aria-hidden>
+        settings_input_antenna
+      </span>
+      <span className="text-xs font-semibold uppercase tracking-wider text-carbon-text-muted">
+        Power
+      </span>
+      <input
+        type="range"
+        min={10}
+        max={31}
+        step={1}
+        value={power}
+        onChange={(e) => onSlide(Number(e.target.value))}
+        className="w-32 accent-carbon-blue cursor-pointer"
+        aria-label="Antenna transmit power in dBm"
+      />
+      <span className="text-xs font-bold tabular-nums text-carbon-text min-w-[3.5em] text-right">
+        {power} dBm{saving ? "…" : ""}
+      </span>
+    </div>
   );
 }
