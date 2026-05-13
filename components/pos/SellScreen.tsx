@@ -90,28 +90,31 @@ export function SellScreen({
   const lastActivityRef = useRef<number>(Date.now());
   const fastPollUntilRef = useRef<number>(0);
 
-  // Map a WMS state response → ReaderState. Called by both the manual
-  // start/stop flow and the background reconcile.
+  // Map a WMS state response → ReaderState. Anything unrecognised
+  // (auth error from WMS, agent lookup failure, malformed body) maps
+  // to "unreachable" so the badge transitions OUT of starting/stopping
+  // and the auto-retry can kick in.
   const mapWmsState = (r: {
     skipped?: boolean;
     reason?: string;
     live_scan_active?: boolean;
     reader_status_online?: boolean;
-  }): ReaderState | null => {
+    error?: string;
+  }): ReaderState => {
     if (r.skipped && r.reason === "no_agent") return "no_reader";
-    if (typeof r.live_scan_active !== "boolean") return null;
+    if (r.error) return "unreachable";
+    if (typeof r.live_scan_active !== "boolean") return "unreachable";
     if (!r.live_scan_active) return "off";
-    // Active. Chip alive?
     if (r.reader_status_online === true) return "on";
     if (r.reader_status_online === false) return "recovering";
-    return "on"; // optimistic when truthiness unknown
+    return "on";
   };
 
-  const fetchState = async (): Promise<ReaderState | null> => {
+  const fetchState = async (): Promise<ReaderState> => {
     try {
-      const r = await fetch("/api/pos/hardware/reader/state").then((r) =>
-        r.json(),
-      );
+      const res = await fetch("/api/pos/hardware/reader/state");
+      if (!res.ok) return "unreachable";
+      const r = await res.json().catch(() => ({}));
       return mapWmsState(r);
     } catch {
       return "unreachable";
@@ -230,20 +233,15 @@ export function SellScreen({
       if (next === "unreachable") {
         if (unreachableSince === 0) unreachableSince = Date.now();
         setReaderState("unreachable");
-        // If we've been unreachable for 30s, try kicking Start once.
-        // The agent restart or network recovery will let the next tick
-        // land a real state.
+        // After 30 s of red, kick Start once — covers "agent rebooted"
+        // and "network blip recovered" without operator action.
         if (Date.now() - unreachableSince > 30_000) {
           unreachableSince = 0;
           void startReader();
         }
-      } else if (next) {
+      } else {
         unreachableSince = 0;
-        // Don't clobber "starting"/"stopping" while their fetch is in
-        // flight — those resolve themselves via the response path.
-        setReaderState((cur) =>
-          cur === "starting" || cur === "stopping" ? next : next,
-        );
+        setReaderState(next);
       }
       timer = setTimeout(tick, fast ? 3_000 : 20_000);
     };
