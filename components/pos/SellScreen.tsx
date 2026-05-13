@@ -121,14 +121,25 @@ export function SellScreen({
   useEffect(() => {
     void startReader();
     return () => {
-      // Best-effort, fire-and-forget. keepalive lets the browser flush
-      // the request even as the page unloads.
-      try {
-        const blob = new Blob(["{}"], { type: "application/json" });
-        navigator.sendBeacon?.("/api/pos/hardware/reader/stop", blob);
-      } catch {
-        void stopReader();
-      }
+      // Two best-effort, fire-and-forget calls on unmount:
+      //  1. Cancel any in-flight Stripe action on the reader (the
+      //     phone-prompt collect_inputs, the name-prompt, or the cart
+      //     display) so the pinpad returns to the Carbon splash
+      //     instead of staying stuck on the last screen.
+      //  2. Stop the WMS live-scan so the reader binary winds down
+      //     and the chip cools.
+      // `keepalive: true` lets the browser flush these requests even as
+      // the page is unloading (sendBeacon only supports POST so we use
+      // fetch for both).
+      const cancelStripe = fetch("/api/pos/loyalty/reader-prompt", {
+        method: "DELETE",
+        keepalive: true,
+      }).catch(() => {});
+      const stopScan = fetch("/api/pos/hardware/reader/stop", {
+        method: "POST",
+        keepalive: true,
+      }).catch(() => {});
+      void Promise.allSettled([cancelStripe, stopScan]);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
