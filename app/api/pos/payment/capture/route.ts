@@ -83,7 +83,7 @@ const schema = z.object({
  *     - INSERT pos_sales (header, status='completed')
  *     - INSERT pos_sale_lines
  *     - INSERT pos_payments
- *     - UPDATE epcs SET status='sold' WHERE epc = ANY(...)
+ *     - UPDATE items SET status='sold' WHERE epc = ANY(...)
  *     - INSERT audit_log (best-effort; ignored if WMS table differs)
  *     COMMIT
  *  3. If anything in step 2 fails, ROLLBACK the DB and refund the captured
@@ -283,8 +283,12 @@ export async function POST(req: Request) {
         .map((l) => l.epc)
         .filter((e): e is string => typeof e === "string" && e.length > 0);
       if (epcs.length > 0) {
+        // WMS unified the legacy `epcs` table into `items` — this write
+        // had silently been targeting a non-existent relation. The
+        // intent stays the same: every EPC on the completed sale flips
+        // to 'sold' atomically with the pos_sales insert.
         await client.query(
-          `UPDATE epcs
+          `UPDATE items
               SET status = 'sold',
                   updated_at = now()
             WHERE epc = ANY($1::text[])`,

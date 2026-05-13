@@ -31,12 +31,18 @@ export function RFIDScanModal({
 }) {
   const [scanned, setScanned] = useState<RfidResolvedItem[]>([]);
   const [skipped, setSkipped] = useState(0);
+  const [promoted, setPromoted] = useState(0);
+  const [blocked, setBlocked] = useState<Array<{ epc: string; status: string }>>(
+    [],
+  );
   const [streamErr, setStreamErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
       setScanned([]);
       setSkipped(0);
+      setPromoted(0);
+      setBlocked([]);
       setStreamErr(null);
       return;
     }
@@ -57,13 +63,26 @@ export function RFIDScanModal({
         body: JSON.stringify({ epcs }),
       });
       if (!res.ok) return;
-      const data: { items: RfidResolvedItem[]; skipped: number } =
-        await res.json();
+      const data: {
+        items: RfidResolvedItem[];
+        skipped: number;
+        promote_count?: number;
+        blocked?: Array<{ epc: string; status: string }>;
+        dropped_count?: number;
+        unknown_count?: number;
+      } = await res.json();
       setScanned((prev) => {
         const have = new Set(prev.map((p) => p.epc));
         return [...prev, ...data.items.filter((i) => !have.has(i.epc))];
       });
-      setSkipped((s) => s + data.skipped);
+      setSkipped((s) => s + (data.dropped_count ?? 0) + (data.unknown_count ?? 0));
+      setPromoted((p) => p + (data.promote_count ?? 0));
+      if (data.blocked?.length) {
+        setBlocked((prev) => {
+          const have = new Set(prev.map((b) => b.epc));
+          return [...prev, ...data.blocked!.filter((b) => !have.has(b.epc))];
+        });
+      }
     }
 
     es.addEventListener("epc", (e: MessageEvent) => {
@@ -136,10 +155,28 @@ export function RFIDScanModal({
             </ul>
           )}
         </div>
+        {blocked.length > 0 && (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm">
+            <p className="font-semibold text-red-800 mb-1">
+              Needs supervisor — {blocked.length} tag{blocked.length === 1 ? "" : "s"} blocked
+            </p>
+            <ul className="text-xs text-red-700 space-y-0.5 max-h-24 overflow-auto">
+              {blocked.slice(0, 8).map((b) => (
+                <li key={b.epc}>
+                  <span className="font-mono">{b.epc.slice(-6)}</span> — {b.status}
+                </li>
+              ))}
+              {blocked.length > 8 && (
+                <li className="italic">+ {blocked.length - 8} more</li>
+              )}
+            </ul>
+          </div>
+        )}
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-[var(--color-pos-muted)]">
             {scanned.length} ready to add
-            {skipped > 0 && ` · ${skipped} skipped (already sold)`}
+            {promoted > 0 && ` · ${promoted} promoted at checkout`}
+            {skipped > 0 && ` · ${skipped} skipped`}
           </p>
           <div className="flex gap-2">
             <button

@@ -63,6 +63,115 @@ export function SellScreen({
   const [nameSendingToReader, setNameSendingToReader] = useState(false);
   const promptedForCartRef = useRef(false);
 
+  // RFID reader power state. Default is OFF (cool, no draw). The sell
+  // screen turns it on automatically on mount, off on unmount or after
+  // 5 minutes of cashier inactivity. `Scan RFID` always re-wakes it.
+  //   "off"  — WMS confirms agent.live_scan_active=false (cool)
+  //   "on"   — live_scan_active=true, scanning
+  //   "starting" / "stopping" — in-flight transitions, badge shows spinner
+  //   "no_reader" — register isn't linked to a CDM agent
+  //   "unreachable" — WMS not responding
+  type ReaderState = "off" | "on" | "starting" | "stopping" | "no_reader" | "unreachable";
+  const [readerState, setReaderState] = useState<ReaderState>("off");
+  const lastActivityRef = useRef<number>(Date.now());
+
+  const startReader = async () => {
+    setReaderState("starting");
+    try {
+      const res = await fetch("/api/pos/hardware/reader/start", {
+        method: "POST",
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d.skipped && d.reason === "no_agent") setReaderState("no_reader");
+      else if (d.ok) setReaderState("on");
+      else setReaderState("unreachable");
+    } catch {
+      setReaderState("unreachable");
+    }
+  };
+  const stopReader = async () => {
+    setReaderState("stopping");
+    try {
+      const res = await fetch("/api/pos/hardware/reader/stop", {
+        method: "POST",
+        keepalive: true,
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d.skipped && d.reason === "no_agent") setReaderState("no_reader");
+      else setReaderState("off");
+    } catch {
+      setReaderState("off"); // best-effort; assume off
+    }
+  };
+  const markActivity = () => {
+    lastActivityRef.current = Date.now();
+    if (readerState === "off") {
+      // Treat cashier activity as a wake signal too (e.g., typing in search
+      // after an idle stop). "Scan RFID" click still re-starts explicitly.
+      void startReader();
+    }
+  };
+
+  // Auto-start on mount, auto-stop on unmount. The unmount path covers
+  // sale completion (capture redirects to /receipt), tab close, and
+  // navigation to other tabs.
+  useEffect(() => {
+    void startReader();
+    return () => {
+      // Best-effort, fire-and-forget. keepalive lets the browser flush
+      // the request even as the page unloads.
+      try {
+        const blob = new Blob(["{}"], { type: "application/json" });
+        navigator.sendBeacon?.("/api/pos/hardware/reader/stop", blob);
+      } catch {
+        void stopReader();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 5-minute idle watchdog. Resets on any cart change, search input,
+  // discount edit, or Scan RFID click (see callers of `markActivity`).
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (readerState !== "on") return;
+      if (Date.now() - lastActivityRef.current > 5 * 60 * 1000) {
+        void stopReader();
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [readerState]);
+
+  // Cart mutations are the primary "cashier is doing things" signal —
+  // bumps the activity ref so the idle-stop timer doesn't fire mid-sale.
+  // We avoid wrapping every setLines call by reacting to `lines` here.
+  useEffect(() => {
+    if (!hydrated) return;
+    lastActivityRef.current = Date.now();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines.length]);
+
+  // Background reconcile — every 20 s, ask WMS for the truth. Keeps the
+  // badge accurate if the user toggled the reader from WMS hardware
+  // config, or if a start/stop response was lost.
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const r = await fetch("/api/pos/hardware/reader/state").then((r) =>
+          r.json(),
+        );
+        if (r.skipped && r.reason === "no_agent") {
+          setReaderState("no_reader");
+        } else if (typeof r.live_scan_active === "boolean") {
+          setReaderState(r.live_scan_active ? "on" : "off");
+        }
+      } catch {
+        /* leave state alone on network blips */
+      }
+    }, 20_000);
+    return () => clearInterval(id);
+  }, []);
+
   const cartKey = `pos:cart:${code}`;
 
   // Hydrate cart + customer from localStorage; if the URL carries
@@ -570,6 +679,17 @@ export function SellScreen({
         </div>
       )}
 
+      {/* Reader status badge — small chip at the top of the sell-screen.
+          Click toggles power; updates also poll from /reader/state every
+          20 s so the truth always wins. */}
+      <ReaderStatusBadge
+        state={readerState}
+        onToggle={() => {
+          if (readerState === "on") void stopReader();
+          else if (readerState === "off") void startReader();
+        }}
+      />
+
       {/* Main POS area */}
       <div className="flex flex-1 gap-6 min-h-0 flex-col xl:flex-row">
         {/* Left column — search + cart + bottom actions */}
@@ -579,7 +699,11 @@ export function SellScreen({
               <ItemSearch onPick={addProduct} />
             </div>
             <button
-              onClick={() => setShowRfid(true)}
+              onClick={() => {
+                markActivity();
+                if (readerState === "off") void startReader();
+                setShowRfid(true);
+              }}
               className="carbon-btn-secondary tap-lg px-6 font-semibold whitespace-nowrap"
             >
               Scan RFID
@@ -876,4 +1000,72 @@ function cryptoId(): string {
     return globalThis.crypto.randomUUID();
   }
   return Math.random().toString(36).slice(2);
+}
+
+/**
+ * Small pill near the top of the sell screen showing the RFID reader's
+ * power state. Click to manually toggle. Updates from the auto start /
+ * stop logic, the 20-second WMS reconcile poll, and the 5-minute idle
+ * watchdog.
+ */
+function ReaderStatusBadge({
+  state,
+  onToggle,
+}: {
+  state: "off" | "on" | "starting" | "stopping" | "no_reader" | "unreachable";
+  onToggle: () => void;
+}) {
+  const info: Record<
+    typeof state,
+    { label: string; dot: string; tint: string; clickable: boolean }
+  > = {
+    on: {
+      label: "Reader on",
+      dot: "bg-emerald-500",
+      tint: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      clickable: true,
+    },
+    off: {
+      label: "Reader off — click to start",
+      dot: "bg-carbon-text-muted",
+      tint: "border-carbon-border-soft bg-white text-carbon-text-muted",
+      clickable: true,
+    },
+    starting: {
+      label: "Starting reader…",
+      dot: "bg-amber-400 animate-pulse",
+      tint: "border-amber-200 bg-amber-50 text-amber-800",
+      clickable: false,
+    },
+    stopping: {
+      label: "Stopping reader…",
+      dot: "bg-amber-400 animate-pulse",
+      tint: "border-amber-200 bg-amber-50 text-amber-800",
+      clickable: false,
+    },
+    no_reader: {
+      label: "No reader paired with this register",
+      dot: "bg-carbon-border",
+      tint: "border-carbon-border-soft bg-white text-carbon-text-muted",
+      clickable: false,
+    },
+    unreachable: {
+      label: "Reader unreachable — check WMS",
+      dot: "bg-red-500",
+      tint: "border-red-200 bg-red-50 text-red-800",
+      clickable: false,
+    },
+  };
+  const s = info[state];
+  return (
+    <button
+      type="button"
+      onClick={s.clickable ? onToggle : undefined}
+      disabled={!s.clickable}
+      className={`self-start inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold ${s.tint} ${s.clickable ? "cursor-pointer hover:opacity-90" : "cursor-default"}`}
+    >
+      <span className={`w-2 h-2 rounded-full ${s.dot}`} aria-hidden />
+      {s.label}
+    </button>
+  );
 }
