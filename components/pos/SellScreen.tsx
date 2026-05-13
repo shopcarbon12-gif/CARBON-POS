@@ -61,6 +61,9 @@ export function SellScreen({
   const [pendingLastName, setPendingLastName] = useState("");
   const [nameDrawerOpen, setNameDrawerOpen] = useState(false);
   const [nameSendingToReader, setNameSendingToReader] = useState(false);
+  // True for ~5 s after a phone lookup resolves — keeps the thank-you
+  // / sign-up message on the reader before the cart-mirror takes over.
+  const [welcomeActive, setWelcomeActive] = useState(false);
   const promptedForCartRef = useRef(false);
 
   // RFID reader power state. Default is OFF (cool, no draw). The sell
@@ -246,7 +249,8 @@ export function SellScreen({
     phonePromptStatus === "collecting" ||
     phonePromptStatus === "looking-up" ||
     pendingPhone !== null ||
-    nameSendingToReader;
+    nameSendingToReader ||
+    welcomeActive;
   useEffect(() => {
     if (!hydrated) return;
     if (promptIsActive) return;
@@ -321,24 +325,42 @@ export function SellScreen({
   }, [hydrated, customer, phonePromptStatus]);
 
   // Poll the reader's collect_inputs status while collecting the phone.
+  // IMPORTANT: keep phonePromptStatus === 'collecting' until the lookup
+  // result has been fully processed. Flipping it to 'looking-up' before
+  // setCustomer/setPendingPhone causes this effect's deps to change, the
+  // cleanup runs, stopped=true, and the result-handling branch ends up
+  // returning before any state update lands — looks like "nothing
+  // happened in POS" from the cashier's POV.
+  const handlingResultRef = useRef(false);
   useEffect(() => {
     if (phonePromptStatus !== "collecting") return;
     let stopped = false;
     const tick = async () => {
-      if (stopped) return;
+      if (stopped || handlingResultRef.current) return;
       try {
         const r = await fetch(
           "/api/pos/loyalty/reader-prompt/status",
         ).then((r) => r.json());
         if (stopped) return;
         if (r.status === "succeeded" && r.phone) {
-          setPhonePromptStatus("looking-up");
+          handlingResultRef.current = true;
           const lookup = await fetch("/api/pos/loyalty/lookup", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ phone: r.phone }),
-          }).then((r) => r.json());
-          if (stopped) return;
+          })
+            .then((r) => r.json())
+            .catch(() => null as null | {
+              found?: boolean;
+              customer?: { id: number; first_name: string; last_name: string | null; email: string | null; phone: string | null; mobile_phone: string | null };
+              phone?: string;
+            });
+          if (!lookup) {
+            // Lookup failed — keep the prompt going so cashier or
+            // background reconcile can retry.
+            handlingResultRef.current = false;
+            return;
+          }
           if (lookup.found && lookup.customer) {
             const c = lookup.customer;
             const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
@@ -348,14 +370,36 @@ export function SellScreen({
               email: c.email ?? null,
               phone: c.mobile_phone ?? c.phone ?? null,
             });
+            // Welcome existing member — fetch balance, push thank-you to
+            // the reader for 5 s, then cart-mirror takes over.
+            try {
+              const bal = await fetch(
+                `/api/pos/loyalty/balance?customer_id=${c.id}`,
+              )
+                .then((r) => r.json())
+                .catch(() => null);
+              const pts = Number(bal?.balance ?? 0);
+              await pushReaderWelcome(
+                pts > 0
+                  ? `Thank you for being a CARBON member · ${pts.toLocaleString()} pts`
+                  : `Thank you for being a CARBON member`,
+              );
+            } catch {
+              /* welcome best-effort */
+            }
             setPhonePromptStatus("done");
           } else {
-            // No match — surface the pending phone for cashier confirmation.
+            // No match — surface the pending phone for cashier
+            // confirmation AND push the sign-up thank-you on the reader.
             setPendingPhone(lookup.phone ?? r.phone);
             setPendingFirstName("");
             setPendingLastName("");
+            await pushReaderWelcome(
+              "Thank you for signing up — your discount is on the way…",
+            );
             setPhonePromptStatus("idle");
           }
+          handlingResultRef.current = false;
         } else if (
           r.status === "canceled" ||
           r.status === "failed" ||
@@ -373,6 +417,34 @@ export function SellScreen({
       clearInterval(id);
     };
   }, [phonePromptStatus]);
+
+  // Welcome-message state: while true, the cart-mirror useEffect skips
+  // pushing the actual cart so the thank-you screen has its 5 s of
+  // dwell. State (not ref) so flipping it back to false causes the
+  // cart-mirror to re-run and replace the welcome with the live cart.
+  const pushReaderWelcome = async (text: string) => {
+    setWelcomeActive(true);
+    try {
+      await fetch("/api/pos/readers/display", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currency: "usd",
+          line_items: [
+            {
+              description: text.slice(0, 100),
+              quantity: 1,
+              unit_amount_cents: 0,
+            },
+          ],
+          total_cents: 0,
+        }),
+      });
+    } catch {
+      /* keep going; cart-mirror will take over after the 5 s window */
+    }
+    setTimeout(() => setWelcomeActive(false), 5000);
+  };
 
   // Poll the reader's name-prompt action while the cashier has it open.
   useEffect(() => {
