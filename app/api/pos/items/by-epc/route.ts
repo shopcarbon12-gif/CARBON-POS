@@ -54,6 +54,12 @@ export async function POST(req: Request) {
     );
   }
 
+  // items.epc is stored uppercase (the WMS catalog canonical form),
+  // but the SSE stream emits the hex lowercase. Normalize once on the
+  // way in so the indexed equality lookup hits — without this, every
+  // scanned tag falls into "unknown" and the cashier sees 0 ready.
+  const normalizedEpcs = parsed.data.epcs.map((e) => e.toUpperCase());
+
   const pool = getPool();
   // CASE maps items.status → status_labels.name (mirrors WMS's
   // labelNameForWmsStatus(); anything not enumerated falls to TAG
@@ -101,7 +107,7 @@ export async function POST(req: Request) {
                    ELSE 'TAG KILLED'
                  END
       WHERE i.epc = ANY($1::text[])`,
-    [parsed.data.epcs],
+    [normalizedEpcs],
   );
 
   type UsableItem = {
@@ -153,7 +159,7 @@ export async function POST(req: Request) {
   }
 
   const foundCount = rows.rows.length;
-  const unknownCount = parsed.data.epcs.length - foundCount;
+  const unknownCount = normalizedEpcs.length - foundCount;
 
   return NextResponse.json({
     items: usable,

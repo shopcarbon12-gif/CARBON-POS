@@ -30,7 +30,8 @@ export function RFIDScanModal({
   onAdd: (items: RfidResolvedItem[]) => void;
 }) {
   const [scanned, setScanned] = useState<RfidResolvedItem[]>([]);
-  const [skipped, setSkipped] = useState(0);
+  const [unknownCount, setUnknownCount] = useState(0);
+  const [filteredCount, setFilteredCount] = useState(0);
   const [promoted, setPromoted] = useState(0);
   const [blocked, setBlocked] = useState<Array<{ epc: string; status: string }>>(
     [],
@@ -40,7 +41,8 @@ export function RFIDScanModal({
   useEffect(() => {
     if (!open) {
       setScanned([]);
-      setSkipped(0);
+      setUnknownCount(0);
+      setFilteredCount(0);
       setPromoted(0);
       setBlocked([]);
       setStreamErr(null);
@@ -75,7 +77,8 @@ export function RFIDScanModal({
         const have = new Set(prev.map((p) => p.epc));
         return [...prev, ...data.items.filter((i) => !have.has(i.epc))];
       });
-      setSkipped((s) => s + (data.dropped_count ?? 0) + (data.unknown_count ?? 0));
+      setUnknownCount((c) => c + (data.unknown_count ?? 0));
+      setFilteredCount((c) => c + (data.dropped_count ?? 0));
       setPromoted((p) => p + (data.promote_count ?? 0));
       if (data.blocked?.length) {
         setBlocked((prev) => {
@@ -176,7 +179,8 @@ export function RFIDScanModal({
           <p className="text-sm text-[var(--color-pos-muted)]">
             {scanned.length} ready to add
             {promoted > 0 && ` · ${promoted} promoted at checkout`}
-            {skipped > 0 && ` · ${skipped} skipped`}
+            {unknownCount > 0 && ` · ${unknownCount} unknown tag${unknownCount === 1 ? "" : "s"}`}
+            {filteredCount > 0 && ` · ${filteredCount} hidden`}
           </p>
           <div className="flex gap-2">
             <button
