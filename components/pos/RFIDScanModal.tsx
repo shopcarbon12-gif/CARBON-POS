@@ -25,6 +25,7 @@ export type RfidResolvedItem = {
 export type ReaderUiState =
   | "off"
   | "on"
+  | "recovering"
   | "starting"
   | "stopping"
   | "no_reader"
@@ -307,6 +308,12 @@ function ReaderStatusBadge({
     },
     stopping: {
       label: "Stopping reader…",
+      dot: "bg-amber-400 animate-pulse",
+      tint: "border-amber-200 bg-amber-50 text-amber-800",
+      clickable: false,
+    },
+    recovering: {
+      label: "Reader recovering…",
       dot: "bg-amber-400 animate-pulse",
       tint: "border-amber-200 bg-amber-50 text-amber-800",
       clickable: false,

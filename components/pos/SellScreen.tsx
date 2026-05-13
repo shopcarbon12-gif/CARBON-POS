@@ -63,34 +63,84 @@ export function SellScreen({
   const [nameSendingToReader, setNameSendingToReader] = useState(false);
   const promptedForCartRef = useRef(false);
 
-  // RFID reader power state. Default is OFF (cool, no draw). The sell
-  // screen turns it on automatically on mount, off on unmount or after
-  // 5 minutes of cashier inactivity. `Scan RFID` always re-wakes it.
-  //   "off"  — WMS confirms agent.live_scan_active=false (cool)
-  //   "on"   — live_scan_active=true, scanning
-  //   "starting" / "stopping" — in-flight transitions, badge shows spinner
-  //   "no_reader" — register isn't linked to a CDM agent
-  //   "unreachable" — WMS not responding
-  type ReaderState = "off" | "on" | "starting" | "stopping" | "no_reader" | "unreachable";
+  // RFID reader state model — two independent signals from WMS:
+  //   live_scan_active     — INTENT: is the agent told to spawn the
+  //                           reader binary? (the POS-set toggle)
+  //   reader_status_online — TRUTH:  is the chip actually alive on the
+  //                           network? (the CDM watchdog's view)
+  //
+  // Combined UI states:
+  //   "off"          live_scan_active=false              (gray)
+  //   "on"           active=true, online=true            (green)
+  //   "recovering"   active=true, online=false           (amber pulse)
+  //                  → CDM watchdog is actively fixing the chip; POS
+  //                    doesn't need to act, just shows the state.
+  //   "starting"/"stopping"  in-flight POST transitions  (amber pulse)
+  //   "no_reader"    register isn't linked to a CDM agent (gray)
+  //   "unreachable"  WMS state poll failing              (red)
+  type ReaderState =
+    | "off"
+    | "on"
+    | "recovering"
+    | "starting"
+    | "stopping"
+    | "no_reader"
+    | "unreachable";
   const [readerState, setReaderState] = useState<ReaderState>("off");
   const lastActivityRef = useRef<number>(Date.now());
+  const fastPollUntilRef = useRef<number>(0);
+
+  // Map a WMS state response → ReaderState. Called by both the manual
+  // start/stop flow and the background reconcile.
+  const mapWmsState = (r: {
+    skipped?: boolean;
+    reason?: string;
+    live_scan_active?: boolean;
+    reader_status_online?: boolean;
+  }): ReaderState | null => {
+    if (r.skipped && r.reason === "no_agent") return "no_reader";
+    if (typeof r.live_scan_active !== "boolean") return null;
+    if (!r.live_scan_active) return "off";
+    // Active. Chip alive?
+    if (r.reader_status_online === true) return "on";
+    if (r.reader_status_online === false) return "recovering";
+    return "on"; // optimistic when truthiness unknown
+  };
+
+  const fetchState = async (): Promise<ReaderState | null> => {
+    try {
+      const r = await fetch("/api/pos/hardware/reader/state").then((r) =>
+        r.json(),
+      );
+      return mapWmsState(r);
+    } catch {
+      return "unreachable";
+    }
+  };
 
   const startReader = async () => {
     setReaderState("starting");
+    // Kick off a fast-poll window so the badge transitions from
+    // "starting" → "recovering"/"on" within seconds instead of waiting
+    // for the next 20s reconcile.
+    fastPollUntilRef.current = Date.now() + 30_000;
     try {
       const res = await fetch("/api/pos/hardware/reader/start", {
         method: "POST",
       });
       const d = await res.json().catch(() => ({}));
-      if (d.skipped && d.reason === "no_agent") setReaderState("no_reader");
-      else if (d.ok) setReaderState("on");
-      else setReaderState("unreachable");
+      if (d.skipped && d.reason === "no_agent") {
+        setReaderState("no_reader");
+      }
+      // Don't assume "on" here — the chip may take a few seconds to
+      // come online. Let the fast-poll pick up the truth.
     } catch {
       setReaderState("unreachable");
     }
   };
   const stopReader = async () => {
     setReaderState("stopping");
+    fastPollUntilRef.current = Date.now() + 10_000;
     try {
       const res = await fetch("/api/pos/hardware/reader/stop", {
         method: "POST",
@@ -162,25 +212,48 @@ export function SellScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines.length]);
 
-  // Background reconcile — every 20 s, ask WMS for the truth. Keeps the
-  // badge accurate if the user toggled the reader from WMS hardware
-  // config, or if a start/stop response was lost.
+  // Background reconcile. Polls /reader/state on an adaptive cadence:
+  // every 3 s within 30 s of a manual start/stop (so the badge catches
+  // up to the CDM watchdog quickly), every 20 s otherwise. Also auto-
+  // retries Start if the badge has been "unreachable" for over 30 s
+  // (network blip recovered, or the agent restarted) — matches the
+  // "indicator wired to the watchdog, fix immediately on red" policy.
   useEffect(() => {
-    const id = setInterval(async () => {
-      try {
-        const r = await fetch("/api/pos/hardware/reader/state").then((r) =>
-          r.json(),
-        );
-        if (r.skipped && r.reason === "no_agent") {
-          setReaderState("no_reader");
-        } else if (typeof r.live_scan_active === "boolean") {
-          setReaderState(r.live_scan_active ? "on" : "off");
+    let unreachableSince = 0;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      if (cancelled) return;
+      const fast = Date.now() < fastPollUntilRef.current;
+      const next = await fetchState();
+      if (cancelled) return;
+      if (next === "unreachable") {
+        if (unreachableSince === 0) unreachableSince = Date.now();
+        setReaderState("unreachable");
+        // If we've been unreachable for 30s, try kicking Start once.
+        // The agent restart or network recovery will let the next tick
+        // land a real state.
+        if (Date.now() - unreachableSince > 30_000) {
+          unreachableSince = 0;
+          void startReader();
         }
-      } catch {
-        /* leave state alone on network blips */
+      } else if (next) {
+        unreachableSince = 0;
+        // Don't clobber "starting"/"stopping" while their fetch is in
+        // flight — those resolve themselves via the response path.
+        setReaderState((cur) =>
+          cur === "starting" || cur === "stopping" ? next : next,
+        );
       }
-    }, 20_000);
-    return () => clearInterval(id);
+      timer = setTimeout(tick, fast ? 3_000 : 20_000);
+    };
+    // Kick the first tick fast so the badge updates within a second of
+    // mount, regardless of the 20-s slow interval.
+    timer = setTimeout(tick, 800);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   const cartKey = `pos:cart:${code}`;
