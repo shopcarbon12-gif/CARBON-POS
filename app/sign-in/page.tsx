@@ -163,64 +163,78 @@ function SignInInner() {
   }, [stage, busy, tapDigit, tapBackspace, tapEnter]);
 
   const keypadDisabled = busy || !locationId;
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <main className="min-h-screen grid lg:grid-cols-2 bg-carbon-bg">
-      {/* Brand panel — solid Carbon Blue with the wordmark. */}
+      {/* Brand panel — dark hex-pattern background image with the
+          CarbonPOS wordmark, tagline, and copyright. Hidden on small
+          screens; the round-logo badge above the card stands in. */}
       <aside
-        className="hidden lg:flex flex-col justify-between p-12 text-white"
-        style={{ background: "var(--carbon-blue)" }}
+        className="hidden lg:flex flex-col justify-center p-12 text-white relative overflow-hidden"
+        style={{
+          backgroundColor: "#06122a",
+          backgroundImage: "url(/login-brand-bg.png)",
+          backgroundSize: "cover",
+          backgroundPosition: "right center",
+          backgroundRepeat: "no-repeat",
+        }}
       >
-        <div className="flex items-end gap-4">
-          {/* Logo lockup — bigger logo with the CarbonPOS wordmark in
-              Neuzeit Grotesk bottom-aligned beside it. Wordmark color
-              is black per spec. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo.jpg"
-            alt="Carbon"
-            className="w-40 h-40 object-cover shrink-0"
-          />
-          <span className="carbon-wordmark text-5xl font-semibold tracking-tight leading-none pb-2 text-black">
-            CarbonPOS
-          </span>
-        </div>
-        <div>
-          <h2 className="text-4xl font-bold leading-tight tracking-tight">
-            Carbon POS.
-            <br />
-            <span className="opacity-70">Sell sharp. Move fast.</span>
+        {/* Slight darken overlay to keep text legible. */}
+        <div
+          className="absolute inset-0 bg-black/30 pointer-events-none"
+          aria-hidden
+        />
+        <div className="relative z-10">
+          <h1 className="carbon-wordmark text-[5.25rem] font-black tracking-tight leading-[1.0] text-white">
+            CarbonPOS.
+          </h1>
+          <h2
+            className="text-6xl font-bold tracking-tight leading-[1.05] mt-2"
+            style={{ color: "#7B9CE8" }}
+          >
+            Sell sharp. Move fast.
           </h2>
-          <p className="mt-4 text-sm opacity-80 max-w-md">
-            Sign in with your location credentials, pick the store you&apos;re
-            working from, then tap your PIN.
+          <div
+            className="mt-6 h-[3px] w-16"
+            style={{ background: "#7B9CE8" }}
+            aria-hidden
+          />
+          <p className="mt-6 text-2xl opacity-90 max-w-xl leading-snug">
+            The modern POS built for speed,
+            <br />
+            precision, and performance.
           </p>
         </div>
-        <p className="text-xs opacity-60">
+        <p className="absolute bottom-8 left-12 right-12 z-10 text-xs opacity-70">
           © Carbon Jeans Company. All rights reserved.
         </p>
       </aside>
 
-      <section className="flex items-center justify-center p-6">
-        <div className="carbon-card w-full max-w-md p-10">
-          <div className="lg:hidden flex items-end gap-4 mb-8">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.jpg"
-              alt="Carbon"
-              className="w-32 h-32 object-cover shrink-0"
-            />
-            <span className="carbon-wordmark text-4xl font-semibold tracking-tight leading-none pb-1.5 text-black">
-              CarbonPOS
-            </span>
-          </div>
+      <section className="relative flex items-center justify-center p-6">
+        <div className="relative w-full max-w-md">
+        {/* Round logo badge — sits centered above the card, overlapping
+            its top edge per the reference. White circle, subtle border,
+            soft shadow, hex logo in the middle. */}
+        <div
+          className="absolute left-1/2 -top-10 -translate-x-1/2 w-20 h-20 rounded-full bg-white border border-carbon-border-soft shadow-md flex items-center justify-center z-10"
+          aria-hidden
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.jpg"
+            alt="Carbon"
+            className="w-12 h-12 object-cover rounded-full"
+          />
+        </div>
 
+        <div className="carbon-card w-full p-10 pt-14">
           {stage === "creds" ? (
             <>
-              <h1 className="text-2xl font-bold tracking-tight mb-1">
+              <h1 className="text-2xl font-bold tracking-tight text-center mb-1">
                 Location sign in
               </h1>
-              <p className="text-carbon-text-muted text-sm mb-8">
+              <p className="text-carbon-text-muted text-sm text-center mb-8">
                 Enter the credentials your admin set for this location.
               </p>
               <form onSubmit={submitCreds} className="flex flex-col gap-4">
@@ -228,35 +242,92 @@ function SignInInner() {
                   <label className="block text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted mb-2">
                     Email
                   </label>
-                  <input
-                    type="email"
-                    required
-                    autoFocus
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="carbon-input tap w-full"
-                  />
+                  <div className="relative">
+                    <span
+                      className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-carbon-text-muted text-[18px] pointer-events-none"
+                      aria-hidden
+                    >
+                      mail
+                    </span>
+                    <input
+                      type="email"
+                      required
+                      autoFocus
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@yourstore.com"
+                      className="carbon-input tap w-full !pl-12"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted mb-2">
                     Password
                   </label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="carbon-input tap w-full"
-                  />
+                  <div className="relative">
+                    <span
+                      className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-carbon-text-muted text-[18px] pointer-events-none"
+                      aria-hidden
+                    >
+                      lock
+                    </span>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      className="carbon-input tap w-full !pl-12 !pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      tabIndex={-1}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-carbon-text-muted hover:text-carbon-text"
+                    >
+                      <span className="material-symbols-outlined text-[20px]" aria-hidden>
+                        {showPassword ? "visibility_off" : "visibility"}
+                      </span>
+                    </button>
+                  </div>
                 </div>
                 <button
                   type="submit"
                   disabled={busy}
-                  className="carbon-btn-primary tap-lg w-full text-base mt-2"
+                  className="carbon-btn-primary tap-lg w-full text-base mt-2 inline-flex items-center justify-center gap-2"
                 >
-                  {busy ? "Signing in…" : "Continue"}
+                  {busy ? (
+                    "Signing in…"
+                  ) : (
+                    <>
+                      Continue
+                      <span
+                        className="material-symbols-outlined text-[20px]"
+                        aria-hidden
+                      >
+                        arrow_forward
+                      </span>
+                    </>
+                  )}
                 </button>
               </form>
+
+              {/* Secure footer — divider with centered "Secure" label, then
+                  the encrypted-data line. Mirrors the reference. */}
+              <div className="mt-8 flex items-center gap-3" aria-hidden>
+                <span className="flex-1 h-px bg-carbon-border-soft" />
+                <span className="text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted">
+                  Secure
+                </span>
+                <span className="flex-1 h-px bg-carbon-border-soft" />
+              </div>
+              <p className="mt-3 text-xs text-carbon-text-muted flex items-center justify-center gap-1.5">
+                <span className="material-symbols-outlined text-[14px]" aria-hidden>
+                  lock
+                </span>
+                Your data is encrypted and secure
+              </p>
             </>
           ) : (
             <>
@@ -371,6 +442,7 @@ function SignInInner() {
               {error}
             </p>
           )}
+        </div>
         </div>
       </section>
     </main>

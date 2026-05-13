@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { signOut } from "next-auth/react";
 
 type Tab =
   | "dashboard"
@@ -290,16 +291,17 @@ function LocationUserMenu({
               </span>
             </div>
           )}
-          <Link
-            href="/api/auth/signout"
+          <button
+            type="button"
             role="menuitem"
+            onClick={() => signOut({ callbackUrl: "/sign-in" })}
             className="w-full text-left px-4 py-3 hover:bg-[var(--carbon-surface-soft)] flex items-center gap-2 border-t border-carbon-border-soft"
           >
             <span className="material-symbols-outlined text-[20px] text-carbon-text-muted" aria-hidden>
               logout
             </span>
             <span className="text-sm font-medium">Sign out</span>
-          </Link>
+          </button>
         </div>
       ) : null}
     </div>
