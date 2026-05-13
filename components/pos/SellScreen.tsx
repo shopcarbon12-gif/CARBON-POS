@@ -61,9 +61,6 @@ export function SellScreen({
   const [pendingLastName, setPendingLastName] = useState("");
   const [nameDrawerOpen, setNameDrawerOpen] = useState(false);
   const [nameSendingToReader, setNameSendingToReader] = useState(false);
-  // True for ~5 s after a phone lookup resolves — keeps the thank-you
-  // / sign-up message on the reader before the cart-mirror takes over.
-  const [welcomeActive, setWelcomeActive] = useState(false);
   const promptedForCartRef = useRef(false);
 
   // RFID reader power state. Default is OFF (cool, no draw). The sell
@@ -260,8 +257,7 @@ export function SellScreen({
     phonePromptStatus === "collecting" ||
     phonePromptStatus === "looking-up" ||
     pendingPhone !== null ||
-    nameSendingToReader ||
-    welcomeActive;
+    nameSendingToReader;
   useEffect(() => {
     if (!hydrated) return;
     if (promptIsActive) return;
@@ -381,33 +377,15 @@ export function SellScreen({
               email: c.email ?? null,
               phone: c.mobile_phone ?? c.phone ?? null,
             });
-            // Welcome existing member — fetch balance, push thank-you to
-            // the reader for 5 s, then cart-mirror takes over.
-            try {
-              const bal = await fetch(
-                `/api/pos/loyalty/balance?customer_id=${c.id}`,
-              )
-                .then((r) => r.json())
-                .catch(() => null);
-              const pts = Number(bal?.balance ?? 0);
-              await pushReaderWelcome(
-                pts > 0
-                  ? `Thank you for being a CARBON member · ${pts.toLocaleString()} pts`
-                  : `Thank you for being a CARBON member`,
-              );
-            } catch {
-              /* welcome best-effort */
-            }
             setPhonePromptStatus("done");
           } else {
             // No match — surface the pending phone for cashier
-            // confirmation AND push the sign-up thank-you on the reader.
+            // confirmation. Reader returns to the Carbon splash on its
+            // own (Stripe transitions out of collect_inputs as soon as
+            // the customer submits).
             setPendingPhone(lookup.phone ?? r.phone);
             setPendingFirstName("");
             setPendingLastName("");
-            await pushReaderWelcome(
-              "Thank you for signing up — your discount is on the way…",
-            );
             setPhonePromptStatus("idle");
           }
           handlingResultRef.current = false;
@@ -429,33 +407,6 @@ export function SellScreen({
     };
   }, [phonePromptStatus]);
 
-  // Welcome-message state: while true, the cart-mirror useEffect skips
-  // pushing the actual cart so the thank-you screen has its 5 s of
-  // dwell. State (not ref) so flipping it back to false causes the
-  // cart-mirror to re-run and replace the welcome with the live cart.
-  const pushReaderWelcome = async (text: string) => {
-    setWelcomeActive(true);
-    try {
-      await fetch("/api/pos/readers/display", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currency: "usd",
-          line_items: [
-            {
-              description: text.slice(0, 100),
-              quantity: 1,
-              unit_amount_cents: 0,
-            },
-          ],
-          total_cents: 0,
-        }),
-      });
-    } catch {
-      /* keep going; cart-mirror will take over after the 5 s window */
-    }
-    setTimeout(() => setWelcomeActive(false), 5000);
-  };
 
   // Poll the reader's name-prompt action while the cashier has it open.
   useEffect(() => {
