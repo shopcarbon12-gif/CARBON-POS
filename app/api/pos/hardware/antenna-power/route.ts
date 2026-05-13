@@ -104,18 +104,52 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "no_antenna" }, { status: 409 });
   }
   const power = parsed.data.power_dbm;
-  await getPool().query(
-    `UPDATE devices
-        SET suggested_power_dbm   = $1::int,
-            suggested_power_dbm_at = now(),
-            config = jsonb_set(
-              COALESCE(config, '{}'::jsonb),
-              '{transmit_power_dbm}',
-              to_jsonb($1::int)
-            ),
-            updated_at = now()
-      WHERE id = ANY($2::uuid[])`,
-    [power, linked.antenna_ids],
-  );
-  return NextResponse.json({ ok: true, power_dbm: power });
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // 1. Write the new power to every antenna.
+    await client.query(
+      `UPDATE devices
+          SET suggested_power_dbm    = $1::int,
+              suggested_power_dbm_at = now(),
+              config = jsonb_set(
+                COALESCE(config, '{}'::jsonb),
+                '{transmit_power_dbm}',
+                to_jsonb($1::int)
+              ),
+              updated_at = now()
+        WHERE id = ANY($2::uuid[])`,
+      [power, linked.antenna_ids],
+    );
+    // 2. Stamp the parent reader to force a binary respawn — power is
+    //    read at spawn time by the CDM supervisor, NOT hot-reloaded.
+    //    Without this, the DB shows 11 dBm but the live reader binary
+    //    keeps scanning at whatever it had when it last spawned.
+    await client.query(
+      `UPDATE devices
+          SET reader_recover_requested_at = now(),
+              updated_at = now()
+        WHERE id = $1::uuid`,
+      [linked.reader_id],
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[antenna-power PATCH]", err);
+    return NextResponse.json(
+      { error: "write_failed", message: (err as Error).message },
+      { status: 500 },
+    );
+  } finally {
+    client.release();
+  }
+  return NextResponse.json({
+    ok: true,
+    power_dbm: power,
+    // The cashier should expect a ~3-5 s lag before reads slow down —
+    // the agent has to see the recover request, kill the binary, and
+    // respawn at the new power.
+    respawn_lag_seconds: 5,
+  });
 }
