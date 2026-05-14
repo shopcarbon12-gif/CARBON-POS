@@ -124,12 +124,19 @@ export async function POST(req: Request) {
       }
     }
 
+    // created_via must satisfy pos_customers_created_via_check, which
+    // limits the value to: pos | shopify | wms_manual | wms_csv | admin
+    // | legacy. The previous 'pos_reader_prompt' literal was rejected
+    // by that constraint and every customer creation (both the cashier
+    // form path AND the pinpad reader-name-prompt path) was 500-ing
+    // with "violates check constraint pos_customers_created_via_check"
+    // — operator saw "Couldn't create the customer record" every time.
     const created = await client.query(
       `INSERT INTO pos_customers
          (first_name, last_name, email, mobile_phone, phone,
           contact_email_ok, created_by_user_id, created_via)
        VALUES ($1, $2, $3, $4, $4,
-               $5, $6::uuid, 'pos_reader_prompt')
+               $5, $6::uuid, 'pos')
        RETURNING id, first_name, last_name, email, phone, mobile_phone,
                  customer_type, store_credit_balance`,
       [first, last, email, phone, email !== null, cashier.user_id],
