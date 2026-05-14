@@ -516,6 +516,23 @@ export function SellScreen({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ kind: "new_customer", dwell_ms: 7000 }),
             }).catch(() => {});
+            // Belt-and-suspenders client-side fallback revert. The
+            // server-side setTimeout that the new_customer call queues
+            // is lost if the Next.js process restarts (deploy, crash)
+            // during the 7-second window — the welcome JPG then sticks
+            // permanently because nothing flips the config back. This
+            // client timer fires a fresh `revert` from the browser at
+            // T+7s, so even on a hot deploy the splash always returns
+            // to DEFAULT. Redundant + idempotent: if the server timer
+            // already ran, this is a no-op (setSplashTo just sets the
+            // value, which is already DEFAULT).
+            window.setTimeout(() => {
+              fetch("/api/pos/hardware/reader/welcome", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ kind: "revert" }),
+              }).catch(() => {});
+            }, 7500);
           }
           handlingResultRef.current = false;
         } else if (

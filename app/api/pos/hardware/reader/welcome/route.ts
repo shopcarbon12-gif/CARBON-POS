@@ -66,12 +66,21 @@ async function stripe(
 }
 
 async function setSplashTo(fileId: string): Promise<boolean> {
-  const res = await stripe(`/v1/terminal/configurations/${CONFIG_ID}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `bbpos_wisepos_e[splashscreen]=${encodeURIComponent(fileId)}`,
-  });
-  return res.ok;
+  try {
+    const res = await stripe(`/v1/terminal/configurations/${CONFIG_ID}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `bbpos_wisepos_e[splashscreen]=${encodeURIComponent(fileId)}`,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "(no body)");
+      console.error(`[welcome] setSplashTo(${fileId}) failed:`, res.status, body);
+    }
+    return res.ok;
+  } catch (err) {
+    console.error(`[welcome] setSplashTo(${fileId}) threw:`, err);
+    return false;
+  }
 }
 
 export async function POST(req: Request) {
