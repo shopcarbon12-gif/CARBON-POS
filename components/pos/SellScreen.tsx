@@ -460,13 +460,19 @@ export function SellScreen({
             setPhonePromptStatus("done");
           } else {
             // No match — surface the pending phone for cashier
-            // confirmation. Reader returns to the Carbon splash on its
-            // own (Stripe transitions out of collect_inputs as soon as
-            // the customer submits).
+            // confirmation AND swap the reader's idle splash to the
+            // "Thank you for joining CARBON REWARDS" image for ~7 s.
+            // The swap + auto-revert happens server-side; the cashier
+            // flow doesn't wait on it.
             setPendingPhone(lookup.phone ?? r.phone);
             setPendingFirstName("");
             setPendingLastName("");
             setPhonePromptStatus("idle");
+            fetch("/api/pos/hardware/reader/welcome", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: "new_customer", dwell_ms: 7000 }),
+            }).catch(() => {});
           }
           handlingResultRef.current = false;
         } else if (
