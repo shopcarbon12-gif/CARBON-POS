@@ -116,14 +116,26 @@ export async function POST(req: Request) {
   }
 
   // kind === "new_customer" — defensively set to NEW (no-op if preload
-  // already did), then schedule the revert.
+  // already did), then schedule the revert + a real-time display kick.
   const swapped = await setSplashTo(NEW_CUSTOMER_SPLASH_FILE);
   if (!swapped) {
     return NextResponse.json({ error: "swap_failed" }, { status: 502 });
   }
+  const readerId = info.reader_id;
   setTimeout(async () => {
     try {
+      // 1. Flip the account-default splash back. New idle transitions
+      //    will pull the default Carbon splash from now on.
       await setSplashTo(DEFAULT_SPLASH_FILE);
+      // 2. The READER has the welcome PNG cached locally and won't
+      //    refresh its idle splash until its next config pull (often
+      //    30 s+). Without a kick, the welcome image lingers past the
+      //    7-second dwell. Push a real-time empty cart_display so the
+      //    reader leaves the splash surface immediately; the cashier's
+      //    next sale action (adding a line, collecting payment) will
+      //    overwrite this, and the next return-to-idle will load the
+      //    default splash that's now in config.
+      await pushPlaceholderCart(readerId);
     } catch {
       /* best-effort */
     }
@@ -134,4 +146,38 @@ export async function POST(req: Request) {
     splash_file_id: NEW_CUSTOMER_SPLASH_FILE,
     reverts_in_ms: dwell_ms,
   });
+}
+
+/**
+ * Kicks the reader off the splash screen by pushing a tiny placeholder
+ * cart. The line item is a $0 "Welcome" row — visible only for the
+ * blink between the welcome JPG ending and the cashier's first real
+ * action. Once the cashier adds an actual line, that overwrites this.
+ *
+ * Guarded: if any non-null action is on the reader (the cashier was
+ * quick and already kicked off another collect_inputs or payment in
+ * the 7-second dwell window), we skip the push so we don't trample it.
+ */
+async function pushPlaceholderCart(readerId: string): Promise<void> {
+  try {
+    const r = await stripe(`/v1/terminal/readers/${readerId}`);
+    if (!r.ok) return;
+    const reader = await r.json();
+    if (reader.action && reader.action.status === "in_progress") return;
+  } catch {
+    return;
+  }
+  const form = new URLSearchParams({
+    type: "cart",
+    "cart[currency]": "usd",
+    "cart[total]": "0",
+    "cart[line_items][0][description]": "Welcome to Carbon",
+    "cart[line_items][0][amount]": "0",
+    "cart[line_items][0][quantity]": "1",
+  });
+  await stripe(`/v1/terminal/readers/${readerId}/set_reader_display`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+  }).catch(() => {});
 }
