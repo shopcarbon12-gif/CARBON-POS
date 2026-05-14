@@ -194,12 +194,14 @@ export function SellScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 5-minute idle watchdog. Resets on any cart change, search input,
+  // 10-minute idle watchdog. Resets on any cart change, search input,
   // discount edit, or Scan RFID click (see callers of `markActivity`).
+  // Scan RFID re-wakes the reader on click so the cashier doesn't have
+  // to think about it.
   useEffect(() => {
     const id = setInterval(() => {
       if (readerState !== "on") return;
-      if (Date.now() - lastActivityRef.current > 5 * 60 * 1000) {
+      if (Date.now() - lastActivityRef.current > 10 * 60 * 1000) {
         void stopReader();
       }
     }, 30_000);
