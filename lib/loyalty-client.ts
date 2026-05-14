@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import type { PoolClient } from "pg";
 
 /**
- * Server-to-server HTTP client for loyalty.shopcarbon.com.
+ * Server-to-server HTTP client for rewards.shopcarbon.com.
  *
  * Two paths:
  *   - postViaOutbox: queue the call inside the current DB transaction.
@@ -14,7 +14,7 @@ import type { PoolClient } from "pg";
  * Both use the LOYALTY_API_KEY bearer auth.
  */
 
-const BASE = process.env.LOYALTY_API_BASE_URL?.trim() || "https://loyalty.shopcarbon.com";
+const BASE = process.env.LOYALTY_API_BASE_URL?.trim() || "https://rewards.shopcarbon.com";
 const KEY = process.env.LOYALTY_API_KEY?.trim() || "";
 
 type OutboxEndpoint =

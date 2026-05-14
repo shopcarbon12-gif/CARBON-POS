@@ -744,7 +744,7 @@ export function SellScreen({
   // ── Loyalty integration ─────────────────────────────────────────────
   // When a customer is attached, fetch their balance from
   // /api/pos/loyalty/balance (a thin proxy on POS that calls
-  // loyalty.shopcarbon.com server-side with the API key). Cleared on
+  // rewards.shopcarbon.com server-side with the API key). Cleared on
   // detach. RedeemPointsModal is gated on having a balance + subtotal.
   const [loyaltyBalance, setLoyaltyBalance] = useState<number | null>(null);
   const [redeemSettings, setRedeemSettings] = useState<{

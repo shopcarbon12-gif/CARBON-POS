@@ -5,7 +5,7 @@ import { loyaltyGet } from "@/lib/loyalty-client";
 /**
  * GET /api/pos/loyalty/balance?customer_id=42
  *
- * Thin proxy from the cashier UI to loyalty.shopcarbon.com. We don't
+ * Thin proxy from the cashier UI to rewards.shopcarbon.com. We don't
  * expose LOYALTY_API_KEY to the browser — the cashier's auth gate is
  * the standard NextAuth session. Server-side we add the bearer.
  *

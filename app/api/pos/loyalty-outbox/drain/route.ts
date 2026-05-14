@@ -11,7 +11,7 @@ import { getPool } from "@/lib/db";
  * Coolify cron job hits this every minute. If it ever doesn't run for
  * a while, the rows stay queued — the next drain catches them up.
  */
-const LOYALTY_BASE = process.env.LOYALTY_API_BASE_URL?.trim() || "https://loyalty.shopcarbon.com";
+const LOYALTY_BASE = process.env.LOYALTY_API_BASE_URL?.trim() || "https://rewards.shopcarbon.com";
 const LOYALTY_KEY = process.env.LOYALTY_API_KEY?.trim() || "";
 const DRAIN_KEY = process.env.LOYALTY_OUTBOX_DRAIN_KEY?.trim() || "";
 

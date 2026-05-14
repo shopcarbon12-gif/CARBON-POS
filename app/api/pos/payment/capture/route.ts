@@ -311,7 +311,7 @@ export async function POST(req: Request) {
 
       // Loyalty hook — queue earn + (optional) redemption rows in
       // pos_loyalty_outbox so a worker can drain them async without
-      // blocking the cashier on loyalty.shopcarbon.com latency.
+      // blocking the cashier on rewards.shopcarbon.com latency.
       // Only fires when a customer is attached (walk-in sales skip).
       if (data.customer_id != null) {
         const giftCardLineValue = data.lines
