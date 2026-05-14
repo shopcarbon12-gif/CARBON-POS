@@ -188,17 +188,22 @@ export function CartPanel({
 }
 
 /**
- * Cart-row mode badge — matches the dimensions and treatment of the
- * EPCs / MANUAL pill on /inventory/catalog in WMS (h-[22px] w-[64px],
- * tracking-widest, color-mix tinted background, border on the same
- * hue). Sits at the leftmost column so every cart row aligns.
+ * Cart-row mode badge — icon-only pill, sized like the EPCs / MANUAL
+ * button on /inventory/catalog in WMS (h-[22px] w-[64px]). Sits at the
+ * leftmost column so every cart row aligns.
  *
- *   source="rfid"                     → green RFID
- *   source="manual" + manual_only=true  → green MANUAL  (expected)
- *   source="manual" + manual_only=false → red   MANUAL  (mismatch)
+ *   source="rfid"                       → blue  radio   (Scanned tag)
+ *   source="manual" + manual_only=true  → blue  barcode (Real manual item)
+ *   source="manual" + manual_only=false → red   radio   (RFID-mode item
+ *                                                       added manually
+ *                                                       after the cashier
+ *                                                       acknowledged the
+ *                                                       "should have
+ *                                                       scanned" prompt)
  *
- * The red case flags an RFID-mode catalog item that came in via manual
- * entry — the cashier should have scanned its tag. WMS sees both rows.
+ * The red radio variant uses the same RFID glyph in red — the icon
+ * communicates "this item has an RFID chip", and the colour says "but
+ * it was processed manually anyway". WMS sees both rows.
  */
 function ModeBadge({
   source,
@@ -209,24 +214,28 @@ function ModeBadge({
 }) {
   const isRfid = source === "rfid";
   const isMismatch = source === "manual" && !isManualOnly;
-  const label = isRfid ? "RFID" : "MANUAL";
+  // Icon: radio for anything that has an RFID chip (scanned OR a manually-
+  // entered RFID-mode item); barcode for genuine manual items.
+  const icon = isRfid || isMismatch ? "radio" : "barcode";
   const title = isRfid
     ? "Added by RFID scan"
     : isManualOnly
       ? "Manual item (catalog flagged non-RFID)"
       : "RFID-mode item added manually — should have been scanned";
-  // Tailwind doesn't have a color-mix helper; using arbitrary `bg-`
-  // tints from the green-500 / red-500 swatches at 18% opacity which
-  // gives the same visual weight as the WMS EPC pill.
   const colorClass = isMismatch
     ? "border-red-400/60 bg-red-100 text-red-700"
-    : "border-emerald-500/50 bg-emerald-100 text-emerald-700";
+    : "border-carbon-blue/45 bg-carbon-blue-soft text-carbon-blue";
   return (
     <span
       title={title}
-      className={`shrink-0 mr-3 inline-flex h-[22px] w-[64px] items-center justify-center rounded border px-2 text-[0.6rem] font-medium leading-none tracking-widest ${colorClass}`}
+      className={`shrink-0 mr-3 inline-flex h-[22px] w-[64px] items-center justify-center rounded border px-2 leading-none ${colorClass}`}
     >
-      {label}
+      <span
+        className="material-symbols-outlined text-[16px] leading-none"
+        aria-hidden
+      >
+        {icon}
+      </span>
     </span>
   );
 }

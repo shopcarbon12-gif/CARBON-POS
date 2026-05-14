@@ -45,6 +45,13 @@ export function SellScreen({
   const [discountFor, setDiscountFor] = useState<string | "sale" | null>(null);
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  // When the cashier searches and picks an item whose catalog row is
+  // RFID-mode (is_manual_only=false), we hold the item here and surface
+  // a confirm dialog instead of adding straight to the cart. The two
+  // exits are "Process Manual" (just adds with the mismatch red-radio
+  // badge) and "Scan RFID" (opens the scan modal so the customer's
+  // physical tag drives the add).
+  const [rfidConfirmItem, setRfidConfirmItem] = useState<SearchResultItem | null>(null);
 
   // Loyalty phone-prompt on the customer's card reader. The flow:
   //   sale opens (no customer) → reader shows phone prompt
@@ -225,12 +232,17 @@ export function SellScreen({
 
   // Cart mutations are the primary "cashier is doing things" signal —
   // bumps the activity ref so the idle-stop timer doesn't fire mid-sale.
-  // We avoid wrapping every setLines call by reacting to `lines` here.
+  // Track total quantity (not just row count) so RFID adds that *stack*
+  // onto an existing row — same lines.length but higher quantity —
+  // still register as activity. Without this, scanning a 6th tag onto
+  // an existing row didn't reset the 10-min idle watchdog and the dot
+  // would go gray mid-scan.
+  const totalQty = lines.reduce((sum, l) => sum + l.quantity, 0);
   useEffect(() => {
     if (!hydrated) return;
     lastActivityRef.current = Date.now();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines.length]);
+  }, [totalQty]);
 
   // Background reconcile. Polls /reader/state on an adaptive cadence:
   // every 3 s within 30 s of a manual start/stop (so the badge catches
@@ -785,7 +797,19 @@ export function SellScreen({
     setShowRedeem(false);
   }
 
+  // Public entry point — what /ItemSearch calls when the cashier picks
+  // a row. If the catalog row is RFID-mode (is_manual_only=false), hold
+  // the item and pop the confirm dialog instead of adding directly. The
+  // dialog buttons route to addProductDirect() or the scan modal.
   function addProduct(item: SearchResultItem) {
+    if (item.is_manual_only === false) {
+      setRfidConfirmItem(item);
+      return;
+    }
+    addProductDirect(item);
+  }
+
+  function addProductDirect(item: SearchResultItem) {
     const price = Number(item.retail_price ?? 0);
     setLines((prev) => {
       // Manual rows stack on same sku_id — but ONLY with other manual
@@ -1088,9 +1112,15 @@ export function SellScreen({
         onClose={() => setShowRfid(false)}
         onAdd={addRfidItems}
         readerState={readerState}
-        cartEpcs={lines
-          .map((l) => l.epc)
-          .filter((e): e is string => typeof e === "string" && e.length > 0)}
+        cartEpcs={lines.flatMap((l) => {
+          // Rows that source='rfid' stack multiple EPCs into l.epcs[].
+          // We must dedupe against ALL of them, not just the first one
+          // — otherwise re-opening the scan modal would still surface
+          // tags that are already in the cart on a stacked row.
+          const stacked = l.epcs ?? [];
+          if (stacked.length > 0) return stacked;
+          return typeof l.epc === "string" && l.epc.length > 0 ? [l.epc] : [];
+        })}
       />
       {showMisc && (
         <MiscChargeModal
@@ -1112,7 +1142,112 @@ export function SellScreen({
           }}
         />
       )}
+      {rfidConfirmItem && (
+        <RfidConfirmModal
+          item={rfidConfirmItem}
+          onProcessManual={() => {
+            const it = rfidConfirmItem;
+            setRfidConfirmItem(null);
+            addProductDirect(it);
+          }}
+          onScanRfid={() => {
+            setRfidConfirmItem(null);
+            markActivity();
+            if (readerState === "off") void startReader();
+            setShowRfid(true);
+          }}
+          onCancel={() => setRfidConfirmItem(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Shown when the cashier picks an item whose catalog row is RFID-mode
+ * (matrices.is_manual_only=false). The expected path for those items is
+ * a tag scan — entering them by hand defeats inventory tracking, so we
+ * make the cashier confirm. The two exits:
+ *
+ *   Process Manually — adds the item with the red-radio mismatch badge
+ *                      so WMS sees it was hand-entered.
+ *   Scan RFID        — wakes the reader if needed and opens the scan
+ *                      modal; the cashier asks the customer to bring
+ *                      the item to the reader.
+ */
+function RfidConfirmModal({
+  item,
+  onProcessManual,
+  onScanRfid,
+  onCancel,
+}: {
+  item: SearchResultItem;
+  onProcessManual: () => void;
+  onScanRfid: () => void;
+  onCancel: () => void;
+}) {
+  const desc = [item.item_name, item.color, item.size].filter(Boolean).join(" · ");
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Close"
+        className="fixed inset-0 z-[60] bg-black/60"
+        onClick={onCancel}
+      />
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+        <div className="w-full max-w-md carbon-card shadow-2xl">
+          <div className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="shrink-0 w-12 h-12 rounded-full bg-carbon-blue-soft text-carbon-blue inline-flex items-center justify-center">
+                <span className="material-symbols-outlined text-[28px]" aria-hidden>
+                  radio
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-lg font-bold text-carbon-text">
+                  This item has an RFID tag
+                </h3>
+                <p className="mt-1 text-sm text-carbon-text-muted leading-snug">
+                  {desc} is normally scanned with the reader. Adding it
+                  by hand skips tag tracking and shows a mismatch flag
+                  on this sale.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="px-6 pb-6 flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={onScanRfid}
+              className="w-full carbon-btn-primary tap-lg text-base font-bold inline-flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[20px]" aria-hidden>
+                radio
+              </span>
+              Scan RFID
+            </button>
+            <button
+              type="button"
+              onClick={onProcessManual}
+              className="w-full tap font-semibold border border-red-200 text-carbon-danger bg-white hover:bg-red-50 transition-colors inline-flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[20px]" aria-hidden>
+                radio
+              </span>
+              Process Manually
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="w-full carbon-btn-secondary tap font-semibold"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
