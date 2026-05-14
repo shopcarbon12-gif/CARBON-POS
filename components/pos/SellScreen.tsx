@@ -90,23 +90,30 @@ export function SellScreen({
   const lastActivityRef = useRef<number>(Date.now());
   const fastPollUntilRef = useRef<number>(0);
 
-  // Map a WMS state response → ReaderState. Anything unrecognised
-  // (auth error from WMS, agent lookup failure, malformed body) maps
-  // to "unreachable" so the badge transitions OUT of starting/stopping
-  // and the auto-retry can kick in.
-  const mapWmsState = (r: {
+  // Map the POS state-endpoint response → ReaderState. The endpoint
+  // reads the per-row truth on the is_pos_dedicated reader directly,
+  // so we look at scan_paused (Hardware Config pause flag) and
+  // status_online (CDM watchdog). agent_active is informational —
+  // warehouse manages it; POS doesn't write to it.
+  const mapState = (r: {
+    ok?: boolean;
     skipped?: boolean;
     reason?: string;
-    live_scan_active?: boolean;
-    reader_status_online?: boolean;
+    scan_paused?: boolean;
+    status_online?: boolean;
+    agent_active?: boolean;
     error?: string;
   }): ReaderState => {
     if (r.skipped && r.reason === "no_agent") return "no_reader";
     if (r.error) return "unreachable";
-    if (typeof r.live_scan_active !== "boolean") return "unreachable";
-    if (!r.live_scan_active) return "off";
-    if (r.reader_status_online === true) return "on";
-    if (r.reader_status_online === false) return "recovering";
+    if (typeof r.scan_paused !== "boolean") return "unreachable";
+    if (r.scan_paused) return "off";
+    // Not paused. The agent has to also be active for the supervisor
+    // to spawn the binary — if it isn't, treat as "off" (warehouse
+    // has stopped the agent).
+    if (r.agent_active === false) return "off";
+    if (r.status_online === true) return "on";
+    if (r.status_online === false) return "recovering";
     return "on";
   };
 
@@ -115,7 +122,7 @@ export function SellScreen({
       const res = await fetch("/api/pos/hardware/reader/state");
       if (!res.ok) return "unreachable";
       const r = await res.json().catch(() => ({}));
-      return mapWmsState(r);
+      return mapState(r);
     } catch {
       return "unreachable";
     }
