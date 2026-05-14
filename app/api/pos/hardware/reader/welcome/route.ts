@@ -149,35 +149,83 @@ export async function POST(req: Request) {
 }
 
 /**
- * Kicks the reader off the splash screen by pushing a tiny placeholder
- * cart. The line item is a $0 "Welcome" row — visible only for the
- * blink between the welcome JPG ending and the cashier's first real
- * action. Once the cashier adds an actual line, that overwrites this.
+ * Forces the reader off the welcome splash by canceling any lingering
+ * action and pushing a placeholder cart_display.
  *
- * Guarded: if any non-null action is on the reader (the cashier was
- * quick and already kicked off another collect_inputs or payment in
- * the 7-second dwell window), we skip the push so we don't trample it.
+ *   1. Fetch the reader's current action. Skip the kick ONLY if a
+ *      collect_inputs / payment is genuinely in_progress (cashier was
+ *      quick during the 7-second dwell). A "succeeded" action from
+ *      the just-finished phone prompt is NOT a reason to skip — at
+ *      that point the reader is sitting on the splash showing the
+ *      welcome PNG, and we need to push it off.
+ *
+ *   2. cancel_action to clear any stale succeeded/failed action so the
+ *      reader is squarely idle before we push a new display state.
+ *
+ *   3. set_reader_display with a one-line cart. Amount is 1 cent (not
+ *      0) so it's unambiguous — some Stripe Terminal display rules
+ *      treat 0-total carts as empty/no-op. The cashier's next sale
+ *      line, payment, or collect_inputs will overwrite this.
+ *
+ * Logs failures to the server console (no silent .catch) so we can
+ * actually see WHY the kick didn't land when the JPG sticks.
  */
 async function pushPlaceholderCart(readerId: string): Promise<void> {
+  // Step 1 — inspect current action.
+  let actionInProgress = false;
   try {
     const r = await stripe(`/v1/terminal/readers/${readerId}`);
-    if (!r.ok) return;
-    const reader = await r.json();
-    if (reader.action && reader.action.status === "in_progress") return;
-  } catch {
+    if (r.ok) {
+      const reader = await r.json();
+      actionInProgress = reader.action?.status === "in_progress";
+    }
+  } catch (err) {
+    console.error("[welcome] reader fetch failed:", err);
+  }
+  if (actionInProgress) {
+    console.log("[welcome] skipping cart push — action in_progress");
     return;
   }
+
+  // Step 2 — best-effort cancel of any non-in_progress lingering action.
+  try {
+    const cancel = await stripe(`/v1/terminal/readers/${readerId}/cancel_action`, {
+      method: "POST",
+      body: "",
+    });
+    if (!cancel.ok) {
+      const j = await cancel.json().catch(() => ({}));
+      // "no_action" is fine — reader was already idle.
+      if (j.error?.code !== "no_action") {
+        console.log("[welcome] cancel_action non-ok:", cancel.status, j.error?.code);
+      }
+    }
+  } catch (err) {
+    console.error("[welcome] cancel_action threw:", err);
+  }
+
+  // Step 3 — push the cart display.
   const form = new URLSearchParams({
     type: "cart",
     "cart[currency]": "usd",
-    "cart[total]": "0",
+    "cart[total]": "1",
     "cart[line_items][0][description]": "Welcome to Carbon",
-    "cart[line_items][0][amount]": "0",
+    "cart[line_items][0][amount]": "1",
     "cart[line_items][0][quantity]": "1",
   });
-  await stripe(`/v1/terminal/readers/${readerId}/set_reader_display`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form.toString(),
-  }).catch(() => {});
+  try {
+    const res = await stripe(`/v1/terminal/readers/${readerId}/set_reader_display`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "(no body)");
+      console.error("[welcome] set_reader_display failed:", res.status, body);
+    } else {
+      console.log("[welcome] set_reader_display ok");
+    }
+  } catch (err) {
+    console.error("[welcome] set_reader_display threw:", err);
+  }
 }
