@@ -96,7 +96,12 @@ export function RFIDScanModal({
     setFilteredCount(0);
     setBlocked([]);
     setSelected(new Set());
-    seenRef.current.clear();
+    // Reset the dedup set, but DO NOT lose the cart-EPC seed — those
+    // tags are already in the sale and must never come back into the
+    // scan list. Open used to set this, Rescan used to wipe it; now
+    // Rescan rebuilds it from the same cartEpcs prop the open-effect
+    // uses, so the two seeding paths stay in lockstep.
+    seenRef.current = new Set(cartEpcs);
   };
 
   useEffect(() => {
