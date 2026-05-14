@@ -113,6 +113,8 @@ function PaymentInner() {
         lines: cart.lines.map((l) => ({
           sku_id: l.sku_id,
           epc: l.epc,
+          epcs: l.epcs,
+          source: l.source,
           description: l.description,
           quantity: l.quantity,
           unit_price: l.unit_price,

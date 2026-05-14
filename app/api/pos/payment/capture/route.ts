@@ -9,6 +9,10 @@ import { formatSaleNumber } from "@/lib/utils";
 const lineSchema = z.object({
   sku_id: z.string().uuid().nullable(),
   epc: z.string().nullable(),
+  /** All EPCs stacked into this cart row (RFID rows only). The
+   *  capture txn flips every one of these to status='sold'. */
+  epcs: z.array(z.string()).optional(),
+  source: z.enum(["manual", "rfid"]).optional(),
   description: z.string().min(1),
   quantity: z.number().int().positive(),
   unit_price: z.number().nonnegative(),
@@ -278,10 +282,19 @@ export async function POST(req: Request) {
         );
       }
 
-      // Mark every scanned EPC as sold in the WMS table.
-      const epcs = data.lines
-        .map((l) => l.epc)
-        .filter((e): e is string => typeof e === "string" && e.length > 0);
+      // Mark every scanned EPC as sold in the WMS table. Cart rows
+      // may have stacked multiple EPCs into `.epcs` (same SKU scanned
+      // 3× → 1 row, 3 EPCs); flatten across the cart.
+      const epcs = Array.from(
+        new Set(
+          data.lines.flatMap((l) => {
+            const list = l.epcs ?? (l.epc ? [l.epc] : []);
+            return list.filter(
+              (e): e is string => typeof e === "string" && e.length > 0,
+            );
+          }),
+        ),
+      );
       if (epcs.length > 0) {
         // WMS unified the legacy `epcs` table into `items` — this write
         // had silently been targeting a non-existent relation. The

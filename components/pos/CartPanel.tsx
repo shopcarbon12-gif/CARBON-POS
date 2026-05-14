@@ -93,43 +93,72 @@ export function CartPanel({
                   </div>
                 ) : null}
                 <div className="flex-1 min-w-0 pr-4">
-                  <h3 className="text-base font-semibold truncate">
-                    {line.description}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-semibold truncate">
+                      {line.description}
+                    </h3>
+                    {line.source === "manual" && line.line_type === "product" ? (
+                      // Foundation badge — color tinted by the
+                      // expected-mode rules WMS will add later. Default
+                      // for now: orange ("manually added, ambiguous").
+                      // When `expected_mode` lands on the catalog row,
+                      // swap to red (expected rfid → added manual) or
+                      // green (expected manual → added manual).
+                      <span
+                        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200"
+                        title="Added manually (foundation — WMS-driven coloring still to come)"
+                      >
+                        Manual
+                      </span>
+                    ) : null}
+                  </div>
                   {subtitle && (
-                    <p className="text-xs text-[var(--carbon-muted)] mt-1 truncate">
+                    <p className="text-sm text-carbon-text font-medium mt-1 truncate">
                       {subtitle}
                     </p>
                   )}
                 </div>
                 <div className="flex items-center gap-4 sm:gap-6 shrink-0">
                   {line.line_type === "product" ? (
-                    <div className="flex items-center border border-[var(--carbon-border)] bg-white">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onChangeQty(
-                            line.cart_id,
-                            Math.max(1, line.quantity - 1),
-                          )
-                        }
-                        aria-label="Decrease quantity"
-                        className="px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                    line.source === "rfid" ? (
+                      // RFID-stacked rows: qty equals the EPC count and
+                      // can't be edited with +/-. Each tag is a unique
+                      // physical item. Removing the row drops all EPCs
+                      // in this stack.
+                      <span
+                        className="inline-flex items-center justify-center min-w-[3rem] px-3 py-1 border border-[var(--carbon-border)] bg-carbon-surface-soft text-carbon-text font-semibold tabular-nums"
+                        title="Quantity follows the scanned tags — adjust by scanning more or removing the row."
                       >
-                        <Minus size={16} />
-                      </button>
-                      <span className="px-3 py-1 font-medium border-x border-[var(--carbon-border)] min-w-[2.5rem] text-center tabular-nums">
                         {line.quantity}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => onChangeQty(line.cart_id, line.quantity + 1)}
-                        aria-label="Increase quantity"
-                        className="px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
-                      >
-                        <Plus size={16} />
-                      </button>
-                    </div>
+                    ) : (
+                      <div className="flex items-center border border-[var(--carbon-border)] bg-white">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onChangeQty(
+                              line.cart_id,
+                              Math.max(1, line.quantity - 1),
+                            )
+                          }
+                          aria-label="Decrease quantity"
+                          className="px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                        >
+                          <Minus size={16} />
+                        </button>
+                        <span className="px-3 py-1 font-medium border-x border-[var(--carbon-border)] min-w-[2.5rem] text-center tabular-nums">
+                          {line.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onChangeQty(line.cart_id, line.quantity + 1)}
+                          aria-label="Increase quantity"
+                          className="px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                    )
                   ) : (
                     <span className="text-xs text-[var(--carbon-muted)] uppercase tracking-wider font-bold">
                       Misc

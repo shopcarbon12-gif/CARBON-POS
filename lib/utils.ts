@@ -23,3 +23,21 @@ export function round2(value: number): number {
 export function formatSaleNumber(seq: number): string {
   return `POS-${String(seq).padStart(5, "0")}`;
 }
+
+/**
+ * Capitalize the first letter of each word, lowercase the rest.
+ * Used for first/last name fields so display is consistent whether
+ * the cashier (or pin-pad) typed "elior", "ELIOR", or "Elior".
+ *
+ *   "elior"       → "Elior"
+ *   "ELIOR PEREZ" → "Elior Perez"
+ *   "o'brien"     → "O'Brien"
+ *
+ * Loses internal capitals — "mcdonald" → "Mcdonald" (not "McDonald").
+ * Accepted tradeoff for the 99% case of single-cap names.
+ */
+export function capitalizeName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/(^|[\s'-])([a-z])/g, (_, sep, ch: string) => sep + ch.toUpperCase());
+}

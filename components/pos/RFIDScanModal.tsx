@@ -36,16 +36,21 @@ export function RFIDScanModal({
   onClose,
   onAdd,
   readerState,
+  cartEpcs,
 }: {
   open: boolean;
   onClose: () => void;
   onAdd: (items: RfidResolvedItem[]) => void;
   readerState: ReaderUiState;
+  /** EPCs already in the cart. Seeded into the de-dup set on open so
+   *  a tag the cashier added in a previous scan session won't reappear
+   *  when they reopen the modal to grab more items. The EPC becomes
+   *  scannable again only when removed from the cart upstream. */
+  cartEpcs: string[];
 }) {
   const [scanned, setScanned] = useState<RfidResolvedItem[]>([]);
   const [unknownCount, setUnknownCount] = useState(0);
   const [filteredCount, setFilteredCount] = useState(0);
-  const [promoted, setPromoted] = useState(0);
   const [blocked, setBlocked] = useState<Array<{ epc: string; status: string }>>(
     [],
   );
@@ -87,7 +92,6 @@ export function RFIDScanModal({
     setScanned([]);
     setUnknownCount(0);
     setFilteredCount(0);
-    setPromoted(0);
     setBlocked([]);
     setSelected(new Set());
     seenRef.current.clear();
@@ -98,13 +102,16 @@ export function RFIDScanModal({
       setScanned([]);
       setUnknownCount(0);
       setFilteredCount(0);
-      setPromoted(0);
       setBlocked([]);
       setStreamErr(null);
       setSelected(new Set());
       seenRef.current.clear();
       return;
     }
+    // Seed the de-dup set with EPCs already in the cart — they won't
+    // re-appear if the reader keeps hammering them. Removing the row
+    // from the cart upstream rebuilds the seed on next modal open.
+    seenRef.current = new Set(cartEpcs);
     const es = new EventSource("/api/hardware/epcs/stream", {
       withCredentials: true,
     });
@@ -124,7 +131,6 @@ export function RFIDScanModal({
       const data: {
         items: RfidResolvedItem[];
         skipped: number;
-        promote_count?: number;
         blocked?: Array<{ epc: string; status: string }>;
         dropped_count?: number;
         unknown_count?: number;
@@ -135,7 +141,6 @@ export function RFIDScanModal({
       });
       setUnknownCount((c) => c + (data.unknown_count ?? 0));
       setFilteredCount((c) => c + (data.dropped_count ?? 0));
-      setPromoted((p) => p + (data.promote_count ?? 0));
       if (data.blocked?.length) {
         setBlocked((prev) => {
           const have = new Set(prev.map((b) => b.epc));
@@ -163,6 +168,10 @@ export function RFIDScanModal({
       es.close();
       if (flushTimer) clearTimeout(flushTimer);
     };
+    // We intentionally don't re-run on cartEpcs changes — the seed is
+    // taken at open-time. If the cashier removes a row while the
+    // modal is open, they'd close and reopen to re-include it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   if (!open) return null;

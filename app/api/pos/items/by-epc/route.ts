@@ -10,35 +10,23 @@ const schema = z.object({
 /**
  * POST /api/pos/items/by-epc
  *
- * Resolve a batch of RFID EPCs to their POS cart rows, classifying each
- * by the 10-status policy from `status_labels`. NO writes to items.status
- * happen here — the rule is "status changes only at checkout" (capture
- * route flips in-cart items to 'sold' inside the sale transaction).
+ * Resolve a batch of RFID EPCs to their POS cart rows. ONLY items with
+ * status='in-stock' (LIVE) become usable. Everything else is dropped
+ * or blocked:
  *
- *   LIVE (is_sellable=true)
- *     → usable; included in `items`.
+ *   LIVE                              → `items` (usable)
+ *   DAMAGED / SOLD                    → `blocked` (needs supervisor)
+ *   RETURN / IN TRANSIT /
+ *   PENDING TRANSACTION /
+ *   STOLEN / TAG KILLED /
+ *   PENDING VISIBILITY / UNKNOWN      → `dropped_count` (silent)
+ *   EPC not in items table            → `unknown_count`
  *
- *   RETURN / IN TRANSIT / PENDING TRANSACTION
- *     (is_sellable=false, is_visible_to_scanner=true,
- *      super_admin_locked=false)
- *     → treated as sellable for the cart (the capture route will flip
- *       directly to 'sold' on checkout, which supersedes any workflow
- *       status). Counted in `promote_count` so the cashier can be told
- *       "3 tags promoted at checkout".
+ * No writes to items.status here — that happens at checkout only.
+ * The capture route flips in-cart items to 'sold'.
  *
- *   DAMAGED / SOLD
- *     (super_admin_locked=true, is_visible_to_scanner=true)
- *     → returned in `blocked`; sell screen surfaces a "needs supervisor"
- *       prompt. NOT added to cart.
- *
- *   STOLEN / TAG KILLED / PENDING VISIBILITY / UNKNOWN
- *     (is_visible_to_scanner=false)
- *     → silently dropped. Counted in `dropped_count` for telemetry.
- *
- *   EPC not in items table → counted in `unknown_count`.
- *
- * The EPC formula filter happens upstream in WMS ingest — anything that
- * lands in `items` already passed tenant_epc_config validation.
+ * The EPC formula filter happens upstream in WMS ingest — anything
+ * that lands in `items` already passed tenant_epc_config validation.
  */
 export async function POST(req: Request) {
   const cashier = await currentCashier();
@@ -124,7 +112,6 @@ export async function POST(req: Request) {
   };
   const usable: UsableItem[] = [];
   const blocked: Array<{ epc: string; status: string }> = [];
-  let promoteCount = 0;
   let droppedCount = 0;
 
   for (const r of rows.rows) {
@@ -132,34 +119,32 @@ export async function POST(req: Request) {
       droppedCount++;
       continue;
     }
-    if (r.is_visible_to_scanner === false) {
-      droppedCount++;
+    // ONLY LIVE (items.status='in-stock' → status_labels 'LIVE',
+    // is_sellable=true) makes the cart. Workflow statuses
+    // (RETURN / IN TRANSIT / PENDING TRANSACTION) are not sellable
+    // until WMS flips them; POS doesn't auto-promote.
+    if (r.label_name === "LIVE" && r.is_sellable === true) {
+      usable.push({
+        epc: r.epc,
+        sku_id: r.sku_id,
+        sku: r.sku,
+        upc: r.upc,
+        item_name: r.item_name,
+        color: r.color,
+        size: r.size,
+        retail_price: r.retail_price,
+      });
       continue;
     }
-    const row: UsableItem = {
-      epc: r.epc,
-      sku_id: r.sku_id,
-      sku: r.sku,
-      upc: r.upc,
-      item_name: r.item_name,
-      color: r.color,
-      size: r.size,
-      retail_price: r.retail_price,
-    };
-    if (r.is_sellable === true) {
-      usable.push(row);
-      continue;
-    }
-    if (r.super_admin_locked === true) {
+    // DAMAGED / SOLD: visible-to-scanner but not sellable AND locked.
+    // Show in the blocked panel so cashier can flag it to a supervisor.
+    if (r.super_admin_locked === true && r.is_visible_to_scanner !== false) {
       blocked.push({ epc: r.epc, status: r.label_name ?? r.item_status });
       continue;
     }
-    // Not sellable, not locked, visible — accept into the cart. The
-    // capture route will flip the status to 'sold' at checkout, which
-    // legitimises the implicit RETURN/IN_TRANSIT/PENDING_TRANSACTION →
-    // sold promotion atomically with the sale.
-    promoteCount++;
-    usable.push(row);
+    // Everything else (RETURN / IN TRANSIT / PENDING TRANSACTION /
+    // STOLEN / TAG KILLED / PENDING VISIBILITY / UNKNOWN) → silent drop.
+    droppedCount++;
   }
 
   const foundCount = rows.rows.length;
@@ -168,7 +153,6 @@ export async function POST(req: Request) {
   return NextResponse.json({
     items: usable,
     blocked,
-    promote_count: promoteCount,
     dropped_count: droppedCount,
     unknown_count: unknownCount,
     // Back-compat: existing RFIDScanModal reads `skipped`.

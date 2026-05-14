@@ -60,17 +60,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "no_reader" }, { status: 409 });
   }
 
+  // Three-step collect_inputs: first name (required), last name
+  // (required), email (optional — skip button shown). The reader
+  // walks the customer through them and returns the typed values
+  // when all steps complete.
   const form = new URLSearchParams({
     "inputs[0][type]": "text",
     "inputs[0][required]": "true",
     "inputs[0][custom_text][title]": "⬢ CARBON REWARDS",
-    "inputs[0][custom_text][description]": "Step 1 of 2 — first name",
+    "inputs[0][custom_text][description]": "Step 1 of 3 — your first name",
     "inputs[0][custom_text][submit_button]": "Next",
     "inputs[1][type]": "text",
     "inputs[1][required]": "true",
     "inputs[1][custom_text][title]": "⬢ CARBON REWARDS",
-    "inputs[1][custom_text][description]": "Step 2 of 2 — last name",
-    "inputs[1][custom_text][submit_button]": "Done",
+    "inputs[1][custom_text][description]": "Step 2 of 3 — your last name",
+    "inputs[1][custom_text][submit_button]": "Next",
+    "inputs[2][type]": "email",
+    "inputs[2][required]": "false",
+    "inputs[2][custom_text][title]": "⬢ CARBON REWARDS",
+    "inputs[2][custom_text][description]":
+      "Step 3 of 3 — email for e-receipts + rewards updates (optional)",
+    "inputs[2][custom_text][submit_button]": "Done",
+    "inputs[2][custom_text][skip_button]": "Skip",
   });
 
   // Cancel anything that may be on the reader (phone prompt still active,

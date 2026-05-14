@@ -8,6 +8,7 @@ import { TotalPanel, type PickedCustomer } from "./TotalPanel";
 import { RedeemPointsModal } from "./RedeemPointsModal";
 import { RFIDScanModal, type RfidResolvedItem } from "./RFIDScanModal";
 import { calculateTotals } from "@/lib/tax";
+import { capitalizeName } from "@/lib/utils";
 import type { CartLine } from "@/types/pos";
 
 /**
@@ -59,7 +60,8 @@ export function SellScreen({
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
   const [pendingFirstName, setPendingFirstName] = useState("");
   const [pendingLastName, setPendingLastName] = useState("");
-  const [nameDrawerOpen, setNameDrawerOpen] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [pendingCreateError, setPendingCreateError] = useState<string | null>(null);
   const [nameSendingToReader, setNameSendingToReader] = useState(false);
   const promptedForCartRef = useRef(false);
 
@@ -236,7 +238,6 @@ export function SellScreen({
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async () => {
       if (cancelled) return;
-      const fast = Date.now() < fastPollUntilRef.current;
       const next = await fetchState();
       if (cancelled) return;
       if (next === "unreachable") {
@@ -252,7 +253,12 @@ export function SellScreen({
         unreachableSince = 0;
         setReaderState(next);
       }
-      timer = setTimeout(tick, fast ? 3_000 : 20_000);
+      // Adaptive cadence — every 2 s while the state isn't a steady
+      // "on", every 10 s otherwise. The Scan RFID button has a live
+      // dot; the cashier sees the watchdog's fix within ~2 s.
+      const stable = next === "on";
+      const fastWindow = Date.now() < fastPollUntilRef.current;
+      timer = setTimeout(tick, stable && !fastWindow ? 10_000 : 2_000);
     };
     // Kick the first tick fast so the badge updates within a second of
     // mount, regardless of the 20-s slow interval.
@@ -388,7 +394,7 @@ export function SellScreen({
       setPendingPhone(null);
       setPendingFirstName("");
       setPendingLastName("");
-      setNameDrawerOpen(false);
+      setPendingEmail(""); setPendingCreateError(null);
       setNameSendingToReader(false);
     }
   }, [lines.length]);
@@ -494,7 +500,10 @@ export function SellScreen({
   }, [phonePromptStatus]);
 
 
-  // Poll the reader's name-prompt action while the cashier has it open.
+  // Poll the reader's name-prompt action while the cashier has it
+  // open. On success the polling handler also fires the auto-create —
+  // cashier doesn't have to click "+" after a customer finishes on
+  // the pin pad.
   useEffect(() => {
     if (!nameSendingToReader) return;
     let stopped = false;
@@ -506,9 +515,20 @@ export function SellScreen({
         ).then((r) => r.json());
         if (stopped) return;
         if (r.status === "succeeded") {
-          if (r.first_name) setPendingFirstName(r.first_name);
-          if (r.last_name) setPendingLastName(r.last_name);
+          // Title-case names regardless of how the customer typed
+          // them; lowercase the email (case-insensitive).
+          const first = capitalizeName((r.first_name ?? "").trim());
+          const last = capitalizeName((r.last_name ?? "").trim());
+          const email = ((r.email ?? "") as string).trim().toLowerCase();
+          if (first) setPendingFirstName(first);
+          if (last) setPendingLastName(last);
+          if (email) setPendingEmail(email);
           setNameSendingToReader(false);
+          // Auto-create: same path as a manual "+" click but with the
+          // values just collected on the reader.
+          if (first && last) {
+            void runCreateCustomer({ first, last, email: email || null });
+          }
         } else if (
           r.status === "canceled" ||
           r.status === "failed" ||
@@ -525,6 +545,7 @@ export function SellScreen({
       stopped = true;
       clearInterval(id);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nameSendingToReader]);
 
   // Cashier-side skip: cancels the reader action and stops the prompt.
@@ -550,7 +571,7 @@ export function SellScreen({
     setPendingPhone(null);
     setPendingFirstName("");
     setPendingLastName("");
-    setNameDrawerOpen(false);
+    setPendingEmail(""); setPendingCreateError(null);
     setNameSendingToReader(false);
     fetch("/api/pos/loyalty/reader-prompt", { method: "DELETE" }).catch(
       () => {},
@@ -572,10 +593,28 @@ export function SellScreen({
     }
   };
 
-  const confirmCreateCustomer = async () => {
+  // Single create-customer path used by both the manual "+" click
+  // (uses current pending* state) and the reader-completion auto path
+  // (uses values just collected from the pin pad).
+  const runCreateCustomer = async (override?: {
+    first?: string;
+    last?: string;
+    email?: string | null;
+  }) => {
     if (!pendingPhone) return;
-    const first = pendingFirstName.trim();
-    if (!first) return;
+    const first = (override?.first ?? pendingFirstName).trim();
+    const last = (override?.last ?? pendingLastName).trim();
+    const emailRaw = (override?.email ?? pendingEmail) ?? "";
+    const email = typeof emailRaw === "string" ? emailRaw.trim() : "";
+    if (!first) {
+      setPendingCreateError("First name is required.");
+      return;
+    }
+    if (!last) {
+      setPendingCreateError("Last name is required.");
+      return;
+    }
+    setPendingCreateError(null);
     try {
       const res = await fetch("/api/pos/loyalty/create-customer", {
         method: "POST",
@@ -583,33 +622,59 @@ export function SellScreen({
         body: JSON.stringify({
           phone: pendingPhone,
           first_name: first,
-          last_name: pendingLastName.trim() || null,
+          last_name: last,
+          email: email.length > 0 ? email : null,
         }),
       });
-      const data = await res.json();
-      if (data.customer) {
-        const c = data.customer;
-        const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
-        setCustomer({
-          id: c.id,
-          name,
-          email: c.email ?? null,
-          phone: c.mobile_phone ?? c.phone ?? null,
-        });
-        // Cancel any in-flight reader action so cart-mirror can take over.
-        fetch("/api/pos/loyalty/reader-prompt", { method: "DELETE" }).catch(
-          () => {},
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.customer) {
+        setPendingCreateError(
+          data.message ??
+            "Couldn't create the customer — please try again or attach an existing one.",
         );
-        setPendingPhone(null);
-        setPendingFirstName("");
-        setPendingLastName("");
-        setNameDrawerOpen(false);
-        setNameSendingToReader(false);
-        setPhonePromptStatus("done");
+        return;
       }
-    } catch {
-      /* leave UI as-is so cashier can retry */
+      const c = data.customer;
+      const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
+      setCustomer({
+        id: c.id,
+        name,
+        email: c.email ?? null,
+        phone: c.mobile_phone ?? c.phone ?? null,
+      });
+      // Cancel any in-flight reader action so cart-mirror can take over.
+      fetch("/api/pos/loyalty/reader-prompt", { method: "DELETE" }).catch(
+        () => {},
+      );
+      setPendingPhone(null);
+      setPendingFirstName("");
+      setPendingLastName("");
+      setPendingEmail("");
+      setPendingCreateError(null);
+      setNameSendingToReader(false);
+      setPhonePromptStatus("done");
+    } catch (err) {
+      setPendingCreateError(
+        `Network error — couldn't reach the server. ${
+          err instanceof Error ? err.message : ""
+        }`,
+      );
     }
+  };
+
+  const confirmCreateCustomer = () => void runCreateCustomer();
+
+  // Re-send the phone prompt to the reader. Used by the small phone
+  // icon next to the "+" in the customer search row when the cashier
+  // has previously skipped or wants to re-ask.
+  const resendPhonePrompt = () => {
+    setPhonePromptStatus("collecting");
+    fetch("/api/pos/loyalty/reader-prompt", { method: "POST" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) setPhonePromptStatus("idle");
+      })
+      .catch(() => setPhonePromptStatus("idle"));
   };
 
   // ── Loyalty integration ─────────────────────────────────────────────
@@ -671,8 +736,14 @@ export function SellScreen({
   function addProduct(item: SearchResultItem) {
     const price = Number(item.retail_price ?? 0);
     setLines((prev) => {
+      // Manual rows stack on same sku_id — but ONLY with other manual
+      // rows. An rfid row with the same sku_id is kept separate so the
+      // mode-mismatch badge logic (WMS-driven) has both rows visible.
       const existing = prev.find(
-        (l) => l.sku_id === item.id && l.line_type === "product" && !l.epc,
+        (l) =>
+          l.sku_id === item.id &&
+          l.line_type === "product" &&
+          (l.source ?? "manual") === "manual",
       );
       if (existing) {
         return prev.map((l) =>
@@ -685,6 +756,7 @@ export function SellScreen({
           cart_id: cryptoId(),
           sku_id: item.id,
           epc: null,
+          source: "manual",
           sku: item.sku ?? null,
           upc: item.upc ?? null,
           description: [item.item_name, item.color, item.size]
@@ -701,24 +773,50 @@ export function SellScreen({
   }
 
   function addRfidItems(items: RfidResolvedItem[]) {
-    setLines((prev) => [
-      ...prev,
-      ...items.map<CartLine>((it) => ({
-        cart_id: cryptoId(),
-        sku_id: it.sku_id,
-        epc: it.epc,
-        sku: it.sku,
-        upc: it.upc,
-        description: [it.item_name, it.color, it.size]
-          .filter(Boolean)
-          .join(" · "),
-        quantity: 1,
-        unit_price: Number(it.retail_price ?? 0),
-        discount_amount: 0,
-        tax_rate: taxRate,
-        line_type: "product",
-      })),
-    ]);
+    setLines((prev) => {
+      const next: CartLine[] = [...prev];
+      for (const it of items) {
+        // Stack onto an existing rfid row for the same sku — pushes
+        // the EPC into the row's `epcs` array and bumps qty. Manual
+        // rows for the same sku stay separate.
+        const existing = next.find(
+          (l) =>
+            l.sku_id === it.sku_id &&
+            l.line_type === "product" &&
+            l.source === "rfid",
+        );
+        if (existing) {
+          const prevEpcs = existing.epcs ?? (existing.epc ? [existing.epc] : []);
+          if (prevEpcs.includes(it.epc)) continue; // already in this row
+          const merged: CartLine = {
+            ...existing,
+            quantity: existing.quantity + 1,
+            epcs: [...prevEpcs, it.epc],
+          };
+          const idx = next.indexOf(existing);
+          next[idx] = merged;
+          continue;
+        }
+        next.push({
+          cart_id: cryptoId(),
+          sku_id: it.sku_id,
+          epc: it.epc,
+          epcs: [it.epc],
+          source: "rfid",
+          sku: it.sku,
+          upc: it.upc,
+          description: [it.item_name, it.color, it.size]
+            .filter(Boolean)
+            .join(" · "),
+          quantity: 1,
+          unit_price: Number(it.retail_price ?? 0),
+          discount_amount: 0,
+          tax_rate: taxRate,
+          line_type: "product",
+        });
+      }
+      return next;
+    });
   }
 
   function addMiscCharge(description: string, amount: number) {
@@ -818,8 +916,15 @@ export function SellScreen({
                 if (readerState === "off") void startReader();
                 setShowRfid(true);
               }}
-              className="carbon-btn-secondary tap-lg px-6 font-semibold whitespace-nowrap"
+              title={readerStateLabel(readerState)}
+              className="carbon-btn-secondary tap-lg px-6 font-semibold whitespace-nowrap inline-flex items-center gap-2"
             >
+              <span
+                className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                  readerDotClass(readerState)
+                }`}
+                aria-label={readerStateLabel(readerState)}
+              />
               Scan RFID
             </button>
           </div>
@@ -891,19 +996,21 @@ export function SellScreen({
             pendingPhone={pendingPhone}
             pendingFirstName={pendingFirstName}
             pendingLastName={pendingLastName}
-            nameDrawerOpen={nameDrawerOpen}
+            pendingEmail={pendingEmail}
+            pendingCreateError={pendingCreateError}
             nameSendingToReader={nameSendingToReader}
             phonePromptCollecting={
               phonePromptStatus === "collecting" ||
               phonePromptStatus === "looking-up"
             }
-            onChangePendingFirstName={setPendingFirstName}
-            onChangePendingLastName={setPendingLastName}
-            onToggleNameDrawer={() => setNameDrawerOpen((v) => !v)}
+            onChangePendingFirstName={(v) => { setPendingFirstName(v); setPendingCreateError(null); }}
+            onChangePendingLastName={(v) => { setPendingLastName(v); setPendingCreateError(null); }}
+            onChangePendingEmail={(v) => { setPendingEmail(v); setPendingCreateError(null); }}
             onSendNameToReader={sendNameToReader}
             onConfirmCreateCustomer={confirmCreateCustomer}
             onCancelPendingPhone={cancelPendingPhone}
             onCancelPhonePrompt={cancelPhonePrompt}
+            onResendPhonePrompt={resendPhonePrompt}
           />
           {customer && loyaltyBalance !== null ? (
             <RedeemPointsModal
@@ -927,6 +1034,9 @@ export function SellScreen({
         onClose={() => setShowRfid(false)}
         onAdd={addRfidItems}
         readerState={readerState}
+        cartEpcs={lines
+          .map((l) => l.epc)
+          .filter((e): e is string => typeof e === "string" && e.length > 0)}
       />
       {showMisc && (
         <MiscChargeModal
@@ -1117,3 +1227,53 @@ function cryptoId(): string {
   return Math.random().toString(36).slice(2);
 }
 
+
+/**
+ * Small status-dot CSS class for the dot embedded in the Scan RFID
+ * button. Green when chip alive, amber/pulse during transitions or
+ * watchdog recovery, red when unreachable, gray for off/no-reader.
+ */
+type ReaderUiState =
+  | "off"
+  | "on"
+  | "recovering"
+  | "starting"
+  | "stopping"
+  | "no_reader"
+  | "unreachable";
+
+function readerDotClass(state: ReaderUiState): string {
+  switch (state) {
+    case "on":
+      return "bg-emerald-500";
+    case "recovering":
+    case "starting":
+    case "stopping":
+      return "bg-amber-400 animate-pulse";
+    case "unreachable":
+      return "bg-red-500";
+    case "no_reader":
+    case "off":
+    default:
+      return "bg-carbon-text-muted/40";
+  }
+}
+
+function readerStateLabel(state: ReaderUiState): string {
+  switch (state) {
+    case "on":
+      return "Reader ready — tap to scan";
+    case "off":
+      return "Reader off — tap to start";
+    case "recovering":
+      return "Reader recovering…";
+    case "starting":
+      return "Starting reader…";
+    case "stopping":
+      return "Stopping reader…";
+    case "no_reader":
+      return "No reader paired with this register";
+    case "unreachable":
+      return "Reader unreachable — check WMS";
+  }
+}

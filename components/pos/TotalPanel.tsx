@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { formatMoney } from "@/lib/utils";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { capitalizeName, formatMoney } from "@/lib/utils";
 import type { CartTotals } from "@/types/pos";
 
 export type PickedCustomer = {
@@ -45,16 +45,18 @@ export function TotalPanel({
   pendingPhone,
   pendingFirstName,
   pendingLastName,
-  nameDrawerOpen,
+  pendingEmail,
+  pendingCreateError,
   nameSendingToReader,
   phonePromptCollecting,
   onChangePendingFirstName,
   onChangePendingLastName,
-  onToggleNameDrawer,
+  onChangePendingEmail,
   onSendNameToReader,
   onConfirmCreateCustomer,
   onCancelPendingPhone,
   onCancelPhonePrompt,
+  onResendPhonePrompt,
 }: {
   totals: CartTotals;
   customer: PickedCustomer | null;
@@ -73,8 +75,10 @@ export function TotalPanel({
   pendingPhone: string | null;
   pendingFirstName: string;
   pendingLastName: string;
-  nameDrawerOpen: boolean;
-  /** True while the reader is collecting the name (pin pad in use). */
+  pendingEmail: string;
+  /** Human-readable error from /create-customer or email validation. */
+  pendingCreateError: string | null;
+  /** True while the reader is collecting first/last/email on pin pad. */
   nameSendingToReader: boolean;
   /** True while the reader is collecting the customer's phone. Drives
    *  the in-line "Customer is entering phone number" placeholder that
@@ -82,11 +86,14 @@ export function TotalPanel({
   phonePromptCollecting: boolean;
   onChangePendingFirstName: (s: string) => void;
   onChangePendingLastName: (s: string) => void;
-  onToggleNameDrawer: () => void;
+  onChangePendingEmail: (s: string) => void;
   onSendNameToReader: () => void;
   onConfirmCreateCustomer: () => void;
   onCancelPendingPhone: () => void;
   onCancelPhonePrompt: () => void;
+  /** Resend the phone prompt to the reader (cashier override after a
+   *  skip, or for a returning customer who needs a re-scan). */
+  onResendPhonePrompt: () => void;
 }) {
   return (
     <aside className="carbon-card flex flex-col">
@@ -123,11 +130,12 @@ export function TotalPanel({
             phone={pendingPhone}
             firstName={pendingFirstName}
             lastName={pendingLastName}
-            drawerOpen={nameDrawerOpen}
+            email={pendingEmail}
             sending={nameSendingToReader}
+            createError={pendingCreateError}
             onChangeFirst={onChangePendingFirstName}
             onChangeLast={onChangePendingLastName}
-            onToggleDrawer={onToggleNameDrawer}
+            onChangeEmail={onChangePendingEmail}
             onSendToReader={onSendNameToReader}
             onConfirm={onConfirmCreateCustomer}
             onCancel={onCancelPendingPhone}
@@ -138,6 +146,7 @@ export function TotalPanel({
           <CustomerSearchRow
             onPick={onPickCustomer}
             onNewCustomer={onNewCustomer}
+            onResendPhonePrompt={onResendPhonePrompt}
           />
         )}
       </div>
@@ -258,9 +267,11 @@ function CustomerCard({
 function CustomerSearchRow({
   onPick,
   onNewCustomer,
+  onResendPhonePrompt,
 }: {
   onPick: (c: PickedCustomer) => void;
   onNewCustomer: () => void;
+  onResendPhonePrompt: () => void;
 }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -346,11 +357,22 @@ function CustomerSearchRow({
         <button
           type="button"
           onClick={onNewCustomer}
-          title="New customer"
+          title="New customer (full form)"
           aria-label="New customer"
           className="carbon-btn-primary inline-flex items-center justify-center w-10 shrink-0"
         >
           <span className="material-symbols-outlined text-xl">add</span>
+        </button>
+        {/* Re-send phone prompt to the reader — for when the cashier
+            previously cancelled the prompt or wants to re-ask. */}
+        <button
+          type="button"
+          onClick={onResendPhonePrompt}
+          title="Ask the customer to enter their phone on the reader again"
+          aria-label="Ask for phone on reader"
+          className="inline-flex items-center justify-center w-10 shrink-0 border border-carbon-border bg-white text-carbon-blue hover:bg-carbon-blue-soft transition-colors"
+        >
+          <span className="material-symbols-outlined text-xl">smartphone</span>
         </button>
       </div>
 
@@ -408,11 +430,12 @@ function PendingPhoneBox({
   phone,
   firstName,
   lastName,
-  drawerOpen,
+  email,
   sending,
+  createError,
   onChangeFirst,
   onChangeLast,
-  onToggleDrawer,
+  onChangeEmail,
   onSendToReader,
   onConfirm,
   onCancel,
@@ -420,11 +443,12 @@ function PendingPhoneBox({
   phone: string;
   firstName: string;
   lastName: string;
-  drawerOpen: boolean;
+  email: string;
   sending: boolean;
+  createError: string | null;
   onChangeFirst: (s: string) => void;
   onChangeLast: (s: string) => void;
-  onToggleDrawer: () => void;
+  onChangeEmail: (s: string) => void;
   onSendToReader: () => void;
   onConfirm: () => void;
   onCancel: () => void;
@@ -435,9 +459,9 @@ function PendingPhoneBox({
     digits.length === 10
       ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
       : phone;
-  const canConfirm = firstName.trim().length > 0;
+  const canConfirm = firstName.trim().length > 0 && lastName.trim().length > 0;
   return (
-    <div>
+    <div className="space-y-2">
       <div className="flex items-stretch gap-2">
         {/* Blinking phone display */}
         <div className="flex-1 relative">
@@ -457,78 +481,70 @@ function PendingPhoneBox({
             ×
           </button>
         </div>
-        {/* Confirm/create "+" button on the right */}
+        {/* Send-to-reader (arrow) — pushes the three fields to the
+            customer's pin pad for them to fill in. */}
+        <button
+          type="button"
+          onClick={onSendToReader}
+          disabled={sending}
+          title="Have the customer type their info on the reader"
+          aria-label="Send to reader"
+          className="w-11 flex items-center justify-center border border-carbon-border bg-white text-carbon-blue disabled:opacity-50 hover:bg-carbon-blue-soft transition-colors"
+        >
+          <span className="material-symbols-outlined text-[20px]" aria-hidden>
+            {sending ? "more_horiz" : "send"}
+          </span>
+        </button>
+        {/* Create "+" button on the right */}
         <button
           type="button"
           onClick={onConfirm}
           disabled={!canConfirm}
-          title={canConfirm ? "Create customer + enroll in rewards" : "Add a name first"}
+          title={canConfirm ? "Create customer + enroll in rewards" : "First and last name are required"}
           className="w-12 bg-carbon-blue text-white text-2xl font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-carbon-blue/90 transition-colors"
         >
           +
         </button>
       </div>
 
-      {/* Drawer toggle */}
-      <button
-        type="button"
-        onClick={onToggleDrawer}
-        className="mt-2 flex items-center gap-1 text-xs text-carbon-text-muted hover:text-carbon-text font-medium"
-      >
-        <span
-          className="material-symbols-outlined text-base"
-          aria-hidden
-        >
-          {drawerOpen ? "expand_less" : "expand_more"}
-        </span>
-        Add name
-      </button>
-
-      {/* Drawer */}
-      {drawerOpen ? (
-        <div className="mt-2 pt-3 border-t border-carbon-border-soft space-y-2">
-          <div className="flex gap-2 items-center">
-            <input
-              value={firstName}
-              onChange={(e) => onChangeFirst(e.target.value)}
-              placeholder="First name"
-              className="flex-1 carbon-input px-3 py-2 text-sm"
-            />
-            <input
-              value={lastName}
-              onChange={(e) => onChangeLast(e.target.value)}
-              placeholder="Last name"
-              className="flex-1 carbon-input px-3 py-2 text-sm"
-            />
-            <button
-              type="button"
-              onClick={onSendToReader}
-              disabled={sending}
-              title="Have the customer type their name on the reader"
-              aria-label="Send to reader"
-              className="w-9 h-9 flex items-center justify-center bg-carbon-blue text-white disabled:opacity-50"
-            >
-              <span
-                className="material-symbols-outlined text-base"
-                aria-hidden
-              >
-                {sending ? "more_horiz" : "send"}
-              </span>
-            </button>
-          </div>
-          {sending ? (
-            <p className="text-xs text-carbon-blue font-medium">
-              Customer is entering their name on the reader…
-            </p>
-          ) : (
-            <p className="text-xs text-carbon-text-muted">
-              Type in here, or send to the reader for the customer to fill.
-              Click&nbsp;<span className="font-bold text-carbon-blue">+</span>&nbsp;
-              when ready to enroll.
-            </p>
-          )}
+      {/* Always-open form: first/last/email inputs.
+          Names auto-Title-Case as the cashier types.
+          Email split into [username]@[domain dropdown] with the most-
+          common US providers; "Other…" reveals a free-form input. */}
+      <div className="pt-2 space-y-2">
+        <div className="flex gap-2">
+          <input
+            value={firstName}
+            onChange={(e) => onChangeFirst(capitalizeName(e.target.value))}
+            placeholder="First name *"
+            className="flex-1 carbon-input px-3 py-2 text-sm"
+            autoFocus
+          />
+          <input
+            value={lastName}
+            onChange={(e) => onChangeLast(capitalizeName(e.target.value))}
+            placeholder="Last name *"
+            className="flex-1 carbon-input px-3 py-2 text-sm"
+          />
         </div>
-      ) : null}
+        <EmailInput value={email} onChange={onChangeEmail} />
+        {createError ? (
+          <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800 leading-snug">
+            <span className="material-symbols-outlined text-[14px] align-text-bottom mr-1" aria-hidden>
+              error
+            </span>
+            {createError}
+          </div>
+        ) : sending ? (
+          <p className="text-xs text-carbon-blue font-medium">
+            Customer is entering their info on the reader…
+          </p>
+        ) : (
+          <p className="text-xs text-carbon-text-muted leading-snug">
+            Type here, or send <span className="material-symbols-outlined text-[12px] align-text-bottom">send</span> to have the customer fill on the reader. Click&nbsp;<span className="font-bold text-carbon-blue">+</span>&nbsp;to enroll.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -562,6 +578,145 @@ function CollectingPhoneRow({ onSkip }: { onSkip: () => void }) {
           arrow_forward
         </span>
       </button>
+    </div>
+  );
+}
+
+/**
+ * Email input split into a username box + an "@" + a domain dropdown.
+ * The dropdown is ordered by US consumer email-provider popularity;
+ * "Other…" reveals a free-form domain box for everything else.
+ *
+ * Stores the combined value upstream — parent treats it as one
+ * string. We parse on mount so values coming in from the reader's
+ * pin-pad (typed as a single string) populate user/domain cleanly.
+ *
+ * Email is always lowercase — typed characters are forced down,
+ * matching the case-insensitive nature of email addresses.
+ */
+const POPULAR_US_DOMAINS = [
+  "gmail.com",
+  "yahoo.com",
+  "icloud.com",
+  "hotmail.com",
+  "outlook.com",
+  "aol.com",
+  "me.com",
+  "live.com",
+  "comcast.net",
+  "msn.com",
+];
+
+function EmailInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (combined: string) => void;
+}) {
+  // Parse incoming value into (user, domain). If the domain isn't one
+  // of the popular presets, switch to custom mode and seed the box.
+  const parsed = useMemo(() => {
+    const at = value.indexOf("@");
+    if (at < 0) return { user: value.toLowerCase(), domain: "", custom: "" };
+    const user = value.slice(0, at).toLowerCase();
+    const domain = value.slice(at + 1).toLowerCase();
+    return {
+      user,
+      domain: POPULAR_US_DOMAINS.includes(domain) ? domain : "",
+      custom: POPULAR_US_DOMAINS.includes(domain) ? "" : domain,
+    };
+  }, [value]);
+
+  const [user, setUser] = useState(parsed.user);
+  const [domain, setDomain] = useState(parsed.domain || "gmail.com");
+  const [customMode, setCustomMode] = useState(
+    parsed.custom.length > 0 || (value.length > 0 && !parsed.domain),
+  );
+  const [custom, setCustom] = useState(parsed.custom);
+
+  // Sync external value changes (e.g. pin-pad-typed email arriving).
+  // Only re-parse when the upstream value diverges from our combined
+  // local state — otherwise we'd clobber the user's typing.
+  useEffect(() => {
+    const localCombined =
+      user.length === 0
+        ? ""
+        : `${user}@${customMode ? custom : domain}`;
+    if (value.toLowerCase() !== localCombined) {
+      setUser(parsed.user);
+      if (parsed.custom) {
+        setCustomMode(true);
+        setCustom(parsed.custom);
+      } else if (parsed.domain) {
+        setCustomMode(false);
+        setDomain(parsed.domain);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const emit = (u: string, d: string) => {
+    if (u.length === 0) {
+      onChange("");
+    } else {
+      onChange(`${u.toLowerCase()}@${d.toLowerCase()}`);
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-stretch gap-1">
+        <input
+          value={user}
+          onChange={(e) => {
+            const next = e.target.value.toLowerCase().replace(/\s+/g, "");
+            setUser(next);
+            emit(next, customMode ? custom : domain);
+          }}
+          placeholder="email (optional)"
+          className="flex-1 carbon-input px-3 py-2 text-sm min-w-0"
+          autoComplete="off"
+        />
+        <span className="inline-flex items-center px-2 text-sm font-semibold text-carbon-text-muted bg-carbon-surface-soft border border-carbon-border">
+          @
+        </span>
+        <select
+          value={customMode ? "__other__" : domain}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "__other__") {
+              setCustomMode(true);
+              emit(user, custom);
+            } else {
+              setCustomMode(false);
+              setDomain(v);
+              emit(user, v);
+            }
+          }}
+          className="carbon-input px-2 py-2 text-sm bg-white cursor-pointer"
+        >
+          {POPULAR_US_DOMAINS.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+          <option value="__other__">Other…</option>
+        </select>
+      </div>
+      {customMode && (
+        <input
+          value={custom}
+          onChange={(e) => {
+            const next = e.target.value.toLowerCase().replace(/\s+/g, "");
+            setCustom(next);
+            emit(user, next);
+          }}
+          placeholder="domain.com"
+          className="w-full carbon-input px-3 py-2 text-sm"
+          autoComplete="off"
+        />
+      )}
     </div>
   );
 }

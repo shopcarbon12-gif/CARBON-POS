@@ -210,10 +210,20 @@ export type CartLine = {
   /** Stable per-row id within the cart; not the DB id. */
   cart_id: string;
   sku_id: string | null;
+  /** Single legacy EPC field — populated for the FIRST EPC on RFID
+   *  rows for back-compat with code that reads `.epc`. The full list
+   *  for an RFID row lives in `.epcs`. */
   epc: string | null;
+  /** All EPCs stacked into this row. Always present for source='rfid'
+   *  (length === quantity). Empty / absent for manual rows. The
+   *  capture route flips ALL of these to status='sold'. */
+  epcs?: string[];
+  /** How this row got into the cart. Drives row visuals (badge,
+   *  +/- buttons) and downstream "expected mode vs actual" rules
+   *  that WMS will layer on top later. */
+  source?: "manual" | "rfid";
   /** Custom SKU code (human-readable, e.g. "C125414090903"). Shown
-   *  in the cart row subtitle. Optional for back-compat with rows
-   *  hydrated from older localStorage states. */
+   *  in the cart row subtitle. Optional for back-compat. */
   sku?: string | null;
   /** UPC barcode. Shown alongside SKU in the cart row subtitle. */
   upc?: string | null;

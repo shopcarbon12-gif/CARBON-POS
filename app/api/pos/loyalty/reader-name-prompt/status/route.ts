@@ -56,19 +56,28 @@ export async function GET() {
   }
   if (action.status === "canceled") return NextResponse.json({ status: "canceled" });
 
-  // succeeded — extract two text values
-  const inputs = action.collect_inputs?.inputs ?? [];
+  // succeeded — extract the three fields by type order (text, text,
+  // email). The email step is optional + skippable; if the customer
+  // skipped, its `skipped` flag is true and value is null.
+  type InputRow = {
+    type?: string;
+    skipped?: boolean;
+    text?: { value?: string | null };
+    email?: { value?: string | null };
+  };
+  const inputs = (action.collect_inputs?.inputs ?? []) as InputRow[];
   const texts = inputs
-    .filter(
-      (i: { type?: string; text?: { value?: string } }) => i.type === "text",
-    )
-    .map((i: { text?: { value?: string } }) => i.text?.value ?? "");
-  if (texts.length < 2) {
+    .filter((i) => i.type === "text")
+    .map((i) => (i.skipped ? "" : (i.text?.value ?? "")));
+  const emailRow = inputs.find((i) => i.type === "email");
+  const email = emailRow?.skipped ? null : (emailRow?.email?.value ?? null);
+  if (texts.length < 2 || !texts[0].trim() || !texts[1].trim()) {
     return NextResponse.json({ status: "canceled" });
   }
   return NextResponse.json({
     status: "succeeded",
     first_name: texts[0],
     last_name: texts[1],
+    email,
   });
 }
