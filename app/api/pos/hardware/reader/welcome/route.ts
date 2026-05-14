@@ -160,18 +160,29 @@ export async function POST(req: Request) {
   }
   setTimeout(async () => {
     try {
-      // 1. Flip the account-default splash back. New idle transitions
-      //    will pull the default Carbon splash from now on.
+      // 1. Flip the account-default splash back so future idle
+      //    transitions pull DEFAULT instead of NEW. This is enough on
+      //    its own — we no longer push a placeholder cart, which the
+      //    operator was rightly hating: it rendered visibly as
+      //    "Welcome to Carbon  $0.01" because Stripe Terminal renders
+      //    every line item regardless of zero/one-cent amounts.
+      // 2. cancel_action best-effort to clear the just-finished phone
+      //    collect_inputs action object so the reader sits cleanly on
+      //    splash. If the reader hasn't pulled the DEFAULT config yet
+      //    the welcome JPG may linger a few extra seconds before the
+      //    next config poll — strictly better than the $0.01 cart.
       await setSplashTo(DEFAULT_SPLASH_FILE);
-      // 2. The READER has the welcome PNG cached locally and won't
-      //    refresh its idle splash until its next config pull (often
-      //    30 s+). Without a kick, the welcome image lingers past the
-      //    7-second dwell. Push a real-time empty cart_display so the
-      //    reader leaves the splash surface immediately; the cashier's
-      //    next sale action (adding a line, collecting payment) will
-      //    overwrite this, and the next return-to-idle will load the
-      //    default splash that's now in config.
-      await pushPlaceholderCart(readerId);
+      await stripe(`/v1/terminal/readers/${readerId}/cancel_action`, {
+        method: "POST",
+        body: "",
+      }).then(async (r) => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          if (j.error?.code !== "no_action") {
+            console.log("[welcome] cancel_action non-ok:", r.status, j.error?.code);
+          }
+        }
+      }).catch((err) => console.error("[welcome] cancel_action threw:", err));
     } catch {
       /* best-effort */
     }
@@ -184,84 +195,3 @@ export async function POST(req: Request) {
   });
 }
 
-/**
- * Forces the reader off the welcome splash by canceling any lingering
- * action and pushing a placeholder cart_display.
- *
- *   1. Fetch the reader's current action. Skip the kick ONLY if a
- *      collect_inputs / payment is genuinely in_progress (cashier was
- *      quick during the 7-second dwell). A "succeeded" action from
- *      the just-finished phone prompt is NOT a reason to skip — at
- *      that point the reader is sitting on the splash showing the
- *      welcome PNG, and we need to push it off.
- *
- *   2. cancel_action to clear any stale succeeded/failed action so the
- *      reader is squarely idle before we push a new display state.
- *
- *   3. set_reader_display with a one-line cart. Amount is 1 cent (not
- *      0) so it's unambiguous — some Stripe Terminal display rules
- *      treat 0-total carts as empty/no-op. The cashier's next sale
- *      line, payment, or collect_inputs will overwrite this.
- *
- * Logs failures to the server console (no silent .catch) so we can
- * actually see WHY the kick didn't land when the JPG sticks.
- */
-async function pushPlaceholderCart(readerId: string): Promise<void> {
-  // Step 1 — inspect current action.
-  let actionInProgress = false;
-  try {
-    const r = await stripe(`/v1/terminal/readers/${readerId}`);
-    if (r.ok) {
-      const reader = await r.json();
-      actionInProgress = reader.action?.status === "in_progress";
-    }
-  } catch (err) {
-    console.error("[welcome] reader fetch failed:", err);
-  }
-  if (actionInProgress) {
-    console.log("[welcome] skipping cart push — action in_progress");
-    return;
-  }
-
-  // Step 2 — best-effort cancel of any non-in_progress lingering action.
-  try {
-    const cancel = await stripe(`/v1/terminal/readers/${readerId}/cancel_action`, {
-      method: "POST",
-      body: "",
-    });
-    if (!cancel.ok) {
-      const j = await cancel.json().catch(() => ({}));
-      // "no_action" is fine — reader was already idle.
-      if (j.error?.code !== "no_action") {
-        console.log("[welcome] cancel_action non-ok:", cancel.status, j.error?.code);
-      }
-    }
-  } catch (err) {
-    console.error("[welcome] cancel_action threw:", err);
-  }
-
-  // Step 3 — push the cart display.
-  const form = new URLSearchParams({
-    type: "cart",
-    "cart[currency]": "usd",
-    "cart[total]": "1",
-    "cart[line_items][0][description]": "Welcome to Carbon",
-    "cart[line_items][0][amount]": "1",
-    "cart[line_items][0][quantity]": "1",
-  });
-  try {
-    const res = await stripe(`/v1/terminal/readers/${readerId}/set_reader_display`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "(no body)");
-      console.error("[welcome] set_reader_display failed:", res.status, body);
-    } else {
-      console.log("[welcome] set_reader_display ok");
-    }
-  } catch (err) {
-    console.error("[welcome] set_reader_display threw:", err);
-  }
-}
