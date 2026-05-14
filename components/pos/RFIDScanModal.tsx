@@ -58,8 +58,12 @@ export function RFIDScanModal({
   const seenRef = useRef<Set<string>>(new Set());
 
   const removeItem = (epc: string) => {
+    // Drop from the visible list but KEEP in seenRef so the SSE
+    // stream's continuing reads of that same tag are silently
+    // ignored for this scan session. The EPC becomes scannable again
+    // only after the modal closes (Cancel/Add to cart wipes seenRef
+    // via the open=false cleanup) or after a Rescan.
     setScanned((prev) => prev.filter((it) => it.epc !== epc));
-    seenRef.current.delete(epc);
   };
   const rescan = () => {
     setScanned([]);
