@@ -56,7 +56,20 @@ export function RFIDScanModal({
   // it (an item removed from the cart should be re-scannable; Rescan
   // clears everything).
   const seenRef = useRef<Set<string>>(new Set());
+  // Selection mode. Empty set → "add all" mode (button adds every
+  // row). Non-empty → only the chosen rows get added when "Add N to
+  // cart" fires. Toggle membership by clicking a row.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectionMode = selected.size > 0;
 
+  const toggleSelect = (epc: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(epc)) next.delete(epc);
+      else next.add(epc);
+      return next;
+    });
+  };
   const removeItem = (epc: string) => {
     // Drop from the visible list but KEEP in seenRef so the SSE
     // stream's continuing reads of that same tag are silently
@@ -64,6 +77,13 @@ export function RFIDScanModal({
     // only after the modal closes (Cancel/Add to cart wipes seenRef
     // via the open=false cleanup) or after a Rescan.
     setScanned((prev) => prev.filter((it) => it.epc !== epc));
+    // If a selected row is removed, drop it from selection too.
+    setSelected((prev) => {
+      if (!prev.has(epc)) return prev;
+      const next = new Set(prev);
+      next.delete(epc);
+      return next;
+    });
   };
   const rescan = () => {
     setScanned([]);
@@ -71,6 +91,7 @@ export function RFIDScanModal({
     setFilteredCount(0);
     setPromoted(0);
     setBlocked([]);
+    setSelected(new Set());
     seenRef.current.clear();
   };
 
@@ -82,6 +103,7 @@ export function RFIDScanModal({
       setPromoted(0);
       setBlocked([]);
       setStreamErr(null);
+      setSelected(new Set());
       seenRef.current.clear();
       return;
     }
@@ -181,18 +203,34 @@ export function RFIDScanModal({
               {scanned.map((it) => {
                 const price = it.retail_price ? formatMoney(Number(it.retail_price)) : null;
                 const meta = [it.sku, it.color, it.size, price].filter(Boolean);
+                const isSelected = selected.has(it.epc);
                 return (
                   <li
                     key={it.epc}
-                    className="flex items-center justify-between gap-3 px-4 py-2 border-b border-[var(--color-pos-border)] last:border-b-0"
+                    className={`flex items-center justify-between gap-3 px-4 py-2 border-b border-[var(--color-pos-border)] last:border-b-0 cursor-pointer transition-colors ${
+                      isSelected
+                        ? "bg-emerald-50 hover:bg-emerald-100"
+                        : "hover:bg-[var(--color-pos-bg)]"
+                    }`}
+                    onClick={() => toggleSelect(it.epc)}
                   >
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 flex items-center gap-2">
+                      {isSelected && (
+                        <span
+                          className="material-symbols-outlined text-[18px] text-emerald-700 shrink-0"
+                          aria-hidden
+                        >
+                          check_circle
+                        </span>
+                      )}
                       <p className="text-sm leading-tight">
-                        <span className="font-semibold text-carbon-text">
+                        <span
+                          className={`font-semibold ${isSelected ? "text-emerald-900" : "text-carbon-text"}`}
+                        >
                           {it.item_name}
                         </span>
                         {meta.length > 0 && (
-                          <span className="text-carbon-text-muted">
+                          <span className={isSelected ? "text-emerald-800" : "text-carbon-text-muted"}>
                             {meta.map((m, idx) => (
                               <span key={idx}>
                                 <span className="mx-1.5 opacity-50">·</span>
@@ -205,7 +243,10 @@ export function RFIDScanModal({
                     </div>
                     <button
                       type="button"
-                      onClick={() => removeItem(it.epc)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeItem(it.epc);
+                      }}
                       aria-label="Remove from list"
                       title="Remove from list"
                       className="shrink-0 w-9 h-9 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -237,7 +278,9 @@ export function RFIDScanModal({
         )}
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-[var(--color-pos-muted)]">
-            {scanned.length} ready to add
+            {selectionMode
+              ? `${selected.size} of ${scanned.length} selected`
+              : `${scanned.length} ready to add`}
           </p>
           <div className="flex gap-2">
             <button
@@ -260,13 +303,18 @@ export function RFIDScanModal({
             </button>
             <button
               onClick={() => {
-                onAdd(scanned);
+                const toAdd = selectionMode
+                  ? scanned.filter((it) => selected.has(it.epc))
+                  : scanned;
+                onAdd(toAdd);
                 onClose();
               }}
-              disabled={scanned.length === 0}
+              disabled={
+                scanned.length === 0 || (selectionMode && selected.size === 0)
+              }
               className="tap rounded-xl bg-[var(--color-pos-accent)] text-white px-5 font-semibold disabled:opacity-50"
             >
-              Add {scanned.length} to cart
+              Add {selectionMode ? selected.size : scanned.length} to cart
             </button>
           </div>
         </div>
