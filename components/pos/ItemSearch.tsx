@@ -11,6 +11,11 @@ export type SearchResultItem = {
   color: string | null;
   size: string | null;
   retail_price: string | null;
+  /** Matrices.is_manual_only — true when the catalog marks this item
+   *  as non-RFID (no tag expected). Drives the cart Manual badge
+   *  color: green when added manually as expected, red when an
+   *  RFID-mode item slipped in via manual entry. */
+  is_manual_only?: boolean;
   /** Units in stock at the active location (0 = out of stock). */
   stock_count?: number;
 };

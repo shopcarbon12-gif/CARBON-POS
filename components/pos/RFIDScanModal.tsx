@@ -12,6 +12,8 @@ export type RfidResolvedItem = {
   color: string | null;
   size: string | null;
   retail_price: string | null;
+  /** Matrices.is_manual_only carried through from items/by-epc. */
+  is_manual_only?: boolean;
 };
 
 /**

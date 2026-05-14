@@ -92,26 +92,23 @@ export function CartPanel({
                     </span>
                   </div>
                 ) : null}
+                {/* Mode badge — sits to the LEFT of the description so
+                    every row aligns to a fixed-width 64×22 pill.
+                      • RFID source            → green RFID
+                      • Manual src + catalog is_manual_only=true → green MANUAL
+                      • Manual src + catalog is_manual_only=false → red MANUAL
+                    Style mirrors the EPCs button on /inventory/catalog
+                    in WMS. */}
+                {line.line_type === "product" ? (
+                  <ModeBadge
+                    source={line.source ?? "manual"}
+                    isManualOnly={line.is_manual_only ?? false}
+                  />
+                ) : null}
                 <div className="flex-1 min-w-0 pr-4">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-semibold truncate">
-                      {line.description}
-                    </h3>
-                    {line.source === "manual" && line.line_type === "product" ? (
-                      // Foundation badge — color tinted by the
-                      // expected-mode rules WMS will add later. Default
-                      // for now: orange ("manually added, ambiguous").
-                      // When `expected_mode` lands on the catalog row,
-                      // swap to red (expected rfid → added manual) or
-                      // green (expected manual → added manual).
-                      <span
-                        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200"
-                        title="Added manually (foundation — WMS-driven coloring still to come)"
-                      >
-                        Manual
-                      </span>
-                    ) : null}
-                  </div>
+                  <h3 className="text-base font-semibold truncate">
+                    {line.description}
+                  </h3>
                   {subtitle && (
                     <p className="text-sm text-carbon-text font-medium mt-1 truncate">
                       {subtitle}
@@ -187,5 +184,49 @@ export function CartPanel({
         </ul>
       </div>
     </div>
+  );
+}
+
+/**
+ * Cart-row mode badge — matches the dimensions and treatment of the
+ * EPCs / MANUAL pill on /inventory/catalog in WMS (h-[22px] w-[64px],
+ * tracking-widest, color-mix tinted background, border on the same
+ * hue). Sits at the leftmost column so every cart row aligns.
+ *
+ *   source="rfid"                     → green RFID
+ *   source="manual" + manual_only=true  → green MANUAL  (expected)
+ *   source="manual" + manual_only=false → red   MANUAL  (mismatch)
+ *
+ * The red case flags an RFID-mode catalog item that came in via manual
+ * entry — the cashier should have scanned its tag. WMS sees both rows.
+ */
+function ModeBadge({
+  source,
+  isManualOnly,
+}: {
+  source: "manual" | "rfid";
+  isManualOnly: boolean;
+}) {
+  const isRfid = source === "rfid";
+  const isMismatch = source === "manual" && !isManualOnly;
+  const label = isRfid ? "RFID" : "MANUAL";
+  const title = isRfid
+    ? "Added by RFID scan"
+    : isManualOnly
+      ? "Manual item (catalog flagged non-RFID)"
+      : "RFID-mode item added manually — should have been scanned";
+  // Tailwind doesn't have a color-mix helper; using arbitrary `bg-`
+  // tints from the green-500 / red-500 swatches at 18% opacity which
+  // gives the same visual weight as the WMS EPC pill.
+  const colorClass = isMismatch
+    ? "border-red-400/60 bg-red-100 text-red-700"
+    : "border-emerald-500/50 bg-emerald-100 text-emerald-700";
+  return (
+    <span
+      title={title}
+      className={`shrink-0 mr-3 inline-flex h-[22px] w-[64px] items-center justify-center rounded border px-2 text-[0.6rem] font-medium leading-none tracking-widest ${colorClass}`}
+    >
+      {label}
+    </span>
   );
 }

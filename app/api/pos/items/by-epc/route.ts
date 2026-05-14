@@ -62,20 +62,22 @@ export async function POST(req: Request) {
     color: string | null;
     size: string | null;
     retail_price: string | null;
+    is_manual_only: boolean | null;
     label_name: string | null;
     is_sellable: boolean | null;
     is_visible_to_scanner: boolean | null;
     super_admin_locked: boolean | null;
   }>(
     `SELECT i.epc,
-            i.status                       AS item_status,
-            i.custom_sku_id                AS sku_id,
+            i.status                          AS item_status,
+            i.custom_sku_id                   AS sku_id,
             cs.sku,
-            COALESCE(cs.upc, m.upc)        AS upc,
-            m.description                  AS item_name,
-            cs.color_code                  AS color,
+            COALESCE(cs.upc, m.upc)           AS upc,
+            m.description                     AS item_name,
+            cs.color_code                     AS color,
             cs.size,
             cs.retail_price,
+            COALESCE(m.is_manual_only, FALSE) AS is_manual_only,
             sl.name                        AS label_name,
             sl.is_sellable,
             sl.is_visible_to_scanner,
@@ -109,6 +111,7 @@ export async function POST(req: Request) {
     color: string | null;
     size: string | null;
     retail_price: string | null;
+    is_manual_only: boolean;
   };
   const usable: UsableItem[] = [];
   const blocked: Array<{ epc: string; status: string }> = [];
@@ -133,6 +136,7 @@ export async function POST(req: Request) {
         color: r.color,
         size: r.size,
         retail_price: r.retail_price,
+        is_manual_only: r.is_manual_only === true,
       });
       continue;
     }

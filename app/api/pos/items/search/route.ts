@@ -28,12 +28,13 @@ export async function GET(req: Request) {
   const result = await pool.query(
     `SELECT cs.id::text,
             cs.sku,
-            COALESCE(cs.upc, m.upc) AS upc,
-            m.description           AS item_name,
-            cs.color_code           AS color,
+            COALESCE(cs.upc, m.upc)            AS upc,
+            m.description                      AS item_name,
+            cs.color_code                      AS color,
             cs.size,
             cs.retail_price::text,
-            COALESCE(stk.n, 0)::int AS stock_count
+            COALESCE(m.is_manual_only, FALSE)  AS is_manual_only,
+            COALESCE(stk.n, 0)::int            AS stock_count
        FROM custom_skus cs
        JOIN matrices m ON m.id = cs.matrix_id
        LEFT JOIN LATERAL (

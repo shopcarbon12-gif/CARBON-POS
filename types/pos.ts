@@ -219,9 +219,14 @@ export type CartLine = {
    *  capture route flips ALL of these to status='sold'. */
   epcs?: string[];
   /** How this row got into the cart. Drives row visuals (badge,
-   *  +/- buttons) and downstream "expected mode vs actual" rules
-   *  that WMS will layer on top later. */
+   *  +/- buttons) and the expected-mode mismatch coloring. */
   source?: "manual" | "rfid";
+  /** Mirrors matrices.is_manual_only from the catalog. Combined with
+   *  `source` to color the cart badge:
+   *    source=rfid, is_manual_only=*       → green RFID
+   *    source=manual, is_manual_only=true  → green MANUAL  (expected)
+   *    source=manual, is_manual_only=false → red MANUAL    (mismatch) */
+  is_manual_only?: boolean;
   /** Custom SKU code (human-readable, e.g. "C125414090903"). Shown
    *  in the cart row subtitle. Optional for back-compat. */
   sku?: string | null;

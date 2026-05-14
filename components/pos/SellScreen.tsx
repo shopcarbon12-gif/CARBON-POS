@@ -757,6 +757,7 @@ export function SellScreen({
           sku_id: item.id,
           epc: null,
           source: "manual",
+          is_manual_only: item.is_manual_only ?? false,
           sku: item.sku ?? null,
           upc: item.upc ?? null,
           description: [item.item_name, item.color, item.size]
@@ -803,6 +804,7 @@ export function SellScreen({
           epc: it.epc,
           epcs: [it.epc],
           source: "rfid",
+          is_manual_only: it.is_manual_only ?? false,
           sku: it.sku,
           upc: it.upc,
           description: [it.item_name, it.color, it.size]
