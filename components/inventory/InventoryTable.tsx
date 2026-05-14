@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Radio } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 
 type SortKey =
@@ -146,9 +147,14 @@ export function InventoryTable({
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
-          <div className="relative">
+          {/* Icon + input as flex siblings (NOT absolutely-positioned
+              overlay) because `.carbon-input` declares `padding: 0 12px`
+              as shorthand, which silently wins over Tailwind's pl-*
+              utility and collapses the icon on top of the typed text.
+              Same pattern as ItemSearch.tsx. */}
+          <div className="carbon-input tap w-80 flex items-center gap-2 pl-3 pr-2">
             <span
-              className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-carbon-text-muted"
+              className="material-symbols-outlined text-carbon-text-muted text-xl shrink-0"
               aria-hidden
             >
               search
@@ -161,7 +167,7 @@ export function InventoryTable({
                 setQ(e.target.value);
               }}
               placeholder="Search SKU, UPC, name, color, size, brand…"
-              className="carbon-input tap w-80 pl-10 pr-3 text-base font-semibold text-carbon-text"
+              className="flex-1 bg-transparent border-0 outline-none p-0 text-base font-semibold text-carbon-text placeholder:text-carbon-text-muted/70"
             />
           </div>
           <span
@@ -218,16 +224,25 @@ export function InventoryTable({
                     }`}
                   >
                     <td className="px-3 py-3 text-center">
-                      {/* Material Symbols barcode/radio — same glyphs as
-                          the cart row ModeBadge, so the inventory page
-                          and sell screen speak the same visual language. */}
-                      <span
-                        className="material-symbols-outlined text-carbon-blue align-middle"
-                        style={{ fontSize: 20, lineHeight: 1 }}
-                        aria-label={row.is_manual_only ? "Manual (non-RFID)" : "RFID-tagged"}
-                      >
-                        {row.is_manual_only ? "barcode" : "radio"}
-                      </span>
+                      {/* Manual rows = Material Symbols `barcode` (option
+                          20 picked from the icon mockup). RFID rows keep
+                          the original lucide Radio glyph the operator
+                          recognises from before. Both render in Carbon
+                          Blue so the column reads as one set. */}
+                      {row.is_manual_only ? (
+                        <span
+                          className="material-symbols-outlined text-carbon-blue align-middle"
+                          style={{ fontSize: 20, lineHeight: 1 }}
+                          aria-label="Manual (non-RFID)"
+                        >
+                          barcode
+                        </span>
+                      ) : (
+                        <Radio
+                          className="inline h-5 w-5 text-carbon-blue"
+                          aria-label="RFID-tagged"
+                        />
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <button
