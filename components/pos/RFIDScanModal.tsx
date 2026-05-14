@@ -100,8 +100,11 @@ export function RFIDScanModal({
     // tags are already in the sale and must never come back into the
     // scan list. Open used to set this, Rescan used to wipe it; now
     // Rescan rebuilds it from the same cartEpcs prop the open-effect
-    // uses, so the two seeding paths stay in lockstep.
-    seenRef.current = new Set(cartEpcs);
+    // uses, so the two seeding paths stay in lockstep. Cart EPCs are
+    // stored upper-cased (items.epc canonical form); the SSE stream
+    // emits lowercase, so we normalize both sides on the way into the
+    // set — see the listener below for the matching toUpperCase().
+    seenRef.current = new Set(cartEpcs.map((e) => e.toUpperCase()));
   };
 
   useEffect(() => {
@@ -118,7 +121,11 @@ export function RFIDScanModal({
     // Seed the de-dup set with EPCs already in the cart — they won't
     // re-appear if the reader keeps hammering them. Removing the row
     // from the cart upstream rebuilds the seed on next modal open.
-    seenRef.current = new Set(cartEpcs);
+    // items.epc is stored upper-cased; the SSE stream emits hex
+    // lowercase. Normalize both sides to UPPER so the indexed lookup
+    // hits — without this, every reader read of a cart tag fell
+    // through the dedup and re-surfaced in the scanned list.
+    seenRef.current = new Set(cartEpcs.map((e) => e.toUpperCase()));
     const es = new EventSource("/api/hardware/epcs/stream", {
       withCredentials: true,
     });
@@ -159,7 +166,10 @@ export function RFIDScanModal({
     es.addEventListener("epc", (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data) as { epc?: string };
-        const epc = payload.epc;
+        // SSE emits lowercase hex; items.epc + cart EPCs are stored
+        // upper-cased. Normalize on the way in so the dedup check and
+        // the by-epc lookup both speak the same case.
+        const epc = payload.epc?.toUpperCase();
         if (!epc || seenRef.current.has(epc)) return;
         seenRef.current.add(epc);
         buffer.push(epc);
