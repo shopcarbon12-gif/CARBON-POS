@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Barcode, Radio } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 
 type SortKey =
@@ -219,17 +218,16 @@ export function InventoryTable({
                     }`}
                   >
                     <td className="px-3 py-3 text-center">
-                      {row.is_manual_only ? (
-                        <Barcode
-                          className="inline h-5 w-5 text-blue-800"
-                          aria-label="Manual (non-RFID)"
-                        />
-                      ) : (
-                        <Radio
-                          className="inline h-5 w-5 text-blue-800"
-                          aria-label="RFID-tagged"
-                        />
-                      )}
+                      {/* Material Symbols barcode/radio — same glyphs as
+                          the cart row ModeBadge, so the inventory page
+                          and sell screen speak the same visual language. */}
+                      <span
+                        className="material-symbols-outlined text-carbon-blue align-middle"
+                        style={{ fontSize: 20, lineHeight: 1 }}
+                        aria-label={row.is_manual_only ? "Manual (non-RFID)" : "RFID-tagged"}
+                      >
+                        {row.is_manual_only ? "barcode" : "radio"}
+                      </span>
                     </td>
                     <td className="px-3 py-3">
                       <button
