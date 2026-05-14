@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2, Minus, Plus } from "lucide-react";
+import { Trash2, Minus, Plus, Barcode, Radio } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 import type { CartLine } from "@/types/pos";
 
@@ -94,11 +94,12 @@ export function CartPanel({
                 ) : null}
                 {/* Mode badge — sits to the LEFT of the description so
                     every row aligns to a fixed-width 64×22 pill.
-                      • RFID source            → green RFID
-                      • Manual src + catalog is_manual_only=true → green MANUAL
-                      • Manual src + catalog is_manual_only=false → red MANUAL
-                    Style mirrors the EPCs button on /inventory/catalog
-                    in WMS. */}
+                      • RFID source                                → green radio
+                      • Manual src + catalog is_manual_only=true   → green barcode
+                      • Manual src + catalog is_manual_only=false  → red radio
+                        (RFID-mode item entered via 2D scan or
+                        keyboard — antenna should have caught it)
+                    Lucide icons match the Type column in /inventory. */}
                 {line.line_type === "product" ? (
                   <ModeBadge
                     source={line.source ?? "manual"}
@@ -188,22 +189,22 @@ export function CartPanel({
 }
 
 /**
- * Cart-row mode badge — icon-only pill, sized like the EPCs / MANUAL
- * button on /inventory/catalog in WMS (h-[22px] w-[64px]). Sits at the
- * leftmost column so every cart row aligns.
+ * Cart-row mode badge — icon-only pill at the leftmost column so every
+ * cart row aligns. Lucide icons (barcode / radio), matching the same
+ * icons used in /inventory product management.
  *
- *   source="rfid"                       → blue  radio   (Scanned tag)
- *   source="manual" + manual_only=true  → blue  barcode (Real manual item)
+ *   source="rfid"                       → green radio   (Scanned tag)
+ *   source="manual" + manual_only=true  → green barcode (Real manual item)
  *   source="manual" + manual_only=false → red   radio   (RFID-mode item
- *                                                       added manually
- *                                                       after the cashier
- *                                                       acknowledged the
- *                                                       "should have
- *                                                       scanned" prompt)
+ *                                                       added by 2D scan
+ *                                                       or manual entry —
+ *                                                       should have been
+ *                                                       picked up by the
+ *                                                       RFID antenna)
  *
- * The red radio variant uses the same RFID glyph in red — the icon
- * communicates "this item has an RFID chip", and the colour says "but
- * it was processed manually anyway". WMS sees both rows.
+ * Default everywhere is green ("this item is fine"). Red appears only on
+ * the radio icon and only when an RFID-tagged item entered the cart via
+ * a non-RFID path — flags a missed antenna read for the cashier.
  */
 function ModeBadge({
   source,
@@ -216,7 +217,7 @@ function ModeBadge({
   const isMismatch = source === "manual" && !isManualOnly;
   // Icon: radio for anything that has an RFID chip (scanned OR a manually-
   // entered RFID-mode item); barcode for genuine manual items.
-  const icon = isRfid || isMismatch ? "radio" : "barcode";
+  const IconCmp = isRfid || isMismatch ? Radio : Barcode;
   const title = isRfid
     ? "Added by RFID scan"
     : isManualOnly
@@ -224,18 +225,13 @@ function ModeBadge({
       : "RFID-mode item added manually — should have been scanned";
   const colorClass = isMismatch
     ? "border-red-400/60 bg-red-100 text-red-700"
-    : "border-carbon-blue/45 bg-carbon-blue-soft text-carbon-blue";
+    : "border-green-500/45 bg-green-100 text-green-700";
   return (
     <span
       title={title}
       className={`shrink-0 mr-3 inline-flex h-[22px] w-[64px] items-center justify-center rounded border px-2 leading-none ${colorClass}`}
     >
-      <span
-        className="material-symbols-outlined text-[16px] leading-none"
-        aria-hidden
-      >
-        {icon}
-      </span>
+      <IconCmp className="h-4 w-4" aria-hidden />
     </span>
   );
 }

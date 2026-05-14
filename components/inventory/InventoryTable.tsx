@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, Radio } from "lucide-react";
+import { Barcode, Radio } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 
 type SortKey =
@@ -40,7 +40,7 @@ export type Row = {
   image_url: string | null;
   /**
    * True when the parent matrix is flagged manual (non-RFID) in WMS.
-   * Drives the Type column icon: Radio for RFID, Boxes for manual.
+   * Drives the Type column icon: Radio for RFID, Barcode for manual.
    */
   is_manual_only: boolean;
 };
@@ -218,16 +218,15 @@ export function InventoryTable({
                       stock === 0 ? "opacity-75" : ""
                     }`}
                   >
-                    <td className="px-3 py-3 text-center text-carbon-text-muted">
+                    <td className="px-3 py-3 text-center">
                       {row.is_manual_only ? (
-                        <Boxes
-                          className="inline h-5 w-5"
-                          style={{ color: "oklch(82.8% 0.111 230.318)" }}
+                        <Barcode
+                          className="inline h-5 w-5 text-blue-800"
                           aria-label="Manual (non-RFID)"
                         />
                       ) : (
                         <Radio
-                          className="inline h-5 w-5 text-carbon-blue"
+                          className="inline h-5 w-5 text-blue-800"
                           aria-label="RFID-tagged"
                         />
                       )}
