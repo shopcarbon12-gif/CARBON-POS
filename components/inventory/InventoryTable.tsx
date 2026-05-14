@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Boxes, Radio } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 
 type SortKey =
@@ -37,6 +38,11 @@ export type Row = {
   stock_count: number;
   /** Optional product image URL when one is attached. */
   image_url: string | null;
+  /**
+   * True when the parent matrix is flagged manual (non-RFID) in WMS.
+   * Drives the Type column icon: Radio for RFID, Boxes for manual.
+   */
+  is_manual_only: boolean;
 };
 
 /**
@@ -174,7 +180,7 @@ export function InventoryTable({
         <table className="w-full min-w-[1200px] text-sm border-collapse">
           <thead>
             <tr className="bg-[var(--carbon-surface-soft)] border-b border-carbon-border-soft text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted">
-              <th className="text-right px-3 py-3 w-12">#</th>
+              <th className="text-center px-3 py-3 w-16">Type</th>
               <th className="text-left px-3 py-3 w-20">Image</th>
               <SortHeader keyName="item_name" align="left"  active={sort === "item_name"} dir={dir} onClick={onSortClick} />
               <SortHeader keyName="color"     align="left"  active={sort === "color"}     dir={dir} onClick={onSortClick} />
@@ -197,7 +203,7 @@ export function InventoryTable({
                 </td>
               </tr>
             ) : (
-              rows.map((row, idx) => {
+              rows.map((row) => {
                 const stock = row.stock_count;
                 const pillCls =
                   stock === 0
@@ -212,8 +218,19 @@ export function InventoryTable({
                       stock === 0 ? "opacity-75" : ""
                     }`}
                   >
-                    <td className="px-3 py-3 text-right tabular-nums text-carbon-text-muted">
-                      {showFrom + idx}
+                    <td className="px-3 py-3 text-center text-carbon-text-muted">
+                      {row.is_manual_only ? (
+                        <Boxes
+                          className="inline h-5 w-5"
+                          style={{ color: "oklch(82.8% 0.111 230.318)" }}
+                          aria-label="Manual (non-RFID)"
+                        />
+                      ) : (
+                        <Radio
+                          className="inline h-5 w-5 text-carbon-blue"
+                          aria-label="RFID-tagged"
+                        />
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <button

@@ -98,16 +98,18 @@ export async function GET(req: Request) {
       size: string | null;
       retail_price: string | null;
       stock_count: string;
+      is_manual_only: boolean;
     }>(
       `SELECT cs.id::text,
               cs.sku,
               cs.upc,
-              m.description       AS item_name,
-              m.category          AS category,
-              cs.color_code       AS color,
+              m.description                       AS item_name,
+              m.category                          AS category,
+              cs.color_code                       AS color,
               cs.size,
               cs.retail_price::text,
-              COALESCE(c.n, 0)::text AS stock_count
+              COALESCE(c.n, 0)::text              AS stock_count,
+              COALESCE(m.is_manual_only, FALSE)   AS is_manual_only
          FROM custom_skus cs
          JOIN matrices m ON m.id = cs.matrix_id
          LEFT JOIN LATERAL (
@@ -143,6 +145,7 @@ export async function GET(req: Request) {
       size: r.size,
       retail_price: r.retail_price,
       stock_count: Number(r.stock_count),
+      is_manual_only: r.is_manual_only === true,
       // Catalog doesn't carry image_url today — Phase-2 hooks the WMS
       // media bucket. The popup falls back to "Picture not available".
       image_url: null,
