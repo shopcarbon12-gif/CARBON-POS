@@ -332,6 +332,10 @@ function CustomerSearchRow({
 
   return (
     <div ref={wrapRef} className="relative">
+      {/* Row sized to match CollectingPhoneRow / PendingPhoneBox: flex-1
+          input with the same `px-3 py-2` content, and w-12 sibling
+          buttons so the whole strip visually aligns regardless of which
+          state the customer slot is in. */}
       <div className="flex items-stretch gap-2">
         {/* Search input — flex-1, leading magnifier */}
         <div className="carbon-input flex-1 flex items-center gap-2 px-3 py-2">
@@ -359,7 +363,7 @@ function CustomerSearchRow({
           onClick={onNewCustomer}
           title="New customer (full form)"
           aria-label="New customer"
-          className="carbon-btn-primary inline-flex items-center justify-center w-10 shrink-0"
+          className="carbon-btn-primary inline-flex items-center justify-center w-12 shrink-0"
         >
           <span className="material-symbols-outlined text-xl">add</span>
         </button>
@@ -370,7 +374,7 @@ function CustomerSearchRow({
           onClick={onResendPhonePrompt}
           title="Ask the customer to enter their phone on the reader again"
           aria-label="Ask for phone on reader"
-          className="inline-flex items-center justify-center w-10 shrink-0 border border-carbon-border bg-white text-carbon-blue hover:bg-carbon-blue-soft transition-colors"
+          className="inline-flex items-center justify-center w-12 shrink-0 border border-carbon-border bg-white text-carbon-blue hover:bg-carbon-blue-soft transition-colors"
         >
           <span className="material-symbols-outlined text-xl">smartphone</span>
         </button>
@@ -463,22 +467,24 @@ function PendingPhoneBox({
   return (
     <div className="space-y-2">
       <div className="flex items-stretch gap-2">
-        {/* Blinking phone display */}
-        <div className="flex-1 relative">
-          <div className="px-3 py-2 border border-carbon-blue bg-white tabular-nums text-base font-semibold text-carbon-text flex items-center gap-2 animate-pulse">
-            <span className="material-symbols-outlined text-carbon-blue text-base" aria-hidden>
-              call
-            </span>
-            {display}
-          </div>
+        {/* Blinking phone display — cancel "×" sits inside the box on the
+            right, no longer floating outside. Padded so the icon doesn't
+            butt against the digits. */}
+        <div className="flex-1 px-3 py-2 border border-carbon-blue bg-white tabular-nums text-base font-semibold text-carbon-text flex items-center gap-2 animate-pulse">
+          <span className="material-symbols-outlined text-carbon-blue text-base shrink-0" aria-hidden>
+            call
+          </span>
+          <span className="flex-1 truncate">{display}</span>
           <button
             type="button"
             onClick={onCancel}
-            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-carbon-border text-carbon-text-muted text-xs flex items-center justify-center hover:bg-carbon-surface-soft"
-            title="Cancel"
-            aria-label="Cancel"
+            className="shrink-0 w-5 h-5 inline-flex items-center justify-center text-carbon-text-muted hover:text-carbon-danger -mr-1"
+            title="Clear phone"
+            aria-label="Clear phone"
           >
-            ×
+            <span className="material-symbols-outlined text-[16px]" aria-hidden>
+              close
+            </span>
           </button>
         </div>
         {/* Send-to-reader (arrow) — pushes the three fields to the
@@ -489,7 +495,7 @@ function PendingPhoneBox({
           disabled={sending}
           title="Have the customer type their info on the reader"
           aria-label="Send to reader"
-          className="w-11 flex items-center justify-center border border-carbon-border bg-white text-carbon-blue disabled:opacity-50 hover:bg-carbon-blue-soft transition-colors"
+          className="w-12 flex items-center justify-center border border-carbon-border bg-white text-carbon-blue disabled:opacity-50 hover:bg-carbon-blue-soft transition-colors"
         >
           <span className="material-symbols-outlined text-[20px]" aria-hidden>
             {sending ? "more_horiz" : "send"}

@@ -5,10 +5,26 @@ import { currentCashier } from "@/lib/session";
 /**
  * GET /api/pos/loyalty/reader-name-prompt/status
  *
- * Polls the reader's current action and returns the two text inputs
- * (first name, last name) collected from the customer's pin pad.
+ * Polls the reader's current action and returns the name + email
+ * collected from the customer's pin pad. The pin pad captures the full
+ * name as a single string (Stripe Terminal's collect_inputs renders
+ * one value per screen) which we split with this rule:
+ *
+ *   1 word  → first_name=word[0],                last_name=""
+ *   2 words → first_name=word[0],                last_name=word[1]
+ *   3 words → first_name="word[0] word[1]",      last_name=word[2]
+ *   4+ words → first_name="word[0] word[1]",     last_name=words[2..].join(" ")
+ *
+ * Rationale: word[1] is treated as a middle name on ≥3-word inputs and
+ * folded into first_name (we don't store middle_name separately). The
+ * tail (words 2..N) is the last name — this preserves compound last
+ * names like "Van Halen" or "De La Cruz" when the customer also types
+ * a middle name. Customers with compound last names + no middle should
+ * be coached to type "Mary VanHalen" or use the inline form.
+ *
+ * Response shapes:
  *   { status: "pending" }
- *   { status: "succeeded", first_name, last_name }
+ *   { status: "succeeded", first_name, last_name, email }
  *   { status: "canceled" }
  *   { status: "failed", message }
  *   { status: "idle" }
@@ -56,8 +72,8 @@ export async function GET() {
   }
   if (action.status === "canceled") return NextResponse.json({ status: "canceled" });
 
-  // succeeded — extract the three fields by type order (text, text,
-  // email). The email step is optional + skippable; if the customer
+  // succeeded — extract the two fields by type order (text=full name,
+  // email=optional). The email step is skippable; if the customer
   // skipped, its `skipped` flag is true and value is null.
   type InputRow = {
     type?: string;
@@ -66,18 +82,40 @@ export async function GET() {
     email?: { value?: string | null };
   };
   const inputs = (action.collect_inputs?.inputs ?? []) as InputRow[];
-  const texts = inputs
-    .filter((i) => i.type === "text")
-    .map((i) => (i.skipped ? "" : (i.text?.value ?? "")));
+  const nameRow = inputs.find((i) => i.type === "text");
+  const fullName = nameRow?.skipped ? "" : (nameRow?.text?.value ?? "");
   const emailRow = inputs.find((i) => i.type === "email");
   const email = emailRow?.skipped ? null : (emailRow?.email?.value ?? null);
-  if (texts.length < 2 || !texts[0].trim() || !texts[1].trim()) {
+  if (!fullName.trim()) {
+    return NextResponse.json({ status: "canceled" });
+  }
+  const { first_name, last_name } = splitFullName(fullName);
+  if (!first_name) {
     return NextResponse.json({ status: "canceled" });
   }
   return NextResponse.json({
     status: "succeeded",
-    first_name: texts[0],
-    last_name: texts[1],
+    first_name,
+    last_name,
     email,
   });
+}
+
+/**
+ * Split a single full-name string into first + last per the rule
+ * documented at the top of this file. word[1] is treated as a middle
+ * name on 3+ word inputs and folded into first_name (no middle column
+ * in pos_customers); words 2..N become last_name to preserve compound
+ * last names ("Van Halen", "De La Cruz") alongside the middle.
+ */
+function splitFullName(raw: string): { first_name: string; last_name: string } {
+  const words = raw.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { first_name: "", last_name: "" };
+  if (words.length === 1) return { first_name: words[0], last_name: "" };
+  if (words.length === 2) return { first_name: words[0], last_name: words[1] };
+  // 3+ words → first = "<first> <middle>", last = remaining words joined
+  return {
+    first_name: `${words[0]} ${words[1]}`,
+    last_name: words.slice(2).join(" "),
+  };
 }

@@ -93,10 +93,20 @@ export function SellScreen({
   const fastPollUntilRef = useRef<number>(0);
 
   // Map the POS state-endpoint response → ReaderState. The endpoint
-  // reads the per-row truth on the is_pos_dedicated reader directly,
-  // so we look at scan_paused (Hardware Config pause flag) and
-  // status_online (CDM watchdog). agent_active is informational —
-  // warehouse manages it; POS doesn't write to it.
+  // reads the per-row truth on the is_pos_dedicated reader directly.
+  // Only two signals drive the badge color:
+  //   scan_paused  — per-reader Hardware Config pause flag (cashier or
+  //                  warehouse said "stop"). When true → off (gray).
+  //   status_online — CDM watchdog. The binary heartbeats every few s;
+  //                   true means the reader is actually scanning.
+  // agent_active (cdm_agents.live_scan_active) is intentionally NOT a
+  // gate here. It's just the supervisor's spawn flag — once the binary
+  // is running, it keeps running until either (a) the supervisor sees
+  // the flag flip false and kills it, or (b) the reader's scan_paused
+  // is set. The flag can be FALSE while the binary is still live and
+  // heartbeating (lag between flag-flip and supervisor reaping). Gating
+  // the UI on it produced a gray dot during normal scanning. Trust the
+  // CDM heartbeat instead.
   const mapState = (r: {
     ok?: boolean;
     skipped?: boolean;
@@ -110,10 +120,6 @@ export function SellScreen({
     if (r.error) return "unreachable";
     if (typeof r.scan_paused !== "boolean") return "unreachable";
     if (r.scan_paused) return "off";
-    // Not paused. The agent has to also be active for the supervisor
-    // to spawn the binary — if it isn't, treat as "off" (warehouse
-    // has stopped the agent).
-    if (r.agent_active === false) return "off";
     if (r.status_online === true) return "on";
     if (r.status_online === false) return "recovering";
     return "on";
@@ -415,6 +421,17 @@ export function SellScreen({
         if (d.error) setPhonePromptStatus("idle");
       })
       .catch(() => setPhonePromptStatus("idle"));
+    // Pre-load the new-customer splash NOW so Stripe has the 5–30 s
+    // the customer spends typing to propagate the config change to the
+    // reader. By the time collect_inputs ends, the splash is already
+    // active on the reader; we then either keep it (new customer) or
+    // revert it (existing / cancelled) — both happen on the result
+    // handler below.
+    fetch("/api/pos/hardware/reader/welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "preload" }),
+    }).catch(() => {});
   }, [hydrated, customer, phonePromptStatus]);
 
   // Poll the reader's collect_inputs status while collecting the phone.
@@ -464,12 +481,20 @@ export function SellScreen({
               phone: c.mobile_phone ?? c.phone ?? null,
             });
             setPhonePromptStatus("done");
+            // Existing customer — revert the preloaded new-customer
+            // splash so the reader doesn't briefly show "thanks for
+            // joining" when it transitions back to idle.
+            fetch("/api/pos/hardware/reader/welcome", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: "revert" }),
+            }).catch(() => {});
           } else {
             // No match — surface the pending phone for cashier
-            // confirmation AND swap the reader's idle splash to the
-            // "Thank you for joining CARBON REWARDS" image for ~7 s.
-            // The swap + auto-revert happens server-side; the cashier
-            // flow doesn't wait on it.
+            // confirmation. The new-customer splash was already
+            // preloaded when the phone prompt started; here we just
+            // schedule the auto-revert after dwell_ms. Stripe has had
+            // 5–30 s of customer-typing time to propagate the swap.
             setPendingPhone(lookup.phone ?? r.phone);
             setPendingFirstName("");
             setPendingLastName("");
@@ -487,6 +512,18 @@ export function SellScreen({
           r.status === "idle"
         ) {
           setPhonePromptStatus("idle");
+          // Revert preloaded splash only on EXPLICIT canceled/failed —
+          // `idle` can also mean "POST /reader-prompt hasn't landed yet"
+          // (race between us starting the polling and Stripe registering
+          // the action). Reverting on that early-idle would undo the
+          // preload before the customer's even seen the prompt.
+          if (r.status === "canceled" || r.status === "failed") {
+            fetch("/api/pos/hardware/reader/welcome", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: "revert" }),
+            }).catch(() => {});
+          }
         }
       } catch {
         /* network blip — keep polling */
@@ -554,6 +591,13 @@ export function SellScreen({
     fetch("/api/pos/loyalty/reader-prompt", { method: "DELETE" }).catch(
       () => {},
     );
+    // Revert preloaded splash so the reader returns to the default
+    // Carbon splash instead of staying on "thanks for joining".
+    fetch("/api/pos/hardware/reader/welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "revert" }),
+    }).catch(() => {});
   };
 
   // If the cashier picks a customer manually while the reader is still
@@ -576,6 +620,14 @@ export function SellScreen({
     fetch("/api/pos/loyalty/reader-prompt", { method: "DELETE" }).catch(
       () => {},
     );
+    // Revert "thanks for joining" splash early — the cashier closed
+    // the pending-phone box, so we no longer want the new-customer
+    // splash sitting on the reader for the rest of its scheduled dwell.
+    fetch("/api/pos/hardware/reader/welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "revert" }),
+    }).catch(() => {});
   };
 
   const sendNameToReader = async () => {

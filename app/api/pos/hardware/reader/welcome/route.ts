@@ -6,7 +6,7 @@ import { posReaderForCurrentSession } from "@/lib/reader-control";
 export const runtime = "nodejs";
 
 const schema = z.object({
-  kind: z.enum(["new_customer"]),
+  kind: z.enum(["preload", "new_customer", "revert"]),
   dwell_ms: z.number().int().min(1000).max(20000).optional().default(7000),
 });
 
@@ -14,19 +14,31 @@ const schema = z.object({
  * POST /api/pos/hardware/reader/welcome
  *
  * Swap the account-default Terminal Configuration's splashscreen to a
- * branded "thank you for joining" image, force the reader back to idle
- * via cancel_action, then schedule a server-side revert after dwell_ms
- * so the default Carbon splash returns.
+ * branded "thank you for joining" image. The image surface is the ONLY
+ * clean-text screen the BBPOS WisePOS E exposes — set_reader_display
+ * always renders cart chrome — so we use the splash override.
  *
- * No client involvement for the revert — the setTimeout runs in the
- * Next.js Node process and is independent of the cashier's tab. If the
- * process restarts mid-window the welcome image stays until the next
- * swap (a known and accepted tradeoff for a 7 s effect).
+ * Stripe propagates config changes to the reader on its next config
+ * poll/push, which can take 5–30 s. To make the splash actually visible
+ * during the post-prompt transition, the frontend calls this endpoint
+ * in two steps:
  *
- * The image surface is the ONLY clean-text screen the BBPOS WisePOS E
- * exposes via Stripe Terminal — set_reader_display always renders cart
- * chrome (line items, total, "tap or insert your card" footer). So we
- * use the splash override instead.
+ *   1. `preload` — fired as soon as the cashier starts the phone
+ *      prompt. The customer is still typing (5–30 s typical), and the
+ *      reader is showing collect_inputs UI — the splash isn't visible
+ *      yet. Plenty of time for Stripe to push the new config to the
+ *      reader before the collect_inputs ends.
+ *
+ *   2. After the phone result is known:
+ *        new_customer → schedule the revert after dwell_ms (default 7 s)
+ *        revert       → swap back to DEFAULT immediately (existing
+ *                        customer, customer cancelled, or cashier
+ *                        cancelled — we don't want the next interaction
+ *                        to inherit the new-customer splash)
+ *
+ * The setTimeout for `new_customer` runs in the Node event loop and
+ * survives the HTTP response returning. We don't await it — the cashier
+ * flow doesn't need to wait 7 s.
  */
 const DEFAULT_SPLASH_FILE =
   process.env.STRIPE_TERMINAL_DEFAULT_SPLASH_FILE?.trim()
@@ -74,39 +86,52 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // The session check ensures we don't trigger swaps from random callers
+  // but the swap itself targets the account-wide config — no reader_id
+  // needed for the Stripe call.
   const info = await posReaderForCurrentSession(cashier.user_id);
   if (!info) {
     return NextResponse.json({ ok: true, skipped: true, reason: "no_reader" });
   }
 
-  // 1. Swap config splashscreen → welcome image. Stripe propagates to
-  //    the reader on its next config poll (typically <5 s).
+  const { kind, dwell_ms } = parsed.data;
+
+  if (kind === "preload") {
+    // Front-load the swap so Stripe has time to propagate before the
+    // splash becomes visible. No revert here — the caller will follow
+    // up with `new_customer` or `revert` once the lookup completes.
+    const ok = await setSplashTo(NEW_CUSTOMER_SPLASH_FILE);
+    return NextResponse.json({
+      ok,
+      splash_file_id: NEW_CUSTOMER_SPLASH_FILE,
+    });
+  }
+
+  if (kind === "revert") {
+    const ok = await setSplashTo(DEFAULT_SPLASH_FILE);
+    return NextResponse.json({
+      ok,
+      splash_file_id: DEFAULT_SPLASH_FILE,
+    });
+  }
+
+  // kind === "new_customer" — defensively set to NEW (no-op if preload
+  // already did), then schedule the revert.
   const swapped = await setSplashTo(NEW_CUSTOMER_SPLASH_FILE);
   if (!swapped) {
     return NextResponse.json({ error: "swap_failed" }, { status: 502 });
   }
-
-  // 2. cancel_action so any in-flight Stripe action ends and the reader
-  //    transitions to idle — where it'll pick up the new splash.
-  await stripe(`/v1/terminal/readers/${info.reader_id}/cancel_action`, {
-    method: "POST",
-    body: "",
-  }).catch(() => {});
-
-  // 3. Schedule the revert. Runs in the Node event loop, survives the
-  //    HTTP response returning. We don't await this — the cashier flow
-  //    doesn't need to wait 7 s.
   setTimeout(async () => {
     try {
       await setSplashTo(DEFAULT_SPLASH_FILE);
     } catch {
       /* best-effort */
     }
-  }, parsed.data.dwell_ms);
+  }, dwell_ms);
 
   return NextResponse.json({
     ok: true,
     splash_file_id: NEW_CUSTOMER_SPLASH_FILE,
-    reverts_in_ms: parsed.data.dwell_ms,
+    reverts_in_ms: dwell_ms,
   });
 }

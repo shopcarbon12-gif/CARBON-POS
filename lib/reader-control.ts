@@ -22,6 +22,7 @@ import { getPool } from "@/lib/db";
 
 export type PosReaderInfo = {
   reader_id: string;
+  agent_id: string;
   status_online: boolean;
   scan_paused: boolean;
   agent_live_scan_active: boolean;
@@ -37,6 +38,7 @@ export async function posReaderForCurrentSession(
 ): Promise<PosReaderInfo | null> {
   const r = await getPool().query<PosReaderInfo>(
     `SELECT d.id::text                              AS reader_id,
+            ag.id::text                             AS agent_id,
             d.status_online                         AS status_online,
             (d.scan_paused_at IS NOT NULL)          AS scan_paused,
             ag.live_scan_active                     AS agent_live_scan_active
@@ -87,5 +89,33 @@ export async function setPosReaderPause(
         AND is_pos_dedicated = TRUE
         AND scan_paused_at IS NULL`,
     [readerId, cashierUserId],
+  );
+}
+
+/**
+ * Asymmetric wake: flip cdm_agents.live_scan_active to TRUE on the
+ * named agent if it isn't already, so the supervisor will spawn
+ * reader binaries. POS only CALLS this on Start — never the reverse.
+ * The matching "stop" path leaves the agent flag alone so warehouse
+ * readers keep running after a POS session ends.
+ *
+ * It's idempotent: if the warehouse already had the agent on, this
+ * is a no-op. If POS is the first thing to wake the agent for the
+ * day, the warehouse readers come up alongside POS — which is the
+ * intended state for normal operation anyway.
+ */
+export async function wakeAgentIfDormant(
+  agentId: string,
+  cashierUserId: string,
+): Promise<void> {
+  await getPool().query(
+    `UPDATE cdm_agents
+        SET live_scan_active           = TRUE,
+            live_scan_last_started_at  = now(),
+            live_scan_started_by       = $2::uuid,
+            updated_at                 = now()
+      WHERE id                  = $1::uuid
+        AND live_scan_active   IS DISTINCT FROM TRUE`,
+    [agentId, cashierUserId],
   );
 }
