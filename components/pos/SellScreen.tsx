@@ -192,14 +192,34 @@ export function SellScreen({
   // navigation to other tabs.
   useEffect(() => {
     void startReader();
+    // Eager preload of the new-customer splash AS EARLY AS POSSIBLE.
+    // Stripe Terminal config swaps take 5–30 s to push to the reader;
+    // firing preload at phone-prompt-POST gave only the customer's
+    // typing window (often <10 s) as propagation time, which loses the
+    // race after a recent config flip (manual revert, deploy restart,
+    // etc.). Hoisting to mount adds the entire sale-setup interval
+    // before the customer arrives — typically tens of seconds — so the
+    // reader's cached splash IS the welcome JPG by the time the
+    // phone collect_inputs ends and the reader returns to idle. The
+    // duplicate preload at phone-prompt-POST stays as a no-op safety
+    // net (server-side idempotent).
+    fetch("/api/pos/hardware/reader/welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "preload" }),
+    }).catch(() => {});
     return () => {
-      // Two best-effort, fire-and-forget calls on unmount:
+      // Three best-effort, fire-and-forget calls on unmount:
       //  1. Cancel any in-flight Stripe action on the reader (the
       //     phone-prompt collect_inputs, the name-prompt, or the cart
       //     display) so the pinpad returns to the Carbon splash
       //     instead of staying stuck on the last screen.
       //  2. Stop the WMS live-scan so the reader binary winds down
       //     and the chip cools.
+      //  3. Revert the splash to DEFAULT so the next sale doesn't
+      //     start with NEW_CUSTOMER lingering in the config — paired
+      //     with the mount preload above so each sale's splash state
+      //     is bracketed cleanly.
       // `keepalive: true` lets the browser flush these requests even as
       // the page is unloading (sendBeacon only supports POST so we use
       // fetch for both).
@@ -211,7 +231,13 @@ export function SellScreen({
         method: "POST",
         keepalive: true,
       }).catch(() => {});
-      void Promise.allSettled([cancelStripe, stopScan]);
+      const splashRevert = fetch("/api/pos/hardware/reader/welcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "revert" }),
+        keepalive: true,
+      }).catch(() => {});
+      void Promise.allSettled([cancelStripe, stopScan, splashRevert]);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
