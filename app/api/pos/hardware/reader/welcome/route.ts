@@ -1,9 +1,30 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
-import { posReaderForCurrentSession } from "@/lib/reader-control";
 
 export const runtime = "nodejs";
+
+/**
+ * Resolve the Stripe Terminal reader id (tmr_XXX) for the cashier's
+ * open register session. CRITICAL: this is the Stripe-side id, not the
+ * WMS/CDM devices.id (which is the RFID reader, a totally different
+ * device). cancel_action and set_reader_display both expect tmr_XXX —
+ * passing the CDM UUID returns 400 "Invalid param: id" and the kick
+ * silently fails, leaving the welcome JPG stranded on the splash past
+ * the 7-second dwell.
+ */
+async function stripeReaderIdForCashier(userId: string): Promise<string | null> {
+  const r = await getPool().query<{ stripe_reader_id: string | null }>(
+    `SELECT reg.stripe_reader_id
+       FROM pos_register_sessions s
+       JOIN pos_registers reg ON reg.id = s.register_id
+      WHERE s.status = 'open' AND s.opened_by = $1
+      ORDER BY s.opened_at DESC LIMIT 1`,
+    [userId],
+  );
+  return r.rows[0]?.stripe_reader_id ?? null;
+}
 
 const schema = z.object({
   kind: z.enum(["preload", "new_customer", "revert"]),
@@ -95,11 +116,18 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  // The session check ensures we don't trigger swaps from random callers
-  // but the swap itself targets the account-wide config — no reader_id
-  // needed for the Stripe call.
-  const info = await posReaderForCurrentSession(cashier.user_id);
-  if (!info) {
+  // Two reader-ish things are at play here and they are NOT the same:
+  //   - The CDM/WMS RFID reader (devices.id, a UUID) — used by
+  //     /api/pos/hardware/reader/{start,stop,state}. NOT what Stripe
+  //     Terminal wants.
+  //   - The Stripe Terminal reader (pos_registers.stripe_reader_id,
+  //     a tmr_XXX id) — what cancel_action and set_reader_display
+  //     expect on the kick step at the end of the 7-second dwell.
+  // We resolve the second one. setSplashTo() hits the account-wide
+  // Configuration object and does NOT need any reader id, so it
+  // works even when no terminal is paired to this register.
+  const readerId = await stripeReaderIdForCashier(cashier.user_id);
+  if (!readerId) {
     return NextResponse.json({ ok: true, skipped: true, reason: "no_reader" });
   }
 
@@ -130,7 +158,6 @@ export async function POST(req: Request) {
   if (!swapped) {
     return NextResponse.json({ error: "swap_failed" }, { status: 502 });
   }
-  const readerId = info.reader_id;
   setTimeout(async () => {
     try {
       // 1. Flip the account-default splash back. New idle transitions
