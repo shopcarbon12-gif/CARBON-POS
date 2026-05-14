@@ -192,34 +192,20 @@ export function SellScreen({
   // navigation to other tabs.
   useEffect(() => {
     void startReader();
-    // Eager preload of the new-customer splash AS EARLY AS POSSIBLE.
-    // Stripe Terminal config swaps take 5–30 s to push to the reader;
-    // firing preload at phone-prompt-POST gave only the customer's
-    // typing window (often <10 s) as propagation time, which loses the
-    // race after a recent config flip (manual revert, deploy restart,
-    // etc.). Hoisting to mount adds the entire sale-setup interval
-    // before the customer arrives — typically tens of seconds — so the
-    // reader's cached splash IS the welcome JPG by the time the
-    // phone collect_inputs ends and the reader returns to idle. The
-    // duplicate preload at phone-prompt-POST stays as a no-op safety
-    // net (server-side idempotent).
-    fetch("/api/pos/hardware/reader/welcome", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "preload" }),
-    }).catch(() => {});
+    // Splash strategy per operator directive: DEFAULT splash visible
+    // when the sale page first loads (no mount-preload of NEW — would
+    // briefly leak "thanks for joining" onto an idle reader before the
+    // customer has done anything). Splash only flips to NEW once the
+    // phone prompt POSTs, i.e. once the customer is at the reader
+    // typing their number — the reader is showing collect_inputs UI
+    // at that point so the customer can't see the splash mid-typing.
     return () => {
-      // Three best-effort, fire-and-forget calls on unmount:
-      //  1. Cancel any in-flight Stripe action on the reader (the
-      //     phone-prompt collect_inputs, the name-prompt, or the cart
-      //     display) so the pinpad returns to the Carbon splash
-      //     instead of staying stuck on the last screen.
+      // Two best-effort, fire-and-forget calls on unmount:
+      //  1. Cancel any in-flight Stripe action on the reader so the
+      //     pinpad returns to the Carbon splash instead of staying
+      //     stuck on the last screen.
       //  2. Stop the WMS live-scan so the reader binary winds down
       //     and the chip cools.
-      //  3. Revert the splash to DEFAULT so the next sale doesn't
-      //     start with NEW_CUSTOMER lingering in the config — paired
-      //     with the mount preload above so each sale's splash state
-      //     is bracketed cleanly.
       // `keepalive: true` lets the browser flush these requests even as
       // the page is unloading (sendBeacon only supports POST so we use
       // fetch for both).
@@ -231,6 +217,9 @@ export function SellScreen({
         method: "POST",
         keepalive: true,
       }).catch(() => {});
+      // Best-effort splash revert so the next sale starts on DEFAULT
+      // even if a previous new-customer flow's server timer never got
+      // to fire (deploy restart, etc.).
       const splashRevert = fetch("/api/pos/hardware/reader/welcome", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
