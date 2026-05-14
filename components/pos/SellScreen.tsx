@@ -921,10 +921,6 @@ export function SellScreen({
         onClose={() => setShowRfid(false)}
         onAdd={addRfidItems}
         readerState={readerState}
-        onToggleReader={() => {
-          if (readerState === "on") void stopReader();
-          else if (readerState === "off") void startReader();
-        }}
       />
       {showMisc && (
         <MiscChargeModal

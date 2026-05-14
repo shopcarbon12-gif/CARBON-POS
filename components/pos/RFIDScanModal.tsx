@@ -36,13 +36,11 @@ export function RFIDScanModal({
   onClose,
   onAdd,
   readerState,
-  onToggleReader,
 }: {
   open: boolean;
   onClose: () => void;
   onAdd: (items: RfidResolvedItem[]) => void;
   readerState: ReaderUiState;
-  onToggleReader: () => void;
 }) {
   const [scanned, setScanned] = useState<RfidResolvedItem[]>([]);
   const [unknownCount, setUnknownCount] = useState(0);
@@ -174,7 +172,7 @@ export function RFIDScanModal({
         <div className="flex items-center justify-between mb-2 gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <h2 className="text-xl font-bold shrink-0">RFID Scan</h2>
-            <ReaderStatusBadge state={readerState} onToggle={onToggleReader} />
+            <ReaderStatusBadge state={readerState} />
           </div>
           <button
             onClick={onClose}
@@ -329,70 +327,53 @@ export function RFIDScanModal({
  * lifecycle hooks + 20s WMS reconcile poll + idle watchdog — this view
  * just renders it.
  */
-function ReaderStatusBadge({
-  state,
-  onToggle,
-}: {
-  state: ReaderUiState;
-  onToggle: () => void;
-}) {
+function ReaderStatusBadge({ state }: { state: ReaderUiState }) {
+  // "off" is hidden entirely — the sell-screen mount auto-wakes the
+  // reader and Scan RFID click re-wakes after the idle stop, so a
+  // user-facing "click to start" CTA isn't useful here.
+  if (state === "off") return null;
   const info: Record<
-    ReaderUiState,
-    { label: string; dot: string; tint: string; clickable: boolean }
+    Exclude<ReaderUiState, "off">,
+    { label: string; dot: string; tint: string }
   > = {
     on: {
       label: "Reader on",
       dot: "bg-emerald-500",
       tint: "border-emerald-200 bg-emerald-50 text-emerald-800",
-      clickable: true,
-    },
-    off: {
-      label: "Reader off — click to start",
-      dot: "bg-carbon-text-muted",
-      tint: "border-carbon-border-soft bg-white text-carbon-text-muted",
-      clickable: true,
     },
     starting: {
       label: "Starting reader…",
       dot: "bg-amber-400 animate-pulse",
       tint: "border-amber-200 bg-amber-50 text-amber-800",
-      clickable: false,
     },
     stopping: {
       label: "Stopping reader…",
       dot: "bg-amber-400 animate-pulse",
       tint: "border-amber-200 bg-amber-50 text-amber-800",
-      clickable: false,
     },
     recovering: {
       label: "Reader recovering…",
       dot: "bg-amber-400 animate-pulse",
       tint: "border-amber-200 bg-amber-50 text-amber-800",
-      clickable: false,
     },
     no_reader: {
       label: "No reader paired",
       dot: "bg-carbon-border",
       tint: "border-carbon-border-soft bg-white text-carbon-text-muted",
-      clickable: false,
     },
     unreachable: {
       label: "Reader unreachable",
       dot: "bg-red-500",
       tint: "border-red-200 bg-red-50 text-red-800",
-      clickable: false,
     },
   };
   const s = info[state];
   return (
-    <button
-      type="button"
-      onClick={s.clickable ? onToggle : undefined}
-      disabled={!s.clickable}
-      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${s.tint} ${s.clickable ? "cursor-pointer hover:opacity-90" : "cursor-default"}`}
+    <span
+      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${s.tint}`}
     >
       <span className={`w-2 h-2 rounded-full ${s.dot}`} aria-hidden />
       {s.label}
-    </button>
+    </span>
   );
 }
