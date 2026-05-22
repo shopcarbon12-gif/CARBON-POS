@@ -58,9 +58,6 @@ function LocationCard({ loc }: { loc: PosLocationRow }) {
     const fd = new FormData(e.currentTarget);
     const payload = {
       tax_rate: Number(fd.get("tax_rate")),
-      receipt_header: ns(fd.get("receipt_header")),
-      receipt_footer: ns(fd.get("receipt_footer")),
-      return_policy: ns(fd.get("return_policy")),
       address_line1: ns(fd.get("address_line1")),
       address_line2: ns(fd.get("address_line2")),
       city: ns(fd.get("city")),
@@ -123,21 +120,6 @@ function LocationCard({ loc }: { loc: PosLocationRow }) {
           label="Timezone"
           name="timezone"
           defaultValue={loc.timezone}
-        />
-        <Field
-          label="Receipt header"
-          name="receipt_header"
-          defaultValue={loc.receipt_header ?? ""}
-        />
-        <Field
-          label="Receipt footer"
-          name="receipt_footer"
-          defaultValue={loc.receipt_footer ?? ""}
-        />
-        <Field
-          label="Return policy"
-          name="return_policy"
-          defaultValue={loc.return_policy ?? ""}
         />
         <Field
           label="Phone"
