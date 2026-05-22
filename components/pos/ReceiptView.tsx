@@ -524,7 +524,7 @@ const S: Record<string, CSSProperties> = {
     width: "62mm",
     maxWidth: "100%",
     height: "auto",
-    maxHeight: "17mm",
+    maxHeight: "18mm",
     display: "block",
     imageRendering: "crisp-edges",
     objectFit: "contain",
