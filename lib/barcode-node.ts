@@ -11,15 +11,12 @@ export async function renderBarcodePng(
   opts: BarcodeRenderOpts = {},
 ): Promise<Buffer> {
   return await bwipjs.toBuffer({
-    bcid: barcodeSymbology(data),
-    text: data,
+    bcid: barcodeSymbology(data.trim()),
+    text: data.trim(),
     scale: opts.scale ?? 2,
-    height: opts.heightMm ?? 12,
+    height: opts.heightMm ?? 8,
     includetext: true,
-    textxalign: "center",
     textsize: 8,
-    paddingwidth: 4,
-    paddingheight: 2,
     backgroundcolor: "FFFFFF",
   });
 }

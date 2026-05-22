@@ -159,6 +159,7 @@ export function ReceiptView({
           ))}
 
           <div style={S.totals}>
+            <Row label="Fee total" value={formatMoney(0)} />
             <Row label="Subtotal" value={formatMoney(sale.subtotal)} />
             {discount > 0 && (
               <Row
@@ -188,7 +189,7 @@ export function ReceiptView({
             {payments.map((p) => (
               <div key={p.id}>
                 <Row label={humanMethod(p.method)} value={formatMoney(p.amount)} />
-                {p.method === "cash" && p.change_given ? (
+                {p.method === "cash" && Number(p.change_given || 0) > 0 ? (
                   <Row
                     label="Change"
                     value={formatMoney(p.change_given)}
@@ -205,28 +206,6 @@ export function ReceiptView({
             <div style={S.payments}>
               <Row label="On Deposit:" value={formatMoney(storeCredit)} />
             </div>
-          </Section>
-        )}
-
-        {loyalty && loyalty.points > 0 && (
-          <Section
-            title={loyalty.is_member ? "CARBON REWARDS" : "JOIN CARBON REWARDS"}
-          >
-            {loyalty.is_member ? (
-              <div style={S.payments}>
-                <Row label="Points earned" value={String(loyalty.points)} />
-                <Row
-                  label="Approx. cashback"
-                  value={formatMoney(loyalty.dollar_value)}
-                />
-              </div>
-            ) : (
-              <div style={S.rewardOffer}>
-                You would have earned <b>{loyalty.points} pts</b> (~
-                {formatMoney(loyalty.dollar_value)}). Ask the cashier to enroll
-                on your next visit and start saving!
-              </div>
-            )}
           </Section>
         )}
 
@@ -267,6 +246,34 @@ export function ReceiptView({
             />
           </div>
         </div>
+
+        {loyalty && loyalty.points > 0 && (
+          <section style={S.transaction}>
+            <div style={S.sectionTitle}>
+              {loyalty.is_member ? "CARBON REWARDS" : "JOIN CARBON REWARDS"}
+            </div>
+            {loyalty.is_member ? (
+              <>
+                <div style={S.txnRow}>
+                  <span>Points earned</span>
+                  <span style={S.txnValue}>{loyalty.points}</span>
+                </div>
+                <div style={S.txnRow}>
+                  <span>Approx. cashback</span>
+                  <span style={S.txnValue}>
+                    {formatMoney(loyalty.dollar_value)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div style={S.rewardOffer}>
+                You would have earned <b>{loyalty.points} pts</b> (~
+                {formatMoney(loyalty.dollar_value)}). Ask the cashier to enroll
+                on your next visit and start saving!
+              </div>
+            )}
+          </section>
+        )}
       </main>
     </div>
   );
@@ -470,8 +477,22 @@ const S: Record<string, CSSProperties> = {
   },
   rewardOffer: {
     fontSize: 11,
-    lineHeight: 1.3,
+    lineHeight: 1.35,
     marginTop: "1mm",
+  },
+  transaction: {
+    marginTop: "4mm",
+    fontSize: 11,
+    lineHeight: 1.35,
+  },
+  txnRow: {
+    display: "grid",
+    gridTemplateColumns: "22mm 1fr",
+    columnGap: "2mm",
+  },
+  txnValue: {
+    textAlign: "right",
+    wordBreak: "break-word",
   },
   policy: {
     marginTop: "5mm",
