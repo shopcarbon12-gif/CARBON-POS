@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { formatMoney } from "@/lib/utils";
+import { SaleActions } from "./SaleActions";
 
 /**
  * Read-only detail view for one sale: header + lines + payments + refunds.
@@ -170,6 +171,11 @@ export default async function AdminSaleDetailPage({
         </section>
 
         <aside className="flex flex-col gap-4">
+          <SaleActions
+            saleId={sale.id}
+            defaultEmail={sale.customer_email}
+          />
+
           <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-4">
             <h2 className="font-semibold mb-2">Totals</h2>
             <dl className="grid grid-cols-2 gap-y-1 text-sm">
