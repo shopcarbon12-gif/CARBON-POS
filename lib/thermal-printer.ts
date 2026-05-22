@@ -1,5 +1,43 @@
+import path from "node:path";
 import { printer as Printer, types as PrinterTypes } from "node-thermal-printer";
+import sharp from "sharp";
 import { formatMoney } from "@/lib/utils";
+
+/**
+ * 80mm thermal printers are typically 384 dots wide at 8 dots/mm. We aim
+ * for ~360 to leave a small margin so the logo never bleeds into the
+ * edge. The buffer is computed once and cached for the life of the
+ * process — receipts are printed often and reading + rasterizing the
+ * JPG on every sale would visibly slow the cashier down.
+ */
+const LOGO_TARGET_WIDTH = 360;
+let cachedLogo: Promise<Buffer | null> | null = null;
+
+function loadLogoBuffer(): Promise<Buffer | null> {
+  if (cachedLogo) return cachedLogo;
+  cachedLogo = (async () => {
+    try {
+      const filePath = path.join(process.cwd(), "public", "logo.jpg");
+      return await sharp(filePath)
+        .resize({ width: LOGO_TARGET_WIDTH, withoutEnlargement: true })
+        .grayscale()
+        .png()
+        .toBuffer();
+    } catch (err) {
+      console.warn("[thermal] logo unavailable, skipping:", err);
+      return null;
+    }
+  })();
+  return cachedLogo;
+}
+
+async function printLogo(printer: Printer): Promise<void> {
+  const buf = await loadLogoBuffer();
+  if (!buf) return;
+  printer.alignCenter();
+  await printer.printImageBuffer(buf);
+  printer.newLine();
+}
 
 type SaleRow = {
   id: number;
@@ -65,10 +103,15 @@ export async function printSaleReceipt({
     throw new Error(`Printer at ${host}:${port} is not reachable.`);
   }
 
+  // Logo at the top — falls through silently if the asset is missing.
+  await printLogo(printer);
+
   printer.alignCenter();
+  printer.setTextDoubleHeight();
   printer.bold(true);
   printer.println(sale.location_name);
   printer.bold(false);
+  printer.setTextNormal();
   if (sale.address_line1) printer.println(sale.address_line1);
   if (sale.address_line2) printer.println(sale.address_line2);
   const cityLine = [sale.city, sale.state, sale.zip].filter(Boolean).join(" ");
@@ -78,45 +121,72 @@ export async function printSaleReceipt({
   printer.drawLine();
 
   printer.alignLeft();
+  printer.println(`Sale  ${sale.sale_number}`);
+  printer.println(`Reg.  ${sale.register_name}`);
   printer.println(
-    `Sale ${sale.sale_number} · ${sale.register_name}`,
+    `Date  ${new Date(sale.completed_at ?? sale.created_at).toLocaleString()}`,
   );
-  printer.println(
-    `${new Date(sale.completed_at ?? sale.created_at).toLocaleString()}`,
-  );
-  printer.println(`Cashier ${sale.cashier_email}`);
+  printer.println(`Csr.  ${sale.cashier_email}`);
   printer.drawLine();
 
   for (const l of lines) {
-    const qty = `${l.quantity}× `;
+    // 48-char paper: keep qty + first 36 chars of description on the
+    // left, money on the right. Long product names wrap to a second
+    // (indented) line so nothing gets silently truncated by the driver.
+    const qty = `${l.quantity}x `;
     const right = formatMoney(l.line_total);
-    const text = qty + l.description;
-    printer.tableCustom([
-      { text, align: "LEFT", width: 0.7 },
-      { text: right, align: "RIGHT", width: 0.3 },
-    ]);
+    const leftBudget = 36;
+    const head = qty + l.description;
+    if (head.length <= leftBudget) {
+      printer.tableCustom([
+        { text: head, align: "LEFT", width: 0.7 },
+        { text: right, align: "RIGHT", width: 0.3 },
+      ]);
+    } else {
+      const firstLine = head.slice(0, leftBudget);
+      const rest = head.slice(leftBudget);
+      printer.tableCustom([
+        { text: firstLine, align: "LEFT", width: 0.7 },
+        { text: right, align: "RIGHT", width: 0.3 },
+      ]);
+      // Indent continuation rows so they read as part of the same item.
+      for (let i = 0; i < rest.length; i += leftBudget - 2) {
+        printer.println("  " + rest.slice(i, i + leftBudget - 2));
+      }
+    }
   }
   printer.drawLine();
   printer.tableCustom([
     { text: "Subtotal", align: "LEFT", width: 0.7 },
     { text: formatMoney(sale.subtotal), align: "RIGHT", width: 0.3 },
   ]);
-  printer.tableCustom([
-    { text: "Discount", align: "LEFT", width: 0.7 },
-    { text: `-${formatMoney(sale.discount_amount)}`, align: "RIGHT", width: 0.3 },
-  ]);
+  if (Number(sale.discount_amount) > 0) {
+    printer.tableCustom([
+      { text: "Discount", align: "LEFT", width: 0.7 },
+      { text: `-${formatMoney(sale.discount_amount)}`, align: "RIGHT", width: 0.3 },
+    ]);
+  }
   printer.tableCustom([
     { text: "Tax", align: "LEFT", width: 0.7 },
     { text: formatMoney(sale.tax_amount), align: "RIGHT", width: 0.3 },
   ]);
+  printer.setTextDoubleHeight();
   printer.bold(true);
   printer.tableCustom([
     { text: "TOTAL", align: "LEFT", width: 0.5 },
     { text: formatMoney(sale.total_amount), align: "RIGHT", width: 0.5 },
   ]);
   printer.bold(false);
+  printer.setTextNormal();
   printer.drawLine();
 
+  // Tender breakdown — useful especially on split sales so the customer
+  // can see "Card $30 / Cash $20 / Gift $5" laid out on the receipt.
+  if (payments.length > 1) {
+    printer.bold(true);
+    printer.println("Tendered");
+    printer.bold(false);
+  }
   for (const p of payments) {
     const label = humanMethod(p.method);
     printer.tableCustom([
@@ -141,6 +211,7 @@ export async function printSaleReceipt({
   } else {
     printer.println("Thank you!");
   }
+  printer.newLine();
   printer.cut();
 
   if (process.env.CASH_DRAWER_KICK !== "0") {

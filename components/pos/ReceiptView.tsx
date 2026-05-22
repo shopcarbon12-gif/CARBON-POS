@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { formatMoney } from "@/lib/utils";
 
 type SaleHeader = {
@@ -15,6 +16,13 @@ type SaleHeader = {
   created_at: string;
   return_policy: string | null;
   receipt_footer?: string | null;
+  receipt_header?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  phone?: string | null;
 };
 
 type LineRow = {
@@ -32,8 +40,9 @@ type PaymentRow = {
 };
 
 /**
- * Receipt body. Used on the /pos/receipt screen and on /admin/sales/[id] for
- * a print-preview style view.
+ * On-screen receipt rendered at thermal-paper proportions (80mm ≈ 320px
+ * wide, monospaced font) so the cashier sees roughly what the printer
+ * will spit out. Used on /pos/receipt and /admin/sales/[id].
  */
 export function ReceiptView({
   sale,
@@ -44,65 +53,137 @@ export function ReceiptView({
   lines: LineRow[];
   payments: PaymentRow[];
 }) {
+  const cityLine = [sale.city, sale.state, sale.zip].filter(Boolean).join(" ");
+  const discount = Number(sale.discount_amount);
   return (
-    <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-6">
-      <div className="text-center mb-4">
-        <h1 className="text-2xl font-bold">{sale.location_name}</h1>
-        <p className="text-[var(--color-pos-muted)] text-sm">
-          Sale {sale.sale_number} · {sale.register_name}
-        </p>
-        <p className="text-[var(--color-pos-muted)] text-sm">
-          {new Date(sale.completed_at ?? sale.created_at).toLocaleString()}
+    <div className="flex justify-center">
+      <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-5 w-[22rem] font-mono text-[12px] leading-tight text-black shadow-sm">
+        <div className="flex flex-col items-center mb-2">
+          <Image
+            src="/logo.jpg"
+            alt=""
+            width={120}
+            height={120}
+            className="mb-2 rounded"
+            priority
+          />
+          <p className="font-bold text-base tracking-wide uppercase text-center">
+            {sale.location_name}
+          </p>
+          {sale.address_line1 && <p>{sale.address_line1}</p>}
+          {sale.address_line2 && <p>{sale.address_line2}</p>}
+          {cityLine && <p>{cityLine}</p>}
+          {sale.phone && <p>{sale.phone}</p>}
+          {sale.receipt_header && (
+            <p className="text-center mt-1">{sale.receipt_header}</p>
+          )}
+        </div>
+
+        <Divider />
+
+        <div className="space-y-0.5">
+          <Row label="Sale" value={sale.sale_number} />
+          <Row label="Reg." value={sale.register_name} />
+          <Row
+            label="Date"
+            value={new Date(sale.completed_at ?? sale.created_at).toLocaleString()}
+          />
+          <Row label="Csr." value={sale.cashier_email} />
+        </div>
+
+        <Divider />
+
+        <ul>
+          {lines.map((l) => (
+            <li key={l.id} className="flex justify-between gap-2">
+              <span className="break-words">
+                {l.quantity}x {l.description}
+              </span>
+              <span className="tabular-nums whitespace-nowrap">
+                {formatMoney(l.line_total)}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        <Divider />
+
+        <div className="space-y-0.5">
+          <Row label="Subtotal" value={formatMoney(sale.subtotal)} mono />
+          {discount > 0 && (
+            <Row
+              label="Discount"
+              value={`-${formatMoney(sale.discount_amount)}`}
+              mono
+            />
+          )}
+          <Row label="Tax" value={formatMoney(sale.tax_amount)} mono />
+        </div>
+
+        <div className="border-t border-dashed border-black/60 my-1 pt-1 flex justify-between font-bold text-[16px]">
+          <span>TOTAL</span>
+          <span className="tabular-nums">{formatMoney(sale.total_amount)}</span>
+        </div>
+
+        <Divider />
+
+        {payments.length > 1 && (
+          <p className="font-bold">Tendered</p>
+        )}
+        <div className="space-y-0.5">
+          {payments.map((p) => (
+            <div key={p.id}>
+              <Row
+                label={humanMethod(p.method)}
+                value={formatMoney(p.amount)}
+                mono
+              />
+              {p.method === "cash" && p.change_given ? (
+                <Row
+                  label="  Change"
+                  value={formatMoney(p.change_given)}
+                  mono
+                  muted
+                />
+              ) : null}
+            </div>
+          ))}
+        </div>
+
+        <Divider />
+
+        {sale.return_policy && (
+          <p className="text-center text-[11px]">{sale.return_policy}</p>
+        )}
+        <p className="text-center mt-1">
+          {sale.receipt_footer ?? "Thank you!"}
         </p>
       </div>
-      <ul className="border-t border-[var(--color-pos-border)] pt-3">
-        {lines.map((l) => (
-          <li key={l.id} className="flex justify-between py-1 text-sm">
-            <span>
-              {l.quantity}× {l.description}
-            </span>
-            <span className="tabular-nums">{formatMoney(l.line_total)}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-3 border-t border-[var(--color-pos-border)] pt-3 grid grid-cols-2 gap-y-1 text-sm">
-        <span>Subtotal</span>
-        <span className="text-right">{formatMoney(sale.subtotal)}</span>
-        <span>Discount</span>
-        <span className="text-right">−{formatMoney(sale.discount_amount)}</span>
-        <span>Tax</span>
-        <span className="text-right">{formatMoney(sale.tax_amount)}</span>
-        <span className="font-bold text-lg">Total</span>
-        <span className="text-right font-bold text-lg">
-          {formatMoney(sale.total_amount)}
-        </span>
-      </div>
-      <div className="mt-3 border-t border-[var(--color-pos-border)] pt-3 grid grid-cols-2 gap-y-1 text-sm">
-        {payments.map((p) => (
-          <span key={p.id} className="contents">
-            <span>{humanMethod(p.method)}</span>
-            <span className="text-right">{formatMoney(p.amount)}</span>
-            {p.method === "cash" && p.change_given ? (
-              <>
-                <span className="text-[var(--color-pos-muted)]">Change</span>
-                <span className="text-right text-[var(--color-pos-muted)]">
-                  {formatMoney(p.change_given)}
-                </span>
-              </>
-            ) : null}
-          </span>
-        ))}
-      </div>
-      {sale.return_policy && (
-        <p className="mt-4 text-center text-xs text-[var(--color-pos-muted)]">
-          {sale.return_policy}
-        </p>
-      )}
-      {sale.receipt_footer && (
-        <p className="mt-1 text-center text-xs text-[var(--color-pos-muted)]">
-          {sale.receipt_footer}
-        </p>
-      )}
+    </div>
+  );
+}
+
+function Divider() {
+  return <div className="border-t border-dashed border-black/40 my-2" />;
+}
+
+function Row({
+  label,
+  value,
+  mono = false,
+  muted = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <div
+      className={`flex justify-between gap-2 ${muted ? "text-black/60" : ""}`}
+    >
+      <span>{label}</span>
+      <span className={mono ? "tabular-nums" : ""}>{value}</span>
     </div>
   );
 }

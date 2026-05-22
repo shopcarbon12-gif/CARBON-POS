@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatMoney, round2 } from "@/lib/utils";
 import { CashKeypad } from "@/components/pos/CashKeypad";
 import { PaymentModal } from "@/components/pos/PaymentModal";
+import { SplitBuilder, type Tender } from "@/components/pos/SplitBuilder";
 import type { CartLine, CartTotals } from "@/types/pos";
 
 type CartPayload = {
@@ -41,8 +42,6 @@ function PaymentInner() {
   const [cashGiven, setCashGiven] = useState("");
 
   const [splitOn, setSplitOn] = useState(false);
-  const [splitCard, setSplitCard] = useState("");
-  const [splitCash, setSplitCash] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,12 +90,8 @@ function PaymentInner() {
 
   const total = cart.totals.total;
   const cashAmount = round2(Number(cashGiven || 0));
-  const splitCardAmt = round2(Number(splitCard || 0));
-  const splitCashAmt = round2(Number(splitCash || 0));
-  const splitOk =
-    !splitOn || Math.abs(splitCardAmt + splitCashAmt - total) < 0.01;
 
-  async function finishSale(payments: SubmitPayment[]) {
+  async function finishSale(payments: Tender[]) {
     if (!cart) return;
     if (!registerId) {
       setError("Your register isn't open. Go to the Register screen first.");
@@ -156,23 +151,25 @@ function PaymentInner() {
         </div>
       </header>
 
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        <MethodTab
-          active={method === "card"}
-          onClick={() => setMethod("card")}
-          label="Card"
-        />
-        <MethodTab
-          active={method === "cash"}
-          onClick={() => setMethod("cash")}
-          label="Cash"
-        />
-        <MethodTab
-          active={method === "other"}
-          onClick={() => setMethod("other")}
-          label="Other"
-        />
-      </div>
+      {!splitOn && (
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <MethodTab
+            active={method === "card"}
+            onClick={() => setMethod("card")}
+            label="Card"
+          />
+          <MethodTab
+            active={method === "cash"}
+            onClick={() => setMethod("cash")}
+            label="Cash"
+          />
+          <MethodTab
+            active={method === "other"}
+            onClick={() => setMethod("other")}
+            label="Other"
+          />
+        </div>
+      )}
 
       {method === "card" && !splitOn && (
         <PaymentModal
@@ -242,65 +239,41 @@ function PaymentInner() {
         />
       )}
 
-      <div className="mt-5 bg-white border border-[var(--color-pos-border)] rounded-2xl p-4">
-        <div className="flex items-center justify-between">
-          <span className="font-medium">Split payment</span>
-          <button
-            onClick={() => setSplitOn((v) => !v)}
-            className={`tap rounded-full px-4 ${
-              splitOn
-                ? "bg-[var(--color-pos-ink)] text-white"
-                : "bg-[var(--color-pos-bg)] border border-[var(--color-pos-border)]"
-            }`}
-          >
-            {splitOn ? "On" : "Off"}
-          </button>
+      {splitOn ? (
+        <div className="mt-2">
+          <SplitBuilder
+            total={total}
+            readerId={readerId}
+            saving={saving}
+            onFinish={(tenders) => finishSale(tenders)}
+          />
         </div>
-        {splitOn && (
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <label className="text-sm font-medium">
-              Card
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={splitCard}
-                onChange={(e) => setSplitCard(e.target.value)}
-                className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3 mt-1"
-              />
-            </label>
-            <label className="text-sm font-medium">
-              Cash
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={splitCash}
-                onChange={(e) => setSplitCash(e.target.value)}
-                className="tap w-full rounded-lg border border-[var(--color-pos-border)] px-3 mt-1"
-              />
-            </label>
-            <p
-              className={`col-span-2 text-sm ${
-                splitOk
-                  ? "text-[var(--color-pos-muted)]"
-                  : "text-[var(--color-pos-danger)]"
-              }`}
-            >
-              {splitOk
-                ? "Amounts balance — ready when you are."
-                : `These need to add up to ${formatMoney(total)}. Currently ${formatMoney(
-                    splitCardAmt + splitCashAmt,
-                  )}.`}
-            </p>
-            <p className="col-span-2 text-xs text-[var(--color-pos-muted)]">
-              Split sales charge the cash portion now and the card portion via
-              the reader as a separate payment. (Phase 2 will run them in one
-              flow.)
+      ) : (
+        <div className="mt-5 bg-white border border-[var(--color-pos-border)] rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <p className="font-medium">Split this payment</p>
+            <p className="text-xs text-[var(--color-pos-muted)]">
+              Combine any mix of card, cash, gift card, account, store
+              credit, or check.
             </p>
           </div>
-        )}
-      </div>
+          <button
+            onClick={() => setSplitOn(true)}
+            className="tap rounded-full px-4 bg-[var(--color-pos-ink)] text-white"
+          >
+            Start split
+          </button>
+        </div>
+      )}
+
+      {splitOn && (
+        <button
+          onClick={() => setSplitOn(false)}
+          className="tap mt-3 text-sm text-[var(--color-pos-muted)] underline"
+        >
+          Cancel split — go back to single payment
+        </button>
+      )}
 
       {error && (
         <p className="mt-4 text-center text-[var(--color-pos-danger)]">
@@ -324,19 +297,6 @@ export default function PaymentPage() {
     </Suspense>
   );
 }
-
-type SubmitPayment =
-  | {
-      method: "card";
-      amount: number;
-      payment_intent_id: string;
-      reader_id: string | null;
-    }
-  | { method: "cash"; amount: number; cash_given: number }
-  | { method: "check"; amount: number; check_number: string }
-  | { method: "store_credit"; amount: number }
-  | { method: "account"; amount: number; reference: string | null }
-  | { method: "gift_card"; amount: number; gift_card_number: string };
 
 function MethodTab({
   active,
