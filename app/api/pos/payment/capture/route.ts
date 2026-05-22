@@ -313,8 +313,7 @@ export async function POST(req: Request) {
         // to 'sold' atomically with the pos_sales insert.
         await client.query(
           `UPDATE items
-              SET status = 'sold',
-                  updated_at = now()
+              SET status = 'sold'
             WHERE epc = ANY($1::text[])`,
           [epcs],
         );
