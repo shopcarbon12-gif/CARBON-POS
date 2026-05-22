@@ -29,9 +29,11 @@ export async function GET(req: Request) {
   }
   const r = await getPool().query<{
     pos_location_id: number;
+    store_code: string;
     next_sale_seq: number;
   }>(
     `SELECT pl.id  AS pos_location_id,
+            pl.store_code,
             pl.next_sale_seq
        FROM pos_registers r
        JOIN pos_locations pl ON pl.id = r.pos_location_id
@@ -44,7 +46,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "register_not_found" }, { status: 404 });
   }
   const sale_number = formatSaleNumber(
-    row.pos_location_id,
+    row.store_code,
     row.next_sale_seq,
   );
   // Human-friendly short label printed in the cart header: location code +

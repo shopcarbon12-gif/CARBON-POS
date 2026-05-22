@@ -20,21 +20,22 @@ export function round2(value: number): number {
 }
 
 /**
- * Format the sale number as `[1100000][LL][SSS]` — fixed-width prefix +
- * 2-digit location code + per-location sequence (min 3 digits, grows as
- * needed past 999). The 13th digit on the EAN-13 barcode is the check
- * digit and is computed by the barcode renderer, not stored.
+ * Format the sale number as `[1100000][SS][SSS]` — fixed-width prefix +
+ * 2-digit operator-defined store code + per-location sequence (min 3
+ * digits, grows as needed past 999). The store code lives on
+ * pos_locations.store_code and is independent of the DB id. The 13th
+ * digit on the EAN-13 barcode is the check digit and is computed by
+ * the barcode renderer, not stored.
  *
- *   formatSaleNumber(1, 7)   -> "110000001007"
- *   formatSaleNumber(2, 1000)-> "1100000021000"  (13 chars, falls back
- *                                                 to Code128 on the
- *                                                 receipt)
+ *   formatSaleNumber("01", 7)   -> "110000001007"
+ *   formatSaleNumber("02", 1000)-> "1100000021000"  (13 chars, falls back
+ *                                                    to Code128 on the
+ *                                                    receipt)
  */
-export function formatSaleNumber(locationId: number, saleSeq: number): string {
+export function formatSaleNumber(storeCode: string, saleSeq: number): string {
   const prefix = "1100000";
-  const loc = String(locationId).padStart(2, "0");
   const seq = String(saleSeq).padStart(3, "0");
-  return `${prefix}${loc}${seq}`;
+  return `${prefix}${storeCode}${seq}`;
 }
 
 /**

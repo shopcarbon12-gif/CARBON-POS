@@ -169,7 +169,7 @@ export async function POST(req: Request) {
     const sale = await withTransaction(async (client) => {
       // Verify register session is open before persisting.
       const reg = await client.query(
-        `SELECT pl.id AS pos_location_id
+        `SELECT pl.id AS pos_location_id, pl.store_code
            FROM pos_registers r
            JOIN pos_locations pl ON pl.id = r.pos_location_id
           WHERE r.id = $1
@@ -195,7 +195,7 @@ export async function POST(req: Request) {
         [regRow.pos_location_id],
       );
       const saleNumber = formatSaleNumber(
-        regRow.pos_location_id,
+        regRow.store_code,
         Number(seq.rows[0].seq),
       );
 

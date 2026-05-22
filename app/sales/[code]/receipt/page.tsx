@@ -91,7 +91,7 @@ function ReceiptInner() {
     const r = await res.json().catch(() => ({}));
     if (r.skipped) {
       setErrorMsg(
-        "No receipt printer is configured yet. Set THERMAL_PRINTER_HOST in Settings.",
+        "No receipt printer is configured for this location. Set it in Settings → Locations → printer host/port.",
       );
       setPrintState("error");
       return;
