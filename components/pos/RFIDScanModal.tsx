@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { formatMoney } from "@/lib/utils";
+import { AntennaPowerSlider } from "./AntennaPowerSlider";
 
 export type RfidResolvedItem = {
   epc: string;
@@ -212,6 +213,9 @@ export function RFIDScanModal({
           Wave each item near the reader. The list below grows as tags are
           picked up.
         </p>
+        <div className="mb-3">
+          <AntennaPowerSlider />
+        </div>
         {streamErr && (
           <p className="text-sm text-[var(--color-pos-danger)] mb-2">
             {streamErr} You can keep scanning once it reconnects.
