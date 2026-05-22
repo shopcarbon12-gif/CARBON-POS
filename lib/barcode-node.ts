@@ -14,7 +14,7 @@ export async function renderBarcodePng(
     bcid: barcodeSymbology(data.trim()),
     text: data.trim(),
     scale: opts.scale ?? 2,
-    height: opts.heightMm ?? 8,
+    height: opts.heightMm ?? 6,
     includetext: true,
     textsize: 8,
     backgroundcolor: "FFFFFF",

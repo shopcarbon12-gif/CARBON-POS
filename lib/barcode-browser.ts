@@ -9,15 +9,15 @@ export function renderBarcodeSvg(
   data: string,
   opts: BarcodeRenderOpts = {},
 ): string {
-  // Heights are deliberately short so the rendered SVG's aspect ratio
-  // matches the reference receipt's barcode (~28% h/w). At scale 2,
-  // height 8mm gives roughly 200×56 — width:62mm in CSS produces
-  // ~17mm tall, the same band as the reference.
+  // Heights kept very short so the SVG's aspect ratio matches the
+  // reference receipt's barcode band. At scale 2, height 6mm gives a
+  // viewBox close to 210×54 — width:62mm in CSS produces ~16mm tall,
+  // matching the printed reference.
   return bwipjs.toSVG({
     bcid: barcodeSymbology(data.trim()),
     text: data.trim(),
     scale: opts.scale ?? 2,
-    height: opts.heightMm ?? 8,
+    height: opts.heightMm ?? 6,
     includetext: true,
     textsize: 8,
   });
