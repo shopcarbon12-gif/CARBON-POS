@@ -39,8 +39,8 @@ ENV CI=true
 ENV DOCKER_BUILD=1
 ENV NEXT_REACT_COMPILER=0
 ENV NODE_OPTIONS=--max-old-space-size=4096
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY --link --from=deps /app/node_modules ./node_modules
+COPY --link . .
 # BuildKit cache for .next/cache — incremental webpack + TS cache survives
 # across deploys. Without this, every Coolify rebuild starts cold.
 RUN --mount=type=cache,target=/app/.next/cache,sharing=locked,id=carbon-pos-next-cache \
@@ -61,27 +61,27 @@ RUN addgroup --system --gid 1001 nodejs \
   && apk add --no-cache libc6-compat postgresql-client su-exec tzdata \
   && cp /usr/share/zoneinfo/America/New_York /etc/localtime \
   && echo "America/New_York" > /etc/timezone
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --link --from=builder /app/public ./public
+COPY --link --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --link --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # pg subtree is not in the server-action trace; copy the full tree from
 # deps so docker-migrate.mjs (which runs outside Next) can require('pg').
-COPY --from=deps /app/node_modules/pg /app/node_modules/pg
-COPY --from=deps /app/node_modules/pg-connection-string /app/node_modules/pg-connection-string
-COPY --from=deps /app/node_modules/pg-pool /app/node_modules/pg-pool
-COPY --from=deps /app/node_modules/pg-protocol /app/node_modules/pg-protocol
-COPY --from=deps /app/node_modules/pg-types /app/node_modules/pg-types
-COPY --from=deps /app/node_modules/pgpass /app/node_modules/pgpass
-COPY --from=deps /app/node_modules/pg-int8 /app/node_modules/pg-int8
-COPY --from=deps /app/node_modules/postgres-array /app/node_modules/postgres-array
-COPY --from=deps /app/node_modules/postgres-bytea /app/node_modules/postgres-bytea
-COPY --from=deps /app/node_modules/postgres-date /app/node_modules/postgres-date
-COPY --from=deps /app/node_modules/postgres-interval /app/node_modules/postgres-interval
-COPY --from=deps /app/node_modules/split2 /app/node_modules/split2
-COPY --from=deps /app/node_modules/xtend /app/node_modules/xtend
-COPY migrations /app/migrations
-COPY scripts/docker-migrate.mjs /app/scripts/docker-migrate.mjs
-COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY --link --from=deps /app/node_modules/pg /app/node_modules/pg
+COPY --link --from=deps /app/node_modules/pg-connection-string /app/node_modules/pg-connection-string
+COPY --link --from=deps /app/node_modules/pg-pool /app/node_modules/pg-pool
+COPY --link --from=deps /app/node_modules/pg-protocol /app/node_modules/pg-protocol
+COPY --link --from=deps /app/node_modules/pg-types /app/node_modules/pg-types
+COPY --link --from=deps /app/node_modules/pgpass /app/node_modules/pgpass
+COPY --link --from=deps /app/node_modules/pg-int8 /app/node_modules/pg-int8
+COPY --link --from=deps /app/node_modules/postgres-array /app/node_modules/postgres-array
+COPY --link --from=deps /app/node_modules/postgres-bytea /app/node_modules/postgres-bytea
+COPY --link --from=deps /app/node_modules/postgres-date /app/node_modules/postgres-date
+COPY --link --from=deps /app/node_modules/postgres-interval /app/node_modules/postgres-interval
+COPY --link --from=deps /app/node_modules/split2 /app/node_modules/split2
+COPY --link --from=deps /app/node_modules/xtend /app/node_modules/xtend
+COPY --link migrations /app/migrations
+COPY --link scripts/docker-migrate.mjs /app/scripts/docker-migrate.mjs
+COPY --link scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh \
   && mkdir -p /app/.next/cache \
   && chown -R nextjs:nodejs /app
