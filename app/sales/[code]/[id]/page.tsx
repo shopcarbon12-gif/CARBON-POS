@@ -173,6 +173,7 @@ export default async function AdminSaleDetailPage({
         <aside className="flex flex-col gap-4">
           <SaleActions
             saleId={sale.id}
+            code={code}
             defaultEmail={sale.customer_email}
           />
 

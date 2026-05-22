@@ -135,6 +135,14 @@ function ReceiptInner() {
           lines={data.lines}
           payments={data.payments}
           loyalty={data.loyalty}
+          variant="customer"
+        />
+        <ReceiptView
+          sale={data.sale}
+          lines={data.lines}
+          payments={data.payments}
+          loyalty={data.loyalty}
+          variant="merchant"
         />
       </div>
 

@@ -56,18 +56,27 @@ type LoyaltyFooter = {
  * to 80mm to match thermal-paper proportions; all spacing uses the same
  * mm dimensions as the reference so the on-screen preview lays out
  * identically to what the printer will emit.
+ *
+ * Each printed sale produces two copies — variant="customer" matches the
+ * reference layout with the loyalty footer, variant="merchant" drops the
+ * loyalty block and adds policy + (when any card payment exists)
+ * cardholder signature lines.
  */
 export function ReceiptView({
   sale,
   lines,
   payments,
   loyalty,
+  variant = "customer",
 }: {
   sale: SaleHeader;
   lines: LineRow[];
   payments: PaymentRow[];
   loyalty?: LoyaltyFooter;
+  variant?: "customer" | "merchant";
 }) {
+  const isMerchant = variant === "merchant";
+  const hasCardPayment = payments.some((p) => p.method === "card");
   const cityLine = [sale.city, sale.state, sale.zip].filter(Boolean).join(", ");
   const discount = Number(sale.discount_amount);
   const taxRate = sale.tax_rate != null ? Number(sale.tax_rate) : null;
@@ -131,6 +140,9 @@ export function ReceiptView({
           </div>
 
           <div style={S.title}>Sales Receipt</div>
+          {isMerchant && (
+            <div style={S.merchantBanner}>** MERCHANT COPY **</div>
+          )}
           <div style={S.date}>
             {new Date(sale.completed_at ?? sale.created_at).toLocaleString()}
           </div>
@@ -236,6 +248,32 @@ export function ReceiptView({
             (customerName ? `Thank You ${customerName}!` : "Thank You!")}
         </div>
 
+        {isMerchant && (
+          <section style={S.signatures}>
+            <div style={S.signatureLine}>
+              <span style={S.signatureMark}>X</span>
+              <span style={S.signatureRule} />
+            </div>
+            <div style={S.signatureLabel}>Customer signature</div>
+            <div style={S.signatureSub}>(acknowledging return policy above)</div>
+
+            {hasCardPayment && (
+              <>
+                <div style={S.signatureLineSpacer} />
+                <div style={S.signatureLine}>
+                  <span style={S.signatureMark}>X</span>
+                  <span style={S.signatureRule} />
+                </div>
+                <div style={S.signatureLabel}>Cardholder signature</div>
+                <div style={S.cardAgreement}>
+                  I AGREE TO PAY THE ABOVE TOTAL ACCORDING TO MY CARD ISSUER
+                  AGREEMENT.
+                </div>
+              </>
+            )}
+          </section>
+        )}
+
         <div style={S.barcodeWrap}>
           <div style={S.barcodeBox}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -247,7 +285,7 @@ export function ReceiptView({
           </div>
         </div>
 
-        {loyalty && loyalty.points > 0 && (
+        {!isMerchant && loyalty && loyalty.points > 0 && (
           <section style={S.transaction}>
             <div style={S.sectionTitle}>
               {loyalty.is_member ? "CARBON REWARDS" : "JOIN CARBON REWARDS"}
@@ -531,6 +569,51 @@ const S: Record<string, CSSProperties> = {
   },
   alignRight: {
     textAlign: "right",
+  },
+  merchantBanner: {
+    marginTop: "1mm",
+    fontSize: 12,
+    fontWeight: 900,
+    letterSpacing: "1.2px",
+  },
+  signatures: {
+    marginTop: "4mm",
+    fontSize: 11,
+    lineHeight: 1.3,
+  },
+  signatureLine: {
+    display: "flex",
+    alignItems: "flex-end",
+    gap: "2mm",
+  },
+  signatureLineSpacer: {
+    height: "6mm",
+  },
+  signatureMark: {
+    fontWeight: 900,
+    fontSize: 13,
+  },
+  signatureRule: {
+    flex: 1,
+    borderBottom: "1px solid #000",
+    height: "5mm",
+  },
+  signatureLabel: {
+    marginTop: ".8mm",
+    marginLeft: "5mm",
+    fontSize: 11,
+  },
+  signatureSub: {
+    marginLeft: "5mm",
+    fontSize: 10,
+    color: "rgba(0,0,0,.7)",
+  },
+  cardAgreement: {
+    marginTop: "1.5mm",
+    textAlign: "center",
+    fontSize: 10,
+    lineHeight: 1.25,
+    letterSpacing: ".2px",
   },
 };
 

@@ -109,6 +109,14 @@ type LoyaltyFooter = {
  * Print a sale receipt to the configured network ESC/POS printer and kick
  * the cash drawer open. Falls back to { skipped: true } when the printer
  * host isn't configured (development on a laptop with no hardware).
+ *
+ * Each sale prints TWO copies in the same job:
+ *   1. Customer Copy — full layout including the loyalty footer.
+ *   2. Merchant Copy — same body, no loyalty, with a signature block
+ *      acknowledging the return policy. When any payment is a card
+ *      tender, an additional cardholder-signature block is added.
+ *
+ * The cash drawer kicks once at the very end of the job.
  */
 export async function printSaleReceipt({
   sale,
@@ -140,6 +148,37 @@ export async function printSaleReceipt({
     );
   }
 
+  // Two separate execute() calls — one per copy — so each TCP write
+  // stays well below the printer's input-buffer ceiling. If the second
+  // copy fails for any reason the customer still has their copy in hand.
+  await printSaleCopy(printer, sale, lines, payments, loyalty, "customer");
+  printer.cut();
+  await printer.execute();
+
+  await printSaleCopy(printer, sale, lines, payments, loyalty, "merchant");
+  printer.cut();
+  if (process.env.CASH_DRAWER_KICK !== "0") {
+    printer.openCashDrawer();
+  }
+  await printer.execute();
+  return { ok: true };
+}
+
+type CopyVariant = "customer" | "merchant";
+
+/**
+ * Render one copy of the sales receipt to the open printer connection.
+ * Customer + merchant share the same body — only the loyalty block,
+ * the "MERCHANT COPY" banner, and the trailing signature lines differ.
+ */
+async function printSaleCopy(
+  printer: Printer,
+  sale: SaleRow,
+  lines: LineRow[],
+  payments: PaymentRow[],
+  loyalty: LoyaltyFooter | undefined,
+  variant: CopyVariant,
+): Promise<void> {
   // Logo at the top — falls through silently if the asset is missing.
   await printLogo(printer);
 
@@ -158,6 +197,11 @@ export async function printSaleReceipt({
   printer.println("Sales Receipt");
   printer.bold(false);
   printer.setTextNormal();
+  if (variant === "merchant") {
+    printer.bold(true);
+    printer.println("** MERCHANT COPY **");
+    printer.bold(false);
+  }
   printer.println(
     new Date(sale.completed_at ?? sale.created_at).toLocaleString(),
   );
@@ -278,7 +322,9 @@ export async function printSaleReceipt({
   }
 
   // Loyalty footer — points earned (members) or join offer (walk-ins).
-  if (loyalty && loyalty.points > 0) {
+  // Customer copy only; the merchant copy stays free of marketing
+  // material and uses that space for the signature block.
+  if (variant === "customer" && loyalty && loyalty.points > 0) {
     printer.newLine();
     printer.alignLeft();
     if (loyalty.is_member) {
@@ -320,6 +366,27 @@ export async function printSaleReceipt({
     printer.println("Thank You!");
   }
 
+  // Merchant copy signature block: policy acknowledgement on every
+  // transaction, plus a cardholder line when any payment is a card.
+  if (variant === "merchant") {
+    const hasCard = payments.some((p) => p.method === "card");
+    printer.newLine();
+    printer.alignLeft();
+    printer.println("X _____________________________________");
+    printer.println("   Customer signature");
+    printer.println("   (acknowledging return policy above)");
+    if (hasCard) {
+      printer.newLine();
+      printer.println("X _____________________________________");
+      printer.println("   Cardholder signature");
+      printer.newLine();
+      printer.alignCenter();
+      printer.println("I AGREE TO PAY THE ABOVE TOTAL ACCORDING");
+      printer.println("TO MY CARD ISSUER AGREEMENT.");
+    }
+    printer.alignCenter();
+  }
+
   // Ticket barcode — EAN-13 when seq fits, Code128 otherwise.
   printer.newLine();
   try {
@@ -335,14 +402,6 @@ export async function printSaleReceipt({
   }
 
   printer.newLine();
-  printer.cut();
-
-  if (process.env.CASH_DRAWER_KICK !== "0") {
-    printer.openCashDrawer();
-  }
-
-  await printer.execute();
-  return { ok: true };
 }
 
 function humanMethod(m: PaymentRow["method"]): string {
