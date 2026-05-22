@@ -38,7 +38,7 @@ ENV NPM_CONFIG_PRODUCTION=false
 ENV CI=true
 ENV DOCKER_BUILD=1
 ENV NEXT_REACT_COMPILER=0
-ENV NODE_OPTIONS=--max-old-space-size=4096
+ENV NODE_OPTIONS=--max-old-space-size=2560
 COPY --link --from=deps /app/node_modules ./node_modules
 COPY --link . .
 # BuildKit cache for .next/cache — incremental webpack + TS cache survives
