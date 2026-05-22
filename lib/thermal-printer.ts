@@ -148,14 +148,15 @@ export async function printSaleReceipt({
     );
   }
 
-  // Two separate execute() calls — one per copy — so each TCP write
-  // stays well below the printer's input-buffer ceiling. If the second
-  // copy fails for any reason the customer still has their copy in hand.
-  await printSaleCopy(printer, sale, lines, payments, loyalty, "customer");
+  // Merchant copy prints first — it's the one the cashier needs in hand
+  // for signatures while the customer copy is still feeding out. Two
+  // separate execute() calls so each TCP write stays well below the
+  // printer's input-buffer ceiling.
+  await printSaleCopy(printer, sale, lines, payments, loyalty, "merchant");
   printer.cut();
   await printer.execute();
 
-  await printSaleCopy(printer, sale, lines, payments, loyalty, "merchant");
+  await printSaleCopy(printer, sale, lines, payments, loyalty, "customer");
   printer.cut();
   if (process.env.CASH_DRAWER_KICK !== "0") {
     printer.openCashDrawer();
