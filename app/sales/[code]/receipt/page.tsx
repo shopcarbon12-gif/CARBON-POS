@@ -14,12 +14,23 @@ type SaleDetail = {
     subtotal: string;
     discount_amount: string;
     tax_amount: string;
+    tax_rate?: string | number | null;
     total_amount: string;
     completed_at: string | null;
     created_at: string;
     customer_email: string | null;
+    customer_first_name?: string | null;
+    customer_last_name?: string | null;
+    customer_store_credit_balance?: string | number | null;
     receipt_footer: string | null;
+    receipt_header?: string | null;
     return_policy: string | null;
+    address_line1?: string | null;
+    address_line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip?: string | null;
+    phone?: string | null;
   };
   lines: Array<{
     id: number;
@@ -33,6 +44,11 @@ type SaleDetail = {
     amount: string;
     change_given: string | null;
   }>;
+  loyalty?: {
+    is_member: boolean;
+    points: number;
+    dollar_value: number;
+  };
 };
 
 function ReceiptInner() {
@@ -114,6 +130,7 @@ function ReceiptInner() {
         sale={data.sale}
         lines={data.lines}
         payments={data.payments}
+        loyalty={data.loyalty}
       />
 
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -183,10 +183,21 @@ export async function POST(req: Request) {
       const regRow = reg.rows[0];
       if (!regRow) throw new Error("register_not_open");
 
+      // Per-location sale counter: atomically bump pos_locations.next_sale_seq
+      // and use the pre-bump value as this sale's sequence. The UPDATE row-locks
+      // pos_locations(id) so two concurrent cashiers on the same store can't
+      // collide.
       const seq = await client.query(
-        `SELECT nextval('pos_sale_number_seq') AS seq`,
+        `UPDATE pos_locations
+            SET next_sale_seq = next_sale_seq + 1
+          WHERE id = $1
+         RETURNING next_sale_seq - 1 AS seq`,
+        [regRow.pos_location_id],
       );
-      const saleNumber = formatSaleNumber(Number(seq.rows[0].seq));
+      const saleNumber = formatSaleNumber(
+        regRow.pos_location_id,
+        Number(seq.rows[0].seq),
+      );
 
       const saleRow = await client.query(
         `INSERT INTO pos_sales

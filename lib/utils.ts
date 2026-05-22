@@ -19,9 +19,22 @@ export function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-/** Format the next sale number as POS-00001, POS-00002, ... */
-export function formatSaleNumber(seq: number): string {
-  return `POS-${String(seq).padStart(5, "0")}`;
+/**
+ * Format the sale number as `[1100000][LL][SSS]` — fixed-width prefix +
+ * 2-digit location code + per-location sequence (min 3 digits, grows as
+ * needed past 999). The 13th digit on the EAN-13 barcode is the check
+ * digit and is computed by the barcode renderer, not stored.
+ *
+ *   formatSaleNumber(1, 7)   -> "110000001007"
+ *   formatSaleNumber(2, 1000)-> "1100000021000"  (13 chars, falls back
+ *                                                 to Code128 on the
+ *                                                 receipt)
+ */
+export function formatSaleNumber(locationId: number, saleSeq: number): string {
+  const prefix = "1100000";
+  const loc = String(locationId).padStart(2, "0");
+  const seq = String(saleSeq).padStart(3, "0");
+  return `${prefix}${loc}${seq}`;
 }
 
 /**

@@ -1,7 +1,10 @@
 "use client";
 
 import Image from "next/image";
+import { useMemo } from "react";
 import { formatMoney } from "@/lib/utils";
+import { ean13Display } from "@/lib/barcode";
+import { renderBarcodeSvg } from "@/lib/barcode-browser";
 
 type SaleHeader = {
   sale_number: string;
@@ -11,6 +14,7 @@ type SaleHeader = {
   subtotal: string;
   discount_amount: string;
   tax_amount: string;
+  tax_rate?: string | number | null;
   total_amount: string;
   completed_at: string | null;
   created_at: string;
@@ -23,6 +27,9 @@ type SaleHeader = {
   state?: string | null;
   zip?: string | null;
   phone?: string | null;
+  customer_first_name?: string | null;
+  customer_last_name?: string | null;
+  customer_store_credit_balance?: string | number | null;
 };
 
 type LineRow = {
@@ -40,75 +47,105 @@ type PaymentRow = {
 };
 
 /**
- * On-screen receipt rendered at thermal-paper proportions (80mm ≈ 320px
- * wide, monospaced font) so the cashier sees roughly what the printer
- * will spit out. Used on /pos/receipt and /admin/sales/[id].
+ * Receipt view tuned to the carbon_receipt_barcode_more_short_height.html
+ * reference: centered logo + address, "Sales Receipt" title, info block,
+ * items table, right-indented totals, PAYMENTS / STORE ACCOUNT sections,
+ * return policy, EAN-13 barcode of the ticket number. Rendered at 80mm
+ * (~22rem) so the on-screen preview matches paper.
  */
+type LoyaltyFooter = {
+  is_member: boolean;
+  points: number;
+  dollar_value: number;
+};
+
 export function ReceiptView({
   sale,
   lines,
   payments,
+  loyalty,
 }: {
   sale: SaleHeader;
   lines: LineRow[];
   payments: PaymentRow[];
+  loyalty?: LoyaltyFooter;
 }) {
-  const cityLine = [sale.city, sale.state, sale.zip].filter(Boolean).join(" ");
+  const cityLine = [sale.city, sale.state, sale.zip].filter(Boolean).join(", ");
   const discount = Number(sale.discount_amount);
+  const taxRate = sale.tax_rate != null ? Number(sale.tax_rate) : null;
+  const taxAmount = Number(sale.tax_amount);
+  const taxBase =
+    taxRate && taxRate > 0 ? Math.round((taxAmount / taxRate) * 100) / 100 : null;
+  const customerName = [sale.customer_first_name, sale.customer_last_name]
+    .filter(Boolean)
+    .join(" ");
+  const storeCredit =
+    sale.customer_store_credit_balance != null
+      ? Number(sale.customer_store_credit_balance)
+      : null;
+
+  const barcodeSvg = useMemo(
+    () => renderBarcodeSvg(sale.sale_number, { heightMm: 12, scale: 2 }),
+    [sale.sale_number],
+  );
+
   return (
     <div className="flex justify-center">
-      <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-5 w-[22rem] font-mono text-[12px] leading-tight text-black shadow-sm">
+      <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-5 w-[22rem] font-sans text-[12px] leading-tight text-black shadow-sm">
         <div className="flex flex-col items-center mb-2">
           <Image
             src="/logo.jpg"
             alt=""
-            width={120}
-            height={120}
-            className="mb-2 rounded"
+            width={170}
+            height={170}
+            className="mb-1.5"
             priority
           />
-          <p className="font-bold text-base tracking-wide uppercase text-center">
-            {sale.location_name}
+          <div className="text-[11px] leading-tight text-center">
+            {sale.address_line1 && <div>{sale.address_line1}</div>}
+            {sale.address_line2 && <div>{sale.address_line2}</div>}
+            {cityLine && <div>{cityLine}</div>}
+            <div>United States</div>
+            {sale.phone && <div>{sale.phone}</div>}
+          </div>
+          <p className="font-extrabold text-[16px] tracking-wide mt-3">
+            Sales Receipt
           </p>
-          {sale.address_line1 && <p>{sale.address_line1}</p>}
-          {sale.address_line2 && <p>{sale.address_line2}</p>}
-          {cityLine && <p>{cityLine}</p>}
-          {sale.phone && <p>{sale.phone}</p>}
-          {sale.receipt_header && (
-            <p className="text-center mt-1">{sale.receipt_header}</p>
-          )}
+          <p className="text-[11px]">
+            {new Date(sale.completed_at ?? sale.created_at).toLocaleString()}
+          </p>
         </div>
 
-        <Divider />
+        <section className="mt-3 space-y-0.5">
+          <Row label="Ticket:" value={sale.sale_number} />
+          <Row label="Register:" value={sale.register_name} />
+          <Row label="Employee:" value={sale.cashier_email} />
+          {customerName && <Row label="Customer:" value={customerName} />}
+        </section>
 
-        <div className="space-y-0.5">
-          <Row label="Sale" value={sale.sale_number} />
-          <Row label="Reg." value={sale.register_name} />
-          <Row
-            label="Date"
-            value={new Date(sale.completed_at ?? sale.created_at).toLocaleString()}
-          />
-          <Row label="Csr." value={sale.cashier_email} />
-        </div>
-
-        <Divider />
-
-        <ul>
+        <section className="mt-3">
+          <div className="grid grid-cols-[1fr_2.5rem_4.5rem] font-extrabold text-[12px] border-b border-black pb-0.5">
+            <span>Items</span>
+            <span className="text-right">#</span>
+            <span className="text-right">Price</span>
+          </div>
           {lines.map((l) => (
-            <li key={l.id} className="flex justify-between gap-2">
-              <span className="break-words">
-                {l.quantity}x {l.description}
+            <div
+              key={l.id}
+              className="grid grid-cols-[1fr_2.5rem_4.5rem] border-b border-black py-1 text-[11px]"
+            >
+              <span className="font-extrabold leading-tight">
+                {l.description}
               </span>
-              <span className="tabular-nums whitespace-nowrap">
+              <span className="text-right tabular-nums">{l.quantity}</span>
+              <span className="text-right tabular-nums">
                 {formatMoney(l.line_total)}
               </span>
-            </li>
+            </div>
           ))}
-        </ul>
+        </section>
 
-        <Divider />
-
-        <div className="space-y-0.5">
+        <section className="mt-2 ml-[7rem] text-[12px] leading-snug">
           <Row label="Subtotal" value={formatMoney(sale.subtotal)} mono />
           {discount > 0 && (
             <Row
@@ -117,54 +154,118 @@ export function ReceiptView({
               mono
             />
           )}
-          <Row label="Tax" value={formatMoney(sale.tax_amount)} mono />
-        </div>
+          <Row
+            label={
+              taxRate && taxBase != null
+                ? `Tax (${formatMoney(taxBase)} @ ${(taxRate * 100).toFixed(2)}%)`
+                : "Tax"
+            }
+            value={formatMoney(sale.tax_amount)}
+            mono
+          />
+          <Row
+            label="Total"
+            value={formatMoney(sale.total_amount)}
+            mono
+            bold
+          />
+        </section>
 
-        <div className="border-t border-dashed border-black/60 my-1 pt-1 flex justify-between font-bold text-[16px]">
-          <span>TOTAL</span>
-          <span className="tabular-nums">{formatMoney(sale.total_amount)}</span>
-        </div>
-
-        <Divider />
-
-        {payments.length > 1 && (
-          <p className="font-bold">Tendered</p>
-        )}
-        <div className="space-y-0.5">
-          {payments.map((p) => (
-            <div key={p.id}>
-              <Row
-                label={humanMethod(p.method)}
-                value={formatMoney(p.amount)}
-                mono
-              />
-              {p.method === "cash" && p.change_given ? (
+        <Section title="PAYMENTS">
+          <div className="ml-[7rem]">
+            {payments.map((p) => (
+              <div key={p.id}>
                 <Row
-                  label="  Change"
-                  value={formatMoney(p.change_given)}
+                  label={humanMethod(p.method)}
+                  value={formatMoney(p.amount)}
                   mono
-                  muted
                 />
-              ) : null}
+                {p.method === "cash" && p.change_given ? (
+                  <Row
+                    label="Change"
+                    value={formatMoney(p.change_given)}
+                    mono
+                    muted
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {storeCredit != null && (
+          <Section title="STORE ACCOUNT">
+            <div className="ml-[7rem]">
+              <Row label="On Deposit:" value={formatMoney(storeCredit)} mono />
             </div>
-          ))}
-        </div>
-
-        <Divider />
-
-        {sale.return_policy && (
-          <p className="text-center text-[11px]">{sale.return_policy}</p>
+          </Section>
         )}
-        <p className="text-center mt-1">
-          {sale.receipt_footer ?? "Thank you!"}
+
+        {loyalty && loyalty.points > 0 && (
+          <Section
+            title={loyalty.is_member ? "CARBON REWARDS" : "JOIN CARBON REWARDS"}
+          >
+            {loyalty.is_member ? (
+              <div className="ml-[7rem]">
+                <Row
+                  label="Points earned"
+                  value={String(loyalty.points)}
+                  mono
+                />
+                <Row
+                  label="Approx. cashback"
+                  value={formatMoney(loyalty.dollar_value)}
+                  mono
+                />
+              </div>
+            ) : (
+              <p className="text-[11px] leading-snug">
+                You would have earned <b>{loyalty.points} pts</b> (~
+                {formatMoney(loyalty.dollar_value)}). Ask the cashier to enroll
+                on your next visit and start saving!
+              </p>
+            )}
+          </Section>
+        )}
+
+        <section className="mt-4 text-center">
+          <p className="font-extrabold text-[14px] tracking-wide">
+            {sale.return_policy ?? "NO REFUNDS — EXCHANGE ONLY"}
+          </p>
+        </section>
+
+        <p className="mt-3 text-center text-[12px]">
+          {sale.receipt_footer ??
+            (customerName ? `Thank You ${customerName}!` : "Thank You!")}
+        </p>
+
+        <div
+          className="mt-3 flex justify-center [&_svg]:w-[80%] [&_svg]:h-auto"
+          dangerouslySetInnerHTML={{ __html: barcodeSvg }}
+        />
+        <p className="text-center text-[10px] mt-0.5 tracking-wider">
+          {ean13Display(sale.sale_number)}
         </p>
       </div>
     </div>
   );
 }
 
-function Divider() {
-  return <div className="border-t border-dashed border-black/40 my-2" />;
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mt-3">
+      <p className="font-extrabold text-[12px] tracking-wider border-b border-black pb-0.5">
+        {title}
+      </p>
+      <div className="mt-1">{children}</div>
+    </section>
+  );
 }
 
 function Row({
@@ -172,15 +273,19 @@ function Row({
   value,
   mono = false,
   muted = false,
+  bold = false,
 }: {
   label: string;
   value: string;
   mono?: boolean;
   muted?: boolean;
+  bold?: boolean;
 }) {
   return (
     <div
-      className={`flex justify-between gap-2 ${muted ? "text-black/60" : ""}`}
+      className={`flex justify-between gap-2 ${muted ? "text-black/60" : ""} ${
+        bold ? "font-extrabold text-[13px]" : ""
+      }`}
     >
       <span>{label}</span>
       <span className={mono ? "tabular-nums" : ""}>{value}</span>
@@ -191,7 +296,7 @@ function Row({
 export function humanMethod(m: string): string {
   return (
     {
-      card: "Card",
+      card: "Credit Card",
       cash: "Cash",
       check: "Check",
       store_credit: "Store credit",

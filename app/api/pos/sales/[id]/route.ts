@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { computeEarn } from "@/lib/loyalty-earn";
 
 /**
  * GET /api/pos/sales/:id
@@ -29,10 +30,14 @@ export async function GET(
               pl.return_policy,
               pl.address_line1, pl.address_line2, pl.city, pl.state, pl.zip,
               pl.phone,
+              pl.tax_rate,
               l.name AS location_name,
               r.name AS register_name,
               u.email AS cashier_email,
-              c.first_name, c.last_name, c.email AS customer_email
+              c.first_name AS customer_first_name,
+              c.last_name  AS customer_last_name,
+              c.email      AS customer_email,
+              c.store_credit_balance AS customer_store_credit_balance
          FROM pos_sales s
          JOIN pos_locations pl ON pl.id = s.pos_location_id
          JOIN locations l      ON l.id = pl.wms_location_id
@@ -56,9 +61,28 @@ export async function GET(
   if (!sale) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+
+  // Loyalty footer data — points the customer earned (or would have
+  // earned, if they aren't enrolled). Same eligible-amount formula as
+  // the capture route's earn call.
+  const giftCardValue = linesRes.rows
+    .filter((l) => l.line_type === "gift_card")
+    .reduce((s, l) => s + Number(l.unit_price) * Number(l.quantity), 0);
+  const earn = computeEarn({
+    subtotal: sale.subtotal,
+    discount: sale.discount_amount,
+    gift_card_value: giftCardValue,
+  });
+  const isMember = sale.customer_id != null;
+
   return NextResponse.json({
     sale,
     lines: linesRes.rows,
     payments: paymentsRes.rows,
+    loyalty: {
+      is_member: isMember,
+      points: earn.points,
+      dollar_value: earn.dollar_value,
+    },
   });
 }

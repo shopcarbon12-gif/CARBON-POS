@@ -2,6 +2,8 @@ import path from "node:path";
 import { printer as Printer, types as PrinterTypes } from "node-thermal-printer";
 import sharp from "sharp";
 import { formatMoney } from "@/lib/utils";
+import { ean13Display } from "@/lib/barcode";
+import { renderBarcodePng } from "@/lib/barcode-node";
 
 /**
  * 80mm thermal printers are typically 384 dots wide at 8 dots/mm. We aim
@@ -46,6 +48,7 @@ type SaleRow = {
   subtotal: string;
   discount_amount: string;
   tax_amount: string;
+  tax_rate?: string | number | null;
   completed_at: string | null;
   created_at: string;
   receipt_header: string | null;
@@ -60,6 +63,9 @@ type SaleRow = {
   location_name: string;
   register_name: string;
   cashier_email: string;
+  customer_first_name?: string | null;
+  customer_last_name?: string | null;
+  customer_store_credit_balance?: string | number | null;
 };
 
 type LineRow = {
@@ -74,6 +80,12 @@ type PaymentRow = {
   change_given: string | null;
 };
 
+type LoyaltyFooter = {
+  is_member: boolean;
+  points: number;
+  dollar_value: number;
+};
+
 /**
  * Print a sale receipt to the configured network ESC/POS printer and kick
  * the cash drawer open. Falls back to { skipped: true } when the printer
@@ -83,10 +95,12 @@ export async function printSaleReceipt({
   sale,
   lines,
   payments,
+  loyalty,
 }: {
   sale: SaleRow;
   lines: LineRow[];
   payments: PaymentRow[];
+  loyalty?: LoyaltyFooter;
 }): Promise<{ ok: true } | { skipped: true }> {
   const host = process.env.THERMAL_PRINTER_HOST?.trim();
   if (!host) return { skipped: true };
@@ -107,110 +121,196 @@ export async function printSaleReceipt({
   await printLogo(printer);
 
   printer.alignCenter();
-  printer.setTextDoubleHeight();
-  printer.bold(true);
-  printer.println(sale.location_name);
-  printer.bold(false);
-  printer.setTextNormal();
   if (sale.address_line1) printer.println(sale.address_line1);
   if (sale.address_line2) printer.println(sale.address_line2);
-  const cityLine = [sale.city, sale.state, sale.zip].filter(Boolean).join(" ");
+  const cityLine = [sale.city, sale.state, sale.zip].filter(Boolean).join(", ");
   if (cityLine) printer.println(cityLine);
+  printer.println("United States");
   if (sale.phone) printer.println(sale.phone);
   if (sale.receipt_header) printer.println(sale.receipt_header);
-  printer.drawLine();
+
+  printer.newLine();
+  printer.setTextDoubleHeight();
+  printer.bold(true);
+  printer.println("Sales Receipt");
+  printer.bold(false);
+  printer.setTextNormal();
+  printer.println(
+    new Date(sale.completed_at ?? sale.created_at).toLocaleString(),
+  );
+  printer.newLine();
 
   printer.alignLeft();
-  printer.println(`Sale  ${sale.sale_number}`);
-  printer.println(`Reg.  ${sale.register_name}`);
-  printer.println(
-    `Date  ${new Date(sale.completed_at ?? sale.created_at).toLocaleString()}`,
-  );
-  printer.println(`Csr.  ${sale.cashier_email}`);
+  const customerName = [sale.customer_first_name, sale.customer_last_name]
+    .filter(Boolean)
+    .join(" ");
+  printer.println(`Ticket:    ${sale.sale_number}`);
+  printer.println(`Register:  ${sale.register_name}`);
+  printer.println(`Employee:  ${sale.cashier_email}`);
+  if (customerName) printer.println(`Customer:  ${customerName}`);
+
+  printer.newLine();
+  // Items header — bold underline row, then per-item rows split into
+  // bolded name plus right-aligned qty/price columns.
+  printer.bold(true);
+  printer.tableCustom([
+    { text: "Items", align: "LEFT", width: 0.62 },
+    { text: "#", align: "RIGHT", width: 0.13 },
+    { text: "Price", align: "RIGHT", width: 0.25 },
+  ]);
+  printer.bold(false);
   printer.drawLine();
 
   for (const l of lines) {
-    // 48-char paper: keep qty + first 36 chars of description on the
-    // left, money on the right. Long product names wrap to a second
-    // (indented) line so nothing gets silently truncated by the driver.
-    const qty = `${l.quantity}x `;
-    const right = formatMoney(l.line_total);
-    const leftBudget = 36;
-    const head = qty + l.description;
-    if (head.length <= leftBudget) {
+    const nameBudget = 28;
+    const name = l.description;
+    if (name.length <= nameBudget) {
+      printer.bold(true);
       printer.tableCustom([
-        { text: head, align: "LEFT", width: 0.7 },
-        { text: right, align: "RIGHT", width: 0.3 },
+        { text: name, align: "LEFT", width: 0.62 },
+        { text: String(l.quantity), align: "RIGHT", width: 0.13 },
+        { text: formatMoney(l.line_total), align: "RIGHT", width: 0.25 },
       ]);
+      printer.bold(false);
     } else {
-      const firstLine = head.slice(0, leftBudget);
-      const rest = head.slice(leftBudget);
+      // Bold the first line (truncated to the name budget) with the
+      // qty + price on the right. Spill the rest as plain follow-up
+      // lines so long product names don't get silently chopped.
+      printer.bold(true);
       printer.tableCustom([
-        { text: firstLine, align: "LEFT", width: 0.7 },
-        { text: right, align: "RIGHT", width: 0.3 },
+        { text: name.slice(0, nameBudget), align: "LEFT", width: 0.62 },
+        { text: String(l.quantity), align: "RIGHT", width: 0.13 },
+        { text: formatMoney(l.line_total), align: "RIGHT", width: 0.25 },
       ]);
-      // Indent continuation rows so they read as part of the same item.
-      for (let i = 0; i < rest.length; i += leftBudget - 2) {
-        printer.println("  " + rest.slice(i, i + leftBudget - 2));
+      printer.bold(false);
+      const rest = name.slice(nameBudget);
+      for (let i = 0; i < rest.length; i += nameBudget) {
+        printer.println(rest.slice(i, i + nameBudget));
       }
     }
   }
   printer.drawLine();
-  printer.tableCustom([
-    { text: "Subtotal", align: "LEFT", width: 0.7 },
-    { text: formatMoney(sale.subtotal), align: "RIGHT", width: 0.3 },
-  ]);
-  if (Number(sale.discount_amount) > 0) {
-    printer.tableCustom([
-      { text: "Discount", align: "LEFT", width: 0.7 },
-      { text: `-${formatMoney(sale.discount_amount)}`, align: "RIGHT", width: 0.3 },
-    ]);
-  }
-  printer.tableCustom([
-    { text: "Tax", align: "LEFT", width: 0.7 },
-    { text: formatMoney(sale.tax_amount), align: "RIGHT", width: 0.3 },
-  ]);
-  printer.setTextDoubleHeight();
-  printer.bold(true);
-  printer.tableCustom([
-    { text: "TOTAL", align: "LEFT", width: 0.5 },
-    { text: formatMoney(sale.total_amount), align: "RIGHT", width: 0.5 },
-  ]);
-  printer.bold(false);
-  printer.setTextNormal();
-  printer.drawLine();
 
-  // Tender breakdown — useful especially on split sales so the customer
-  // can see "Card $30 / Cash $20 / Gift $5" laid out on the receipt.
+  // Totals are right-aligned with a wide left gutter so the structure
+  // matches the on-screen receipt.
+  const totalsRow = (label: string, value: string, bold = false) => {
+    if (bold) printer.bold(true);
+    printer.tableCustom([
+      { text: label, align: "LEFT", width: 0.6 },
+      { text: value, align: "RIGHT", width: 0.4 },
+    ]);
+    if (bold) printer.bold(false);
+  };
+  totalsRow("Subtotal", formatMoney(sale.subtotal));
+  if (Number(sale.discount_amount) > 0) {
+    totalsRow("Discount", `-${formatMoney(sale.discount_amount)}`);
+  }
+  const taxRate = sale.tax_rate != null ? Number(sale.tax_rate) : null;
+  const taxAmount = Number(sale.tax_amount);
+  const taxBase =
+    taxRate && taxRate > 0
+      ? Math.round((taxAmount / taxRate) * 100) / 100
+      : null;
+  const taxLabel =
+    taxRate && taxBase != null
+      ? `Tax (${formatMoney(taxBase)} @ ${(taxRate * 100).toFixed(2)}%)`
+      : "Tax";
+  totalsRow(taxLabel, formatMoney(sale.tax_amount));
+  printer.setTextDoubleHeight();
+  totalsRow("TOTAL", formatMoney(sale.total_amount), true);
+  printer.setTextNormal();
+
+  // PAYMENTS section.
+  printer.newLine();
+  printer.bold(true);
+  printer.println("PAYMENTS");
+  printer.bold(false);
+  printer.drawLine();
   if (payments.length > 1) {
     printer.bold(true);
     printer.println("Tendered");
     printer.bold(false);
   }
   for (const p of payments) {
-    const label = humanMethod(p.method);
-    printer.tableCustom([
-      { text: label, align: "LEFT", width: 0.7 },
-      { text: formatMoney(p.amount), align: "RIGHT", width: 0.3 },
-    ]);
+    totalsRow(humanMethod(p.method), formatMoney(p.amount));
     if (p.method === "cash" && p.change_given) {
-      printer.tableCustom([
-        { text: "  Change", align: "LEFT", width: 0.7 },
-        { text: formatMoney(p.change_given), align: "RIGHT", width: 0.3 },
-      ]);
+      totalsRow("  Change", formatMoney(p.change_given));
     }
   }
 
-  printer.drawLine();
-  printer.alignCenter();
-  if (sale.return_policy) {
-    printer.println(sale.return_policy);
+  // STORE ACCOUNT section (only when a customer with a balance is on the sale).
+  if (
+    sale.customer_store_credit_balance != null &&
+    Number(sale.customer_store_credit_balance) !== 0
+  ) {
+    printer.newLine();
+    printer.bold(true);
+    printer.println("STORE ACCOUNT");
+    printer.bold(false);
+    printer.drawLine();
+    totalsRow(
+      "On Deposit:",
+      formatMoney(sale.customer_store_credit_balance),
+    );
   }
+
+  // Loyalty footer — points earned (members) or join offer (walk-ins).
+  if (loyalty && loyalty.points > 0) {
+    printer.newLine();
+    printer.alignLeft();
+    if (loyalty.is_member) {
+      printer.bold(true);
+      printer.println("CARBON REWARDS");
+      printer.bold(false);
+      printer.drawLine();
+      totalsRow("Points earned", `${loyalty.points}`);
+      totalsRow(
+        "Approx. cashback",
+        formatMoney(loyalty.dollar_value),
+      );
+    } else {
+      printer.bold(true);
+      printer.println("JOIN CARBON REWARDS");
+      printer.bold(false);
+      printer.drawLine();
+      printer.alignLeft();
+      printer.println(
+        `You would have earned ${loyalty.points} pts (about ${formatMoney(
+          loyalty.dollar_value,
+        )}).`,
+      );
+      printer.println("Ask the cashier to enroll on your next visit.");
+    }
+  }
+
+  // Policy + thanks.
+  printer.newLine();
+  printer.alignCenter();
+  printer.bold(true);
+  printer.println(sale.return_policy ?? "NO REFUNDS - EXCHANGE ONLY");
+  printer.bold(false);
   if (sale.receipt_footer) {
     printer.println(sale.receipt_footer);
+  } else if (customerName) {
+    printer.println(`Thank You ${customerName}!`);
   } else {
-    printer.println("Thank you!");
+    printer.println("Thank You!");
   }
+
+  // Ticket barcode — EAN-13 when seq fits, Code128 otherwise.
+  printer.newLine();
+  try {
+    const barcodePng = await renderBarcodePng(sale.sale_number, {
+      heightMm: 12,
+      scale: 2,
+    });
+    await printer.printImageBuffer(barcodePng);
+    printer.println(ean13Display(sale.sale_number));
+  } catch (err) {
+    console.warn("[thermal] barcode render failed:", err);
+    printer.println(ean13Display(sale.sale_number));
+  }
+
   printer.newLine();
   printer.cut();
 
@@ -225,7 +325,7 @@ export async function printSaleReceipt({
 function humanMethod(m: PaymentRow["method"]): string {
   switch (m) {
     case "card":
-      return "Card";
+      return "Credit Card";
     case "cash":
       return "Cash";
     case "check":
