@@ -154,9 +154,9 @@ export async function printSaleReceipt({
   // bolded name plus right-aligned qty/price columns.
   printer.bold(true);
   printer.tableCustom([
-    { text: "Items", align: "LEFT", width: 0.62 },
+    { text: "ITEMS", align: "LEFT", width: 0.62 },
     { text: "#", align: "RIGHT", width: 0.13 },
-    { text: "Price", align: "RIGHT", width: 0.25 },
+    { text: "PRICE", align: "RIGHT", width: 0.25 },
   ]);
   printer.bold(false);
   printer.drawLine();

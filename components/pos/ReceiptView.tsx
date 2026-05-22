@@ -145,9 +145,9 @@ export function ReceiptView({
 
         <section>
           <div style={S.itemsHeader}>
-            <span>Items</span>
+            <span>ITEMS</span>
             <span style={S.alignRight}>#</span>
-            <span style={S.alignRight}>Price</span>
+            <span style={S.alignRight}>PRICE</span>
           </div>
 
           {lines.map((l) => (
