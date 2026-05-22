@@ -201,10 +201,10 @@ export function CustomerForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <form onSubmit={submit} className="space-y-6 min-w-0">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
         {/* LEFT: Type / Created / Biographical / Phones */}
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0">
           <Section title={null}>
             <Row label="Type">
               <select
@@ -309,7 +309,7 @@ export function CustomerForm({
         </div>
 
         {/* MIDDLE: Address / Other / Tags */}
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0">
           <Section title="Address">
             <Row label="Country">
               <input
@@ -395,7 +395,7 @@ export function CustomerForm({
         </div>
 
         {/* RIGHT: Contact channel + consent */}
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0">
           <Section title="Contact">
             <p className="text-xs text-[var(--color-pos-muted)] px-3 pt-1 pb-2">
               To select your customer&apos;s preferred contact method, you need
@@ -493,15 +493,15 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[7rem_1fr] items-center gap-3 px-3 py-2">
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 px-3 py-2">
       {label ? (
-        <label className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted">
+        <label className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted break-words">
           {label}
         </label>
       ) : (
         <span />
       )}
-      <div>{children}</div>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

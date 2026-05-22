@@ -14,17 +14,25 @@ export function CartPanel({
   onChangeQty,
   onRemove,
   onEditDiscount,
+  saleNumberPreview,
 }: {
   lines: CartLine[];
   onChangeQty: (cartId: string, next: number) => void;
   onRemove: (cartId: string) => void;
   onEditDiscount: (cartId: string) => void;
+  /** 6-char "LL+SSS+check" preview of the sale # the next completed
+   *  sale will receive (e.g. "010012"). Rendered next to the "Cart"
+   *  label in the header — purely informational. */
+  saleNumberPreview?: string | null;
 }) {
+  const headerLabel = saleNumberPreview
+    ? `Cart \\ Sale ${saleNumberPreview}`
+    : "Cart";
   if (lines.length === 0) {
     return (
       <div className="carbon-card flex-1 flex flex-col min-h-[200px]">
         <div className="px-4 py-3 border-b border-[var(--carbon-border-soft)] text-xs uppercase tracking-wider font-bold text-[var(--carbon-muted)]">
-          Cart
+          {headerLabel}
         </div>
         <div className="flex-1 flex items-center justify-center p-10 text-center">
           <p className="text-[var(--carbon-muted)]">
@@ -37,7 +45,7 @@ export function CartPanel({
   return (
     <div className="carbon-card overflow-hidden flex-1 flex flex-col">
       <div className="px-4 py-3 border-b border-[var(--carbon-border-soft)] text-xs uppercase tracking-wider font-bold text-[var(--carbon-muted)]">
-        Cart
+        {headerLabel}
       </div>
       <div className="overflow-y-auto flex-1">
         <ul>
@@ -229,9 +237,9 @@ function ModeBadge({
   return (
     <span
       title={title}
-      className={`shrink-0 mr-3 inline-flex h-[22px] w-[64px] items-center justify-center rounded border px-2 leading-none ${colorClass}`}
+      className={`tap shrink-0 mr-3 inline-flex w-[64px] items-center justify-center border px-2 leading-none ${colorClass}`}
     >
-      <IconCmp className="h-4 w-4" aria-hidden />
+      <IconCmp className="h-7 w-7" aria-hidden />
     </span>
   );
 }

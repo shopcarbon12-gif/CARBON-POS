@@ -21,6 +21,8 @@ type PosLocationRow = {
   timezone: string;
   is_active: boolean;
   register_count: number;
+  printer_host: string | null;
+  printer_port: number | null;
 };
 
 type WmsLocationRow = { id: string; name: string };
@@ -66,6 +68,8 @@ function LocationCard({ loc }: { loc: PosLocationRow }) {
       phone: ns(fd.get("phone")),
       timezone: String(fd.get("timezone") || "America/New_York"),
       is_active: fd.get("is_active") === "on",
+      printer_host: ns(fd.get("printer_host")),
+      printer_port: Number(fd.get("printer_port") || 9100),
     };
     const res = await fetch(`/api/pos/locations/${loc.id}`, {
       method: "PATCH",
@@ -150,6 +154,19 @@ function LocationCard({ loc }: { loc: PosLocationRow }) {
           label="ZIP"
           name="zip"
           defaultValue={loc.zip ?? ""}
+        />
+        <Field
+          label="Receipt printer host"
+          name="printer_host"
+          defaultValue={loc.printer_host ?? ""}
+        />
+        <Field
+          label="Receipt printer port"
+          name="printer_port"
+          type="number"
+          min="1"
+          max="65535"
+          defaultValue={String(loc.printer_port ?? 9100)}
         />
       </div>
       {error && <p className="text-[var(--color-pos-danger)] mt-2">{error}</p>}

@@ -66,7 +66,26 @@ type SaleRow = {
   customer_first_name?: string | null;
   customer_last_name?: string | null;
   customer_store_credit_balance?: string | number | null;
+  /** Per-location printer config from pos_locations. Falls back to the
+   *  THERMAL_PRINTER_HOST / _PORT env vars when null (test/dev). */
+  printer_host?: string | null;
+  printer_port?: number | string | null;
 };
+
+/**
+ * Resolve the host/port for a print job. Per-location DB config wins;
+ * the env vars are kept as a single-store dev fallback.
+ */
+function resolvePrinterTarget(override?: {
+  host?: string | null;
+  port?: number | string | null;
+}): { host: string; port: number } | null {
+  const host = (override?.host ?? process.env.THERMAL_PRINTER_HOST ?? "").trim();
+  if (!host) return null;
+  const portRaw = override?.port ?? process.env.THERMAL_PRINTER_PORT ?? 9100;
+  const port = Number(portRaw) || 9100;
+  return { host, port };
+}
 
 type LineRow = {
   description: string;
@@ -102,19 +121,23 @@ export async function printSaleReceipt({
   payments: PaymentRow[];
   loyalty?: LoyaltyFooter;
 }): Promise<{ ok: true } | { skipped: true }> {
-  const host = process.env.THERMAL_PRINTER_HOST?.trim();
-  if (!host) return { skipped: true };
-  const port = Number(process.env.THERMAL_PRINTER_PORT ?? 9100);
+  const target = resolvePrinterTarget({
+    host: sale.printer_host,
+    port: sale.printer_port,
+  });
+  if (!target) return { skipped: true };
   const printer = new Printer({
     type: PrinterTypes.EPSON,
-    interface: `tcp://${host}:${port}`,
+    interface: `tcp://${target.host}:${target.port}`,
     options: { timeout: 5_000 },
     width: 48,
   });
 
   const isConnected = await printer.isPrinterConnected();
   if (!isConnected) {
-    throw new Error(`Printer at ${host}:${port} is not reachable.`);
+    throw new Error(
+      `Printer at ${target.host}:${target.port} is not reachable.`,
+    );
   }
 
   // Logo at the top — falls through silently if the asset is missing.
@@ -346,19 +369,23 @@ function humanMethod(m: PaymentRow["method"]): string {
  * configured. Centralises the host/port/connection check so the helpers
  * below all share the same fallback behavior in dev.
  */
-async function connectPrinter(): Promise<Printer | null> {
-  const host = process.env.THERMAL_PRINTER_HOST?.trim();
-  if (!host) return null;
-  const port = Number(process.env.THERMAL_PRINTER_PORT ?? 9100);
+async function connectPrinter(override?: {
+  host?: string | null;
+  port?: number | string | null;
+}): Promise<Printer | null> {
+  const target = resolvePrinterTarget(override);
+  if (!target) return null;
   const printer = new Printer({
     type: PrinterTypes.EPSON,
-    interface: `tcp://${host}:${port}`,
+    interface: `tcp://${target.host}:${target.port}`,
     options: { timeout: 5_000 },
     width: 48,
   });
   const isConnected = await printer.isPrinterConnected();
   if (!isConnected) {
-    throw new Error(`Printer at ${host}:${port} is not reachable.`);
+    throw new Error(
+      `Printer at ${target.host}:${target.port} is not reachable.`,
+    );
   }
   return printer;
 }
@@ -371,6 +398,8 @@ type CashMovementSlip = {
   done_by_name: string;
   location_name: string;
   register_name: string;
+  printer_host?: string | null;
+  printer_port?: number | string | null;
 };
 
 /**
@@ -381,7 +410,10 @@ type CashMovementSlip = {
 export async function printCashMovementSlip(
   slip: CashMovementSlip,
 ): Promise<{ ok: true } | { skipped: true }> {
-  const printer = await connectPrinter();
+  const printer = await connectPrinter({
+    host: slip.printer_host,
+    port: slip.printer_port,
+  });
   if (!printer) return { skipped: true };
 
   const verb =
@@ -430,6 +462,8 @@ type OpenSlip = {
   opened_by_name: string;
   location_name: string;
   register_name: string;
+  printer_host?: string | null;
+  printer_port?: number | string | null;
 };
 
 /**
@@ -439,7 +473,10 @@ type OpenSlip = {
 export async function printRegisterOpenSlip(
   slip: OpenSlip,
 ): Promise<{ ok: true } | { skipped: true }> {
-  const printer = await connectPrinter();
+  const printer = await connectPrinter({
+    host: slip.printer_host,
+    port: slip.printer_port,
+  });
   if (!printer) return { skipped: true };
 
   printer.alignCenter();
@@ -487,6 +524,8 @@ type EodSlip = {
   total_counted: string;
   total_over_short: string;
   note: string | null;
+  printer_host?: string | null;
+  printer_port?: number | string | null;
 };
 
 /**
@@ -497,7 +536,10 @@ type EodSlip = {
 export async function printRegisterCloseEod(
   slip: EodSlip,
 ): Promise<{ ok: true } | { skipped: true }> {
-  const printer = await connectPrinter();
+  const printer = await connectPrinter({
+    host: slip.printer_host,
+    port: slip.printer_port,
+  });
   if (!printer) return { skipped: true };
 
   printer.alignCenter();

@@ -28,6 +28,7 @@ export async function POST(
     `SELECT s.*, pl.receipt_header, pl.receipt_footer, pl.return_policy,
             pl.address_line1, pl.address_line2, pl.city, pl.state, pl.zip,
             pl.phone, pl.tax_rate,
+            pl.printer_host, pl.printer_port,
             l.name AS location_name, r.name AS register_name,
             u.email AS cashier_email,
             c.first_name AS customer_first_name,

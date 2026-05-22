@@ -86,29 +86,31 @@ export default async function CustomerDetailPage({
       code={code}
       title={[customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Customer"}
     >
-      <section className="p-6 max-w-7xl">
+      <section className="p-6 max-w-7xl min-w-0">
         <Link
           href={`/customers/${code}`}
           className="text-xs uppercase tracking-wider font-bold text-carbon-blue hover:underline"
         >
           ← All customers
         </Link>
-        <h1 className="text-2xl font-bold mt-2">
+        <h1 className="text-2xl font-bold mt-2 break-words">
           {[customer.first_name, customer.last_name].filter(Boolean).join(" ")}
         </h1>
         <p className="text-xs text-[var(--color-pos-muted)] mb-6">
           Customer since {new Date(customer.created_at).toLocaleDateString()}
         </p>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          <CustomerForm code={code} initial={initial} />
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+          <div className="min-w-0">
+            <CustomerForm code={code} initial={initial} />
+          </div>
 
-          <aside className="space-y-4">
+          <aside className="space-y-4 min-w-0">
             <div className="bg-white border border-[var(--color-pos-border)] p-4">
               <p className="text-xs text-[var(--color-pos-muted)]">
                 Store credit
               </p>
-              <p className="total-display text-3xl mt-1">
+              <p className="total-display text-3xl mt-1 break-words">
                 {formatMoney(customer.store_credit_balance)}
               </p>
               <StoreCreditAdjuster customerId={cid} />
@@ -124,23 +126,23 @@ export default async function CustomerDetailPage({
                   {sales.rows.map((s) => (
                     <li
                       key={s.id}
-                      className="py-2 flex items-center justify-between"
+                      className="py-2 flex items-start justify-between gap-3"
                     >
-                      <span>
+                      <span className="min-w-0 flex-1">
                         <Link
-                          className="hover:underline"
+                          className="hover:underline tabular-nums block truncate"
                           href={`/sales/${code}/${s.id}`}
+                          title={s.sale_number}
                         >
                           {s.sale_number}
                         </Link>
-                        <br />
-                        <span className="text-xs text-[var(--color-pos-muted)]">
+                        <span className="text-xs text-[var(--color-pos-muted)] block truncate">
                           {s.completed_at &&
                             new Date(s.completed_at).toLocaleDateString()}{" "}
                           · {s.register_name}
                         </span>
                       </span>
-                      <span className="text-right font-medium tabular-nums">
+                      <span className="text-right font-medium tabular-nums shrink-0">
                         {formatMoney(s.total_amount)}
                         <br />
                         <span className="text-xs text-[var(--color-pos-muted)]">

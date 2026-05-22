@@ -16,6 +16,8 @@ const patchSchema = z.object({
   phone: z.string().nullable().optional(),
   timezone: z.string().optional(),
   is_active: z.boolean().optional(),
+  printer_host: z.string().nullable().optional(),
+  printer_port: z.number().int().min(1).max(65535).optional(),
 });
 
 export async function PATCH(

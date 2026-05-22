@@ -45,6 +45,12 @@ export function SellScreen({
   const [discountFor, setDiscountFor] = useState<string | "sale" | null>(null);
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  // Preview of the sale # the next completed sale will receive.
+  // Rendered in the CartPanel header so the cashier can see + cite
+  // the sale # to the customer before they pay.
+  const [saleNumberPreview, setSaleNumberPreview] = useState<string | null>(
+    null,
+  );
   // When the cashier searches and picks an item whose catalog row is
   // RFID-mode (is_manual_only=false), we hold the item here and surface
   // a confirm dialog instead of adding straight to the cart. The two
@@ -186,6 +192,37 @@ export function SellScreen({
       void startReader();
     }
   };
+
+  // Fetch the predicted next sale # on mount + whenever the cart
+  // empties (post-sale or post-clear) so the header always reflects
+  // the upcoming ticket the cashier is building.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const sess = await fetch("/api/pos/sessions?current=1").then((r) =>
+          r.json(),
+        );
+        const registerId: number | null = sess?.session?.register_id ?? null;
+        if (!registerId) return;
+        const r = await fetch(
+          `/api/pos/sales/next-number?register_id=${registerId}`,
+        );
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!cancelled && typeof d.display === "string") {
+          setSaleNumberPreview(d.display);
+        }
+      } catch {
+        /* best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Refresh when the cart resets to empty (post-sale) — that's when
+    // pos_locations.next_sale_seq has incremented.
+  }, [lines.length === 0]);
 
   // Auto-start on mount, auto-stop on unmount. The unmount path covers
   // sale completion (capture redirects to /receipt), tab close, and
@@ -1044,6 +1081,7 @@ export function SellScreen({
             onChangeQty={changeQty}
             onRemove={removeLine}
             onEditDiscount={(id) => setDiscountFor(id)}
+            saleNumberPreview={saleNumberPreview}
           />
 
           <div className="flex gap-4 pt-2">

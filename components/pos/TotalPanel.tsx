@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { capitalizeName, formatMoney } from "@/lib/utils";
+import { CustomerExpandModal } from "./CustomerExpandModal";
 import type { CartTotals } from "@/types/pos";
 
 export type PickedCustomer = {
@@ -277,6 +278,7 @@ function CustomerSearchRow({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [expandedOpen, setExpandedOpen] = useState(false);
   const debounceRef = useRef<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -332,13 +334,13 @@ function CustomerSearchRow({
 
   return (
     <div ref={wrapRef} className="relative">
-      {/* Row sized to match CollectingPhoneRow / PendingPhoneBox: flex-1
-          input with the same `px-3 py-2` content, and w-12 sibling
-          buttons so the whole strip visually aligns regardless of which
-          state the customer slot is in. */}
+      {/* Row sized to match CollectingPhoneRow / PendingPhoneBox: every
+          child uses .tap (min-height 56px) so the strip aligns to the
+          other 56px touch-targets in this panel (Apply Discount, Other),
+          and the input + side buttons are visually the same height. */}
       <div className="flex items-stretch gap-2">
         {/* Search input — flex-1, leading magnifier */}
-        <div className="carbon-input flex-1 flex items-center gap-2 px-3 py-2">
+        <div className="carbon-input tap flex-1 flex items-center gap-2 px-3">
           <span
             className="material-symbols-outlined text-carbon-text-muted text-xl shrink-0"
             aria-hidden
@@ -363,9 +365,21 @@ function CustomerSearchRow({
           onClick={onNewCustomer}
           title="New customer (full form)"
           aria-label="New customer"
-          className="carbon-btn-primary inline-flex items-center justify-center w-12 shrink-0"
+          className="carbon-btn-primary tap inline-flex items-center justify-center w-12 shrink-0"
         >
           <span className="material-symbols-outlined text-xl">add</span>
+        </button>
+        {/* Expand search — opens the customers-tab table in a popup so
+            the cashier can scan a wider list / sort / filter without
+            leaving the sale. */}
+        <button
+          type="button"
+          onClick={() => setExpandedOpen(true)}
+          title="Expand search — browse all customers"
+          aria-label="Expand search"
+          className="tap inline-flex items-center justify-center w-12 shrink-0 border border-carbon-border bg-white text-carbon-text hover:bg-carbon-surface-soft transition-colors"
+        >
+          <span className="material-symbols-outlined text-xl">open_in_full</span>
         </button>
         {/* Re-send phone prompt to the reader — for when the cashier
             previously cancelled the prompt or wants to re-ask. */}
@@ -374,7 +388,7 @@ function CustomerSearchRow({
           onClick={onResendPhonePrompt}
           title="Ask the customer to enter their phone on the reader again"
           aria-label="Ask for phone on reader"
-          className="inline-flex items-center justify-center w-12 shrink-0 border border-carbon-border bg-white text-carbon-blue hover:bg-carbon-blue-soft transition-colors"
+          className="tap inline-flex items-center justify-center w-12 shrink-0 border border-carbon-border bg-white text-carbon-blue hover:bg-carbon-blue-soft transition-colors"
         >
           <span className="material-symbols-outlined text-xl">smartphone</span>
         </button>
@@ -419,6 +433,17 @@ function CustomerSearchRow({
           )}
         </div>
       ) : null}
+
+      <CustomerExpandModal
+        open={expandedOpen}
+        onClose={() => setExpandedOpen(false)}
+        onPick={(c) => {
+          onPick(c);
+          setQ("");
+          setResults([]);
+          setOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -470,7 +495,7 @@ function PendingPhoneBox({
         {/* Blinking phone display — cancel "×" sits inside the box on the
             right, no longer floating outside. Padded so the icon doesn't
             butt against the digits. */}
-        <div className="flex-1 px-3 py-2 border border-carbon-blue bg-white tabular-nums text-base font-semibold text-carbon-text flex items-center gap-2 animate-pulse">
+        <div className="tap flex-1 px-3 border border-carbon-blue bg-white tabular-nums text-base font-semibold text-carbon-text flex items-center gap-2 animate-pulse">
           <span className="material-symbols-outlined text-carbon-blue text-base shrink-0" aria-hidden>
             call
           </span>
@@ -495,7 +520,7 @@ function PendingPhoneBox({
           disabled={sending}
           title="Have the customer type their info on the reader"
           aria-label="Send to reader"
-          className="w-12 flex items-center justify-center border border-carbon-border bg-white text-carbon-blue disabled:opacity-50 hover:bg-carbon-blue-soft transition-colors"
+          className="tap w-12 flex items-center justify-center border border-carbon-border bg-white text-carbon-blue disabled:opacity-50 hover:bg-carbon-blue-soft transition-colors"
         >
           <span className="material-symbols-outlined text-[20px]" aria-hidden>
             {sending ? "more_horiz" : "send"}
@@ -507,7 +532,7 @@ function PendingPhoneBox({
           onClick={onConfirm}
           disabled={!canConfirm}
           title={canConfirm ? "Create customer + enroll in rewards" : "First and last name are required"}
-          className="w-12 bg-carbon-blue text-white text-2xl font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-carbon-blue/90 transition-colors"
+          className="tap w-12 bg-carbon-blue text-white text-2xl font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-carbon-blue/90 transition-colors"
         >
           +
         </button>
@@ -523,14 +548,14 @@ function PendingPhoneBox({
             value={firstName}
             onChange={(e) => onChangeFirst(capitalizeName(e.target.value))}
             placeholder="First name *"
-            className="flex-1 carbon-input px-3 py-2 text-sm"
+            className="flex-1 carbon-input tap px-3 text-sm"
             autoFocus
           />
           <input
             value={lastName}
             onChange={(e) => onChangeLast(capitalizeName(e.target.value))}
             placeholder="Last name *"
-            className="flex-1 carbon-input px-3 py-2 text-sm"
+            className="flex-1 carbon-input tap px-3 text-sm"
           />
         </div>
         <EmailInput value={email} onChange={onChangeEmail} />
@@ -564,7 +589,7 @@ function PendingPhoneBox({
 function CollectingPhoneRow({ onSkip }: { onSkip: () => void }) {
   return (
     <div className="flex items-stretch gap-2">
-      <div className="flex-1 px-3 py-2 border border-carbon-blue bg-carbon-blue-soft text-sm font-medium text-carbon-blue flex items-center gap-2 animate-pulse">
+      <div className="tap flex-1 px-3 border border-carbon-blue bg-carbon-blue-soft text-sm font-medium text-carbon-blue flex items-center gap-2 animate-pulse">
         <span
           className="material-symbols-outlined text-carbon-blue text-base"
           aria-hidden
@@ -578,7 +603,7 @@ function CollectingPhoneRow({ onSkip }: { onSkip: () => void }) {
         onClick={onSkip}
         title="Skip — show customer search instead"
         aria-label="Skip"
-        className="w-12 flex items-center justify-center border border-carbon-border bg-white text-carbon-text-muted hover:bg-carbon-surface-soft transition-colors"
+        className="tap w-12 flex items-center justify-center border border-carbon-border bg-white text-carbon-text-muted hover:bg-carbon-surface-soft transition-colors"
       >
         <span className="material-symbols-outlined text-lg" aria-hidden>
           arrow_forward
@@ -681,10 +706,10 @@ function EmailInput({
             emit(next, customMode ? custom : domain);
           }}
           placeholder="email (optional)"
-          className="flex-1 carbon-input px-3 py-2 text-sm min-w-0"
+          className="flex-1 carbon-input tap px-3 text-sm min-w-0"
           autoComplete="off"
         />
-        <span className="inline-flex items-center px-2 text-sm font-semibold text-carbon-text-muted bg-carbon-surface-soft border border-carbon-border">
+        <span className="tap inline-flex items-center px-2 text-sm font-semibold text-carbon-text-muted bg-carbon-surface-soft border border-carbon-border">
           @
         </span>
         <select
@@ -700,7 +725,7 @@ function EmailInput({
               emit(user, v);
             }
           }}
-          className="carbon-input px-2 py-2 text-sm bg-white cursor-pointer"
+          className="carbon-input tap px-2 text-sm bg-white cursor-pointer"
         >
           {POPULAR_US_DOMAINS.map((d) => (
             <option key={d} value={d}>
@@ -719,7 +744,7 @@ function EmailInput({
             emit(user, next);
           }}
           placeholder="domain.com"
-          className="w-full carbon-input px-3 py-2 text-sm"
+          className="w-full carbon-input tap px-3 text-sm"
           autoComplete="off"
         />
       )}

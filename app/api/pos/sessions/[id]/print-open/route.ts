@@ -27,7 +27,9 @@ export async function POST(
             s.opened_at,
             u.email AS opened_by_name,
             l.name  AS location_name,
-            r.name  AS register_name
+            r.name  AS register_name,
+            pl.printer_host,
+            pl.printer_port
        FROM pos_register_sessions s
        JOIN pos_registers   r  ON r.id = s.register_id
        JOIN pos_locations   pl ON pl.id = r.pos_location_id
@@ -48,6 +50,8 @@ export async function POST(
       opened_by_name: slip.opened_by_name,
       location_name: slip.location_name,
       register_name: slip.register_name,
+      printer_host: slip.printer_host,
+      printer_port: slip.printer_port,
     });
     return NextResponse.json(result);
   } catch (err) {

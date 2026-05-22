@@ -49,7 +49,9 @@ export async function POST(
             s.closed_at,
             u.email AS closed_by_name,
             l.name  AS location_name,
-            r.name  AS register_name
+            r.name  AS register_name,
+            pl.printer_host,
+            pl.printer_port
        FROM pos_register_sessions s
        JOIN pos_registers   r  ON r.id = s.register_id
        JOIN pos_locations   pl ON pl.id = r.pos_location_id
@@ -84,6 +86,8 @@ export async function POST(
       total_counted: String(totalCounted),
       total_over_short: String(totalOverShort),
       note: parsed.data.note ?? null,
+      printer_host: session.printer_host,
+      printer_port: session.printer_port,
     });
     return NextResponse.json(result);
   } catch (err) {
