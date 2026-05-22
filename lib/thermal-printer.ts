@@ -165,6 +165,79 @@ export async function printSaleReceipt({
   return { ok: true };
 }
 
+/**
+ * Build the raw ESC/POS bytes for both receipt copies without opening a
+ * TCP connection. Returned as hex strings so they can be shipped as JSON
+ * to the cashier's browser, which then POSTs them to the TM-m30II's
+ * built-in ePOS-Print HTTP endpoint over the LAN. This is how we side-
+ * step the cloud-server-can't-reach-LAN problem.
+ */
+export async function buildSaleReceiptPayload({
+  sale,
+  lines,
+  payments,
+  loyalty,
+}: {
+  sale: SaleRow;
+  lines: LineRow[];
+  payments: PaymentRow[];
+  loyalty?: LoyaltyFooter;
+}): Promise<
+  | { skipped: true }
+  | {
+      host: string;
+      port: number;
+      copies: { variant: CopyVariant; hex: string }[];
+    }
+> {
+  const target = resolvePrinterTarget({
+    host: sale.printer_host,
+    port: sale.printer_port,
+  });
+  if (!target) return { skipped: true };
+
+  // Construct the Printer without opening a socket — the network
+  // interface constructor stores host/port but only dials in execute()
+  // / isPrinterConnected(), neither of which we call here.
+  const printer = new Printer({
+    type: PrinterTypes.EPSON,
+    interface: `tcp://${target.host}:${target.port}`,
+    options: { timeout: 5_000 },
+    width: 48,
+  });
+
+  const copies: { variant: CopyVariant; hex: string }[] = [];
+
+  // Merchant first — same order the server-side path uses.
+  printer.clear();
+  await printSaleCopy(printer, sale, lines, payments, loyalty, "merchant");
+  printer.cut();
+  copies.push({
+    variant: "merchant",
+    hex: bufferToHex(printer.getBuffer()),
+  });
+
+  // Customer second, with drawer kick on the tail so the till opens
+  // exactly once per sale (matching the server-side behavior).
+  printer.clear();
+  await printSaleCopy(printer, sale, lines, payments, loyalty, "customer");
+  printer.cut();
+  if (process.env.CASH_DRAWER_KICK !== "0") {
+    printer.openCashDrawer();
+  }
+  copies.push({
+    variant: "customer",
+    hex: bufferToHex(printer.getBuffer()),
+  });
+
+  return { host: target.host, port: target.port, copies };
+}
+
+function bufferToHex(buf: Buffer | null): string {
+  if (!buf) return "";
+  return buf.toString("hex").toUpperCase();
+}
+
 type CopyVariant = "customer" | "merchant";
 
 /**

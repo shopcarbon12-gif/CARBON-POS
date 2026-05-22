@@ -79,24 +79,47 @@ function ReceiptInner() {
   async function print() {
     setPrintState("printing");
     setErrorMsg(null);
-    const res = await fetch(`/api/pos/sales/${saleId}/print`, {
-      method: "POST",
-    });
+
+    // 1) Cloud server builds the ESC/POS bytes (it knows the sale data,
+    //    formatting rules, sharp-rasterized logo, barcode). It does NOT
+    //    open a TCP socket — that's our job from this browser, which is
+    //    on the same LAN as the printer.
+    const res = await fetch(`/api/pos/sales/${saleId}/escpos`);
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setErrorMsg(data.message ?? "Couldn't reach the printer.");
+      setErrorMsg("Couldn't build the receipt.");
       setPrintState("error");
       return;
     }
-    const r = await res.json().catch(() => ({}));
-    if (r.skipped) {
+    const payload = await res.json();
+    if (payload.skipped) {
       setErrorMsg(
         "No receipt printer is configured for this location. Set it in Settings → Locations → printer host/port.",
       );
       setPrintState("error");
       return;
     }
-    setPrintState("done");
+
+    // 2) POST each copy as ePOS-Print XML to the printer over the LAN.
+    //    The TM-m30II accepts raw ESC/POS bytes inside a <command> tag
+    //    on its built-in /cgi-bin/epos/service.cgi endpoint.
+    try {
+      for (const copy of payload.copies as Array<{
+        variant: string;
+        hex: string;
+      }>) {
+        await sendToEposPrinter(payload.host, copy.hex);
+      }
+      setPrintState("done");
+    } catch (err) {
+      console.error("[print] ePOS-Print POST failed", err);
+      setErrorMsg(
+        "Couldn't reach the printer over the LAN. First-time setup: open " +
+          `https://${
+            (await safeGetPrinterHost(saleId)) ?? "the printer IP"
+          } in a new tab and accept the certificate warning, then try again.`,
+      );
+      setPrintState("error");
+    }
   }
 
   async function sendEmail() {
@@ -194,6 +217,53 @@ function ReceiptInner() {
       </button>
     </main>
   );
+}
+
+/**
+ * POST a hex-encoded ESC/POS payload to a TM-m30II's ePOS-Print HTTPS
+ * endpoint. The printer wraps raw bytes inside a `<command>` element
+ * and prints them as-is, so we don't have to translate the existing
+ * server-built ESC/POS into ePOS XML elements one tag at a time.
+ *
+ * Uses HTTPS (not HTTP) because the POS app is served from HTTPS and
+ * browsers block mixed-content fetches. The TM-m30II ships with a
+ * self-signed cert on port 443 — each cashier device must visit
+ * `https://<printer-ip>` once and accept the certificate warning to
+ * whitelist the printer; after that the fetch below works silently.
+ *
+ * `mode: 'no-cors'` because EPSON's web service doesn't emit CORS
+ * headers. The response is opaque, so we treat any successful network
+ * round-trip as "delivered" and rely on the cashier to spot a missing
+ * receipt.
+ */
+async function safeGetPrinterHost(saleId: number): Promise<string | null> {
+  try {
+    const r = await fetch(`/api/pos/sales/${saleId}/escpos`);
+    if (!r.ok) return null;
+    const p = await r.json();
+    return typeof p?.host === "string" ? p.host : null;
+  } catch {
+    return null;
+  }
+}
+
+async function sendToEposPrinter(host: string, hexBytes: string): Promise<void> {
+  const xml =
+    `<?xml version="1.0" encoding="utf-8"?>` +
+    `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">` +
+    `<s:Body>` +
+    `<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">` +
+    `<command>${hexBytes}</command>` +
+    `</epos-print>` +
+    `</s:Body>` +
+    `</s:Envelope>`;
+  const url = `https://${host}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
+  await fetch(url, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "text/xml; charset=utf-8" },
+    body: xml,
+  });
 }
 
 export default function ReceiptPage() {
