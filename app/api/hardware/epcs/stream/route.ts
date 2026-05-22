@@ -12,20 +12,20 @@ export const dynamic = "force-dynamic";
  * mint a short-lived WMS-format JWT for the signed-in cashier (HS256 over
  * the shared SESSION_SECRET — see lib/wms-session.ts), open an upstream SSE
  * connection to WMS_EDGE_STREAM_URL with `Authorization: Bearer <jwt>`, and
- * re-emit each EPC from the batched `data: {"epcs":[...]}` payload as
+ * re-emit each EPC from the batched payload as
  * `event: epc / data: {"epc":"..."}` so the existing modal contract stays
  * unchanged.
  *
  * Zone scoping (POS-only, not the whole WMS location):
- *   The JWT carries `lid` (warehouse location). WMS scopes its stream by
- *   that — meaning a cashier subscribed naively gets scans from every
- *   reader at the location, including warehouse aisle/office/transfer
- *   readers. To stop the cross-talk we (a) pass the cashier's
- *   `is_pos_dedicated=TRUE` device UUID up as `?device_id=<uuid>` so WMS
- *   can scope the stream server-side, and (b) defensively drop any frame
- *   whose payload identifies a different device. If the register isn't
- *   paired with a POS-dedicated reader we close immediately rather than
- *   leak warehouse scans.
+ *   WMS scopes /api/edge/stream by tenant + location only — every reader
+ *   at the location fans out to every subscriber. The publisher attaches
+ *   `deviceId` (camelCase) to each frame (see WMS
+ *   lib/server/edge-scan-hub.ts EdgeScanStreamPayload). We resolve the
+ *   cashier's POS-dedicated reader UUID via posReaderForCurrentSession
+ *   and STRICTLY drop any frame whose `deviceId` doesn't match. If the
+ *   register isn't paired with an is_pos_dedicated=TRUE device, the
+ *   stream refuses to open at all — better an explicit error than
+ *   warehouse cross-talk into the cart.
  */
 export async function GET() {
   const cashier = await currentCashier();
@@ -211,53 +211,21 @@ function handleFrame(
   }
   if (!payload || typeof payload !== "object") return;
 
-  // Defensive frame-level filter. WMS may put the reader identity on the
-  // frame as `device_id` / `reader_id`, and/or flag warehouse readers
-  // with `is_pos_dedicated:false`. Drop anything that clearly comes from
-  // a non-POS reader. A frame with no identifying field is allowed
-  // through — better than silently breaking when WMS hasn't been
-  // upgraded yet — but the upstream `?device_id=` query param should
-  // already keep those rare.
-  const p = payload as {
-    epcs?: unknown;
-    device_id?: string;
-    reader_id?: string;
-    is_pos_dedicated?: boolean;
-  };
-  const frameDeviceId =
-    typeof p.device_id === "string"
-      ? p.device_id
-      : typeof p.reader_id === "string"
-        ? p.reader_id
-        : null;
-  if (frameDeviceId && frameDeviceId !== posReaderId) return;
-  if (p.is_pos_dedicated === false) return;
+  // WMS publishes EdgeScanStreamPayload as
+  //   { deviceId: string, locationId: string, scanContext: string,
+  //     epcs: string[], ... }
+  // (carbon-warehouse-management/lib/server/edge-scan-hub.ts). We
+  // STRICTLY drop any frame whose deviceId isn't the POS-dedicated
+  // reader. Frames with no deviceId are also dropped — better to deliver
+  // nothing than to leak warehouse aisle / office / transfer scans into
+  // the cashier's cart.
+  const p = payload as { deviceId?: unknown; epcs?: unknown };
+  if (typeof p.deviceId !== "string" || p.deviceId !== posReaderId) return;
 
   const epcs = p.epcs;
   if (!Array.isArray(epcs)) return;
   for (const e of epcs) {
-    // Accept both flat strings and {epc, device_id} objects.
-    if (typeof e === "string" && e) {
-      send(`event: epc\ndata: ${JSON.stringify({ epc: e })}\n\n`);
-      continue;
-    }
-    if (e && typeof e === "object") {
-      const obj = e as {
-        epc?: unknown;
-        device_id?: unknown;
-        reader_id?: unknown;
-        is_pos_dedicated?: unknown;
-      };
-      if (typeof obj.epc !== "string" || !obj.epc) continue;
-      const itemDevice =
-        typeof obj.device_id === "string"
-          ? obj.device_id
-          : typeof obj.reader_id === "string"
-            ? obj.reader_id
-            : null;
-      if (itemDevice && itemDevice !== posReaderId) continue;
-      if (obj.is_pos_dedicated === false) continue;
-      send(`event: epc\ndata: ${JSON.stringify({ epc: obj.epc })}\n\n`);
-    }
+    if (typeof e !== "string" || !e) continue;
+    send(`event: epc\ndata: ${JSON.stringify({ epc: e })}\n\n`);
   }
 }
