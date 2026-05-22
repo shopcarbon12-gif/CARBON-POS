@@ -82,15 +82,17 @@ export function ReceiptView({
       ? Number(sale.customer_store_credit_balance)
       : null;
 
-  const barcodeSvg = useMemo(() => {
-    const raw = renderBarcodeSvg(sale.sale_number, { heightMm: 12, scale: 2 });
-    // bwip-js emits absolute width/height on the <svg>. Strip them so the
-    // 62mm container width takes effect via the parent's CSS — the
-    // intrinsic viewBox keeps the proportions.
-    return raw.replace(
-      /<svg([^>]*?)\s(?:width|height)="[^"]*"/g,
-      "<svg$1",
-    );
+  // Render the barcode as a data-URI <img> exactly like the reference
+  // HTML. Letting the browser size an <img> via CSS keeps it inside the
+  // 62mm box; the SVG's own digit labels (includetext:true) act as the
+  // human-readable line under the bars — we don't duplicate them.
+  const barcodeDataUri = useMemo(() => {
+    const svg = renderBarcodeSvg(sale.sale_number, { heightMm: 12, scale: 2 });
+    const base64 =
+      typeof window === "undefined"
+        ? Buffer.from(svg, "utf-8").toString("base64")
+        : window.btoa(unescape(encodeURIComponent(svg)));
+    return `data:image/svg+xml;base64,${base64}`;
   }, [sale.sale_number]);
 
   return (
@@ -256,11 +258,14 @@ export function ReceiptView({
         </div>
 
         <div style={S.barcodeWrap}>
-          <div
-            style={S.barcodeBox}
-            dangerouslySetInnerHTML={{ __html: barcodeSvg }}
-          />
-          <div style={S.barcodeNum}>{ean13Display(sale.sale_number)}</div>
+          <div style={S.barcodeBox}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={barcodeDataUri}
+              alt={`Barcode ${ean13Display(sale.sale_number)}`}
+              style={S.barcode}
+            />
+          </div>
         </div>
       </main>
     </div>
@@ -478,7 +483,6 @@ const S: Record<string, CSSProperties> = {
   policyMain: {
     fontSize: 14,
     letterSpacing: ".7px",
-    fontWeight: 900,
   },
   thanks: {
     marginTop: "4mm",
@@ -490,19 +494,17 @@ const S: Record<string, CSSProperties> = {
     textAlign: "center",
   },
   barcodeBox: {
-    display: "block",
+    display: "inline-block",
     background: "#fff",
     padding: 0,
     border: 0,
-    width: "62mm",
-    margin: "0 auto",
-    // The injected <svg> has no width/height (we stripped them) so it
-    // inherits this width via SVG's intrinsic-size fallback.
   },
-  barcodeNum: {
-    fontSize: 10,
-    letterSpacing: 2,
-    marginTop: ".5mm",
+  barcode: {
+    width: "62mm",
+    maxWidth: "100%",
+    height: "auto",
+    display: "block",
+    imageRendering: "crisp-edges",
   },
   alignRight: {
     textAlign: "right",

@@ -126,12 +126,17 @@ function ReceiptInner() {
   }
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-3xl mx-auto">
-      <ReceiptView
-        sale={data.sale}
-        lines={data.lines}
-        payments={data.payments}
-        loyalty={data.loyalty}
-      />
+      <div
+        className="rounded-2xl border border-[var(--color-pos-border)] overflow-y-auto bg-[#e9e9e9]"
+        style={{ maxHeight: "60vh" }}
+      >
+        <ReceiptView
+          sale={data.sale}
+          lines={data.lines}
+          payments={data.payments}
+          loyalty={data.loyalty}
+        />
+      </div>
 
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button
