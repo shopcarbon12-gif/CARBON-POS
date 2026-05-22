@@ -53,9 +53,10 @@ type LoyaltyFooter = {
 
 /**
  * Port of carbon_receipt_barcode_more_short_height.html. Width is locked
- * to 80mm to match thermal-paper proportions; all spacing uses the same
- * mm dimensions as the reference so the on-screen preview lays out
- * identically to what the printer will emit.
+ * to 3 1/8" (79.375 mm) — the actual paper width loaded in the
+ * TM-m30II, slightly narrower than the nominal 80mm spec. All spacing
+ * uses the same mm dimensions as the reference so the on-screen preview
+ * lays out identically to what the printer will emit.
  *
  * Each printed sale produces two copies — variant="customer" matches the
  * reference layout with the loyalty footer, variant="merchant" drops the
@@ -317,10 +318,27 @@ export function ReceiptView({
   );
 }
 
-/** "LOAGAN DENIM SHORTS - BLUE WASHED 38" → two lines. */
+/**
+ * Cart descriptions are built in SellScreen as
+ *   `${item_name} · ${color} · ${size}`
+ * (middle-dot separator). Pull off the first segment as the item name
+ * (line 1) and put everything after it — color + size — on line 2.
+ *
+ * The fallback regex covers older sales whose descriptions used " - ",
+ * " — ", " / " or "\n" between name and variant info.
+ */
 function splitItemName(desc: string): React.ReactNode {
-  // Common separators we see in cart descriptions: " - ", " — ", "\n",
-  // or " / ". Anything else renders as a single line.
+  const dotParts = desc.split(" · ");
+  if (dotParts.length >= 2) {
+    const [name, ...rest] = dotParts;
+    return (
+      <>
+        <span style={S.productTitle}>{name}</span>
+        <br />
+        <span style={S.productDetail}>{rest.join(" · ")}</span>
+      </>
+    );
+  }
   const match = desc.match(/^(.*?)\s*[\-—/\n]\s*(.+)$/);
   if (!match) return desc;
   return (
@@ -400,12 +418,12 @@ const S: Record<string, CSSProperties> = {
     fontFamily: FONT,
   },
   receipt: {
-    width: "80mm",
+    width: "3.125in",
     background: "#fff",
     padding: "6mm 4mm 5mm",
     boxShadow: "0 8px 28px rgba(0,0,0,.16)",
-    fontSize: 12,
-    lineHeight: 1.22,
+    fontSize: 14,
+    lineHeight: 1.25,
     boxSizing: "border-box",
   },
   center: {
@@ -419,24 +437,24 @@ const S: Record<string, CSSProperties> = {
     margin: "0 auto 1.5mm",
   },
   address: {
-    fontSize: 11,
-    lineHeight: 1.08,
+    fontSize: 13,
+    lineHeight: 1.15,
     marginTop: 0,
   },
   title: {
     marginTop: "4mm",
-    fontSize: 16,
+    fontSize: 19,
     fontWeight: 800,
     letterSpacing: ".25px",
   },
   date: {
-    fontSize: 11,
+    fontSize: 13,
     marginTop: ".5mm",
   },
   info: {
     marginTop: "5mm",
-    fontSize: 12,
-    lineHeight: 1.28,
+    fontSize: 14,
+    lineHeight: 1.3,
   },
   infoRow: {
     display: "flex",
@@ -446,35 +464,37 @@ const S: Record<string, CSSProperties> = {
   itemsHeader: {
     marginTop: "4mm",
     display: "grid",
-    gridTemplateColumns: "1fr 11mm 18mm",
+    gridTemplateColumns: "1fr 11mm 21mm",
     borderBottom: "1px solid #000",
     fontWeight: 800,
-    fontSize: 12,
+    fontSize: 14,
     paddingBottom: ".7mm",
   },
   itemRow: {
     display: "grid",
-    gridTemplateColumns: "1fr 9mm 17mm",
+    gridTemplateColumns: "1fr 10mm 21mm",
     borderBottom: "1px solid #000",
     padding: ".8mm 0 1mm",
-    fontSize: 11,
-    lineHeight: 1.15,
+    fontSize: 13,
+    lineHeight: 1.2,
   },
   itemName: {
     fontWeight: 800,
     letterSpacing: ".15px",
   },
   productTitle: {
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    wordBreak: "break-word",
   },
   productDetail: {
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    wordBreak: "break-word",
   },
   totals: {
     marginTop: ".8mm",
-    marginLeft: "28mm",
-    fontSize: 12,
-    lineHeight: 1.45,
+    marginLeft: "22mm",
+    fontSize: 14,
+    lineHeight: 1.5,
   },
   row: {
     display: "grid",
@@ -494,34 +514,34 @@ const S: Record<string, CSSProperties> = {
     gridTemplateColumns: "1fr auto",
     columnGap: "4mm",
     alignItems: "baseline",
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: 900,
   },
   section: {
     marginTop: "5mm",
   },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: 900,
     letterSpacing: ".9px",
     borderBottom: "1px solid #000",
     paddingBottom: ".6mm",
   },
   payments: {
-    fontSize: 12,
-    lineHeight: 1.45,
+    fontSize: 14,
+    lineHeight: 1.5,
     marginTop: ".8mm",
-    marginLeft: "31mm",
+    marginLeft: "25mm",
   },
   rewardOffer: {
-    fontSize: 11,
-    lineHeight: 1.35,
+    fontSize: 13,
+    lineHeight: 1.4,
     marginTop: "1mm",
   },
   transaction: {
     marginTop: "4mm",
-    fontSize: 11,
-    lineHeight: 1.35,
+    fontSize: 13,
+    lineHeight: 1.4,
   },
   txnRow: {
     display: "grid",
@@ -535,18 +555,18 @@ const S: Record<string, CSSProperties> = {
   policy: {
     marginTop: "5mm",
     textAlign: "center",
-    fontSize: 13,
-    lineHeight: 1.15,
+    fontSize: 14,
+    lineHeight: 1.2,
     letterSpacing: ".3px",
   },
   policyMain: {
-    fontSize: 14,
+    fontSize: 16,
     letterSpacing: ".7px",
   },
   thanks: {
     marginTop: "4mm",
     textAlign: "center",
-    fontSize: 12,
+    fontSize: 14,
   },
   barcodeWrap: {
     marginTop: "4mm",
@@ -572,14 +592,14 @@ const S: Record<string, CSSProperties> = {
   },
   merchantBanner: {
     marginTop: "1mm",
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 900,
     letterSpacing: "1.2px",
   },
   signatures: {
     marginTop: "4mm",
-    fontSize: 11,
-    lineHeight: 1.3,
+    fontSize: 13,
+    lineHeight: 1.35,
   },
   signatureLine: {
     display: "flex",
@@ -591,7 +611,7 @@ const S: Record<string, CSSProperties> = {
   },
   signatureMark: {
     fontWeight: 900,
-    fontSize: 13,
+    fontSize: 15,
   },
   signatureRule: {
     flex: 1,
@@ -601,18 +621,18 @@ const S: Record<string, CSSProperties> = {
   signatureLabel: {
     marginTop: ".8mm",
     marginLeft: "5mm",
-    fontSize: 11,
+    fontSize: 13,
   },
   signatureSub: {
     marginLeft: "5mm",
-    fontSize: 10,
+    fontSize: 12,
     color: "rgba(0,0,0,.7)",
   },
   cardAgreement: {
     marginTop: "1.5mm",
     textAlign: "center",
-    fontSize: 10,
-    lineHeight: 1.25,
+    fontSize: 12,
+    lineHeight: 1.3,
     letterSpacing: ".2px",
   },
 };

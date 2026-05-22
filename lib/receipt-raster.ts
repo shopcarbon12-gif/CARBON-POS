@@ -15,13 +15,13 @@ import { toCanvas } from "html-to-image";
  *   2. canvasToEscPosRaster — <canvas> → 1bpp packed bitmap wrapped in
  *      the ESC/POS GS v 0 raster-image command.
  *
- * The TM-m30II's print area at 80mm paper is 576 dots wide. We capture
- * at ~2× the on-screen CSS width (80mm ≈ 302 px @ 96 DPI) so the source
- * is high-DPI, then resample down to 576 for a clean black-and-white
- * threshold.
+ * The TM-m30II's print area at 3 1/8" (≈80mm) paper is 576 dots wide.
+ * We capture at ~2× the on-screen CSS width (3 1/8" = 300 px @ 96 DPI)
+ * so the source is high-DPI, then resample down to 576 for a clean
+ * black-and-white threshold.
  */
 
-/** Native dot width of the TM-m30II at 80mm paper. */
+/** Native dot width of the TM-m30II at 3 1/8" (≈80mm) paper. */
 export const PRINTER_DOT_WIDTH = 576;
 
 /**
