@@ -1,7 +1,6 @@
 "use client";
 
-import Image from "next/image";
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { formatMoney } from "@/lib/utils";
 import { ean13Display } from "@/lib/barcode";
 import { renderBarcodeSvg } from "@/lib/barcode-browser";
@@ -46,19 +45,18 @@ type PaymentRow = {
   change_given?: string | null;
 };
 
-/**
- * Receipt view tuned to the carbon_receipt_barcode_more_short_height.html
- * reference: centered logo + address, "Sales Receipt" title, info block,
- * items table, right-indented totals, PAYMENTS / STORE ACCOUNT sections,
- * return policy, EAN-13 barcode of the ticket number. Rendered at 80mm
- * (~22rem) so the on-screen preview matches paper.
- */
 type LoyaltyFooter = {
   is_member: boolean;
   points: number;
   dollar_value: number;
 };
 
+/**
+ * Port of carbon_receipt_barcode_more_short_height.html. Width is locked
+ * to 80mm to match thermal-paper proportions; all spacing uses the same
+ * mm dimensions as the reference so the on-screen preview lays out
+ * identically to what the printer will emit.
+ */
 export function ReceiptView({
   sale,
   lines,
@@ -84,107 +82,114 @@ export function ReceiptView({
       ? Number(sale.customer_store_credit_balance)
       : null;
 
-  const barcodeSvg = useMemo(
-    () => renderBarcodeSvg(sale.sale_number, { heightMm: 12, scale: 2 }),
-    [sale.sale_number],
-  );
+  const barcodeSvg = useMemo(() => {
+    const raw = renderBarcodeSvg(sale.sale_number, { heightMm: 12, scale: 2 });
+    // bwip-js emits absolute width/height on the <svg>. Strip them so the
+    // 62mm container width takes effect via the parent's CSS — the
+    // intrinsic viewBox keeps the proportions.
+    return raw.replace(
+      /<svg([^>]*?)\s(?:width|height)="[^"]*"/g,
+      "<svg$1",
+    );
+  }, [sale.sale_number]);
 
   return (
-    <div className="flex justify-center">
-      <div className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-5 w-[22rem] font-sans text-[12px] leading-tight text-black shadow-sm">
-        <div className="flex flex-col items-center mb-2">
-          <Image
-            src="/logo.jpg"
-            alt=""
-            width={170}
-            height={170}
-            className="mb-1.5"
-            priority
-          />
-          <div className="text-[11px] leading-tight text-center">
-            {sale.address_line1 && <div>{sale.address_line1}</div>}
-            {sale.address_line2 && <div>{sale.address_line2}</div>}
-            {cityLine && <div>{cityLine}</div>}
-            <div>United States</div>
-            {sale.phone && <div>{sale.phone}</div>}
-          </div>
-          <p className="font-extrabold text-[16px] tracking-wide mt-3">
-            Sales Receipt
-          </p>
-          <p className="text-[11px]">
-            {new Date(sale.completed_at ?? sale.created_at).toLocaleString()}
-          </p>
-        </div>
+    <div style={S.page}>
+      <main style={S.receipt}>
+        <header style={S.center}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.jpg" alt="Carbon logo" style={S.logo} />
 
-        <section className="mt-3 space-y-0.5">
-          <Row label="Ticket:" value={sale.sale_number} />
-          <Row label="Register:" value={sale.register_name} />
-          <Row label="Employee:" value={sale.cashier_email} />
-          {customerName && <Row label="Customer:" value={customerName} />}
+          <div style={S.address}>
+            {sale.address_line1 && (
+              <>
+                {sale.address_line1}
+                <br />
+              </>
+            )}
+            {sale.address_line2 && (
+              <>
+                {sale.address_line2}
+                <br />
+              </>
+            )}
+            {cityLine && (
+              <>
+                {cityLine}
+                <br />
+              </>
+            )}
+            United States
+            {sale.phone && (
+              <>
+                <br />
+                {sale.phone}
+              </>
+            )}
+          </div>
+
+          <div style={S.title}>Sales Receipt</div>
+          <div style={S.date}>
+            {new Date(sale.completed_at ?? sale.created_at).toLocaleString()}
+          </div>
+        </header>
+
+        <section style={S.info}>
+          <InfoRow label="Ticket:" value={sale.sale_number} />
+          <InfoRow label="Register:" value={sale.register_name} />
+          <InfoRow label="Employee:" value={sale.cashier_email} />
+          {customerName && <InfoRow label="Customer:" value={customerName} />}
         </section>
 
-        <section className="mt-3">
-          <div className="grid grid-cols-[1fr_2.5rem_4.5rem] font-extrabold text-[12px] border-b border-black pb-0.5">
+        <section>
+          <div style={S.itemsHeader}>
             <span>Items</span>
-            <span className="text-right">#</span>
-            <span className="text-right">Price</span>
+            <span style={S.alignRight}>#</span>
+            <span style={S.alignRight}>Price</span>
           </div>
+
           {lines.map((l) => (
-            <div
-              key={l.id}
-              className="grid grid-cols-[1fr_2.5rem_4.5rem] border-b border-black py-1 text-[11px]"
-            >
-              <span className="font-extrabold leading-tight">
-                {l.description}
-              </span>
-              <span className="text-right tabular-nums">{l.quantity}</span>
-              <span className="text-right tabular-nums">
-                {formatMoney(l.line_total)}
-              </span>
+            <div key={l.id} style={S.itemRow}>
+              <span style={S.itemName}>{splitItemName(l.description)}</span>
+              <span style={S.alignRight}>{l.quantity}</span>
+              <span style={S.alignRight}>{formatMoney(l.line_total)}</span>
             </div>
           ))}
-        </section>
 
-        <section className="mt-2 ml-[7rem] text-[12px] leading-snug">
-          <Row label="Subtotal" value={formatMoney(sale.subtotal)} mono />
-          {discount > 0 && (
+          <div style={S.totals}>
+            <Row label="Subtotal" value={formatMoney(sale.subtotal)} />
+            {discount > 0 && (
+              <Row
+                label="Discount"
+                value={`-${formatMoney(sale.discount_amount)}`}
+              />
+            )}
             <Row
-              label="Discount"
-              value={`-${formatMoney(sale.discount_amount)}`}
-              mono
+              label={
+                taxRate && taxBase != null
+                  ? `Tax (${formatMoney(taxBase)} @ ${(taxRate * 100).toFixed(2)}%)`
+                  : "Tax"
+              }
+              value={formatMoney(sale.tax_amount)}
             />
-          )}
-          <Row
-            label={
-              taxRate && taxBase != null
-                ? `Tax (${formatMoney(taxBase)} @ ${(taxRate * 100).toFixed(2)}%)`
-                : "Tax"
-            }
-            value={formatMoney(sale.tax_amount)}
-            mono
-          />
-          <Row
-            label="Total"
-            value={formatMoney(sale.total_amount)}
-            mono
-            bold
-          />
+            <Row label="Total Tax" value={formatMoney(sale.tax_amount)} />
+            <Row
+              label="Total"
+              value={formatMoney(sale.total_amount)}
+              total
+            />
+          </div>
         </section>
 
         <Section title="PAYMENTS">
-          <div className="ml-[7rem]">
+          <div style={S.payments}>
             {payments.map((p) => (
               <div key={p.id}>
-                <Row
-                  label={humanMethod(p.method)}
-                  value={formatMoney(p.amount)}
-                  mono
-                />
+                <Row label={humanMethod(p.method)} value={formatMoney(p.amount)} />
                 {p.method === "cash" && p.change_given ? (
                   <Row
                     label="Change"
                     value={formatMoney(p.change_given)}
-                    mono
                     muted
                   />
                 ) : null}
@@ -193,10 +198,10 @@ export function ReceiptView({
           </div>
         </Section>
 
-        {storeCredit != null && (
+        {storeCredit != null && storeCredit !== 0 && (
           <Section title="STORE ACCOUNT">
-            <div className="ml-[7rem]">
-              <Row label="On Deposit:" value={formatMoney(storeCredit)} mono />
+            <div style={S.payments}>
+              <Row label="On Deposit:" value={formatMoney(storeCredit)} />
             </div>
           </Section>
         )}
@@ -206,48 +211,74 @@ export function ReceiptView({
             title={loyalty.is_member ? "CARBON REWARDS" : "JOIN CARBON REWARDS"}
           >
             {loyalty.is_member ? (
-              <div className="ml-[7rem]">
-                <Row
-                  label="Points earned"
-                  value={String(loyalty.points)}
-                  mono
-                />
+              <div style={S.payments}>
+                <Row label="Points earned" value={String(loyalty.points)} />
                 <Row
                   label="Approx. cashback"
                   value={formatMoney(loyalty.dollar_value)}
-                  mono
                 />
               </div>
             ) : (
-              <p className="text-[11px] leading-snug">
+              <div style={S.rewardOffer}>
                 You would have earned <b>{loyalty.points} pts</b> (~
                 {formatMoney(loyalty.dollar_value)}). Ask the cashier to enroll
                 on your next visit and start saving!
-              </p>
+              </div>
             )}
           </Section>
         )}
 
-        <section className="mt-4 text-center">
-          <p className="font-extrabold text-[14px] tracking-wide">
-            {sale.return_policy ?? "NO REFUNDS — EXCHANGE ONLY"}
-          </p>
+        <section style={S.policy}>
+          <div style={S.policyMain}>
+            {(sale.return_policy ?? "NO REFUNDS — EXCHANGE ONLY")
+              .split("\n")[0]}
+          </div>
+          {(sale.return_policy ?? "")
+            .split("\n")
+            .slice(1)
+            .map((l, i) => (
+              <div key={i}>{l}</div>
+            ))}
+          {!sale.return_policy && (
+            <>
+              Exchanges accepted within 14 days of purchase.
+              <br />
+              Items must be unworn, unused, with original tags attached,
+              <br />
+              and accompanied by the original receipt.
+            </>
+          )}
         </section>
 
-        <p className="mt-3 text-center text-[12px]">
+        <div style={S.thanks}>
           {sale.receipt_footer ??
             (customerName ? `Thank You ${customerName}!` : "Thank You!")}
-        </p>
+        </div>
 
-        <div
-          className="mt-3 flex justify-center [&_svg]:w-[80%] [&_svg]:h-auto"
-          dangerouslySetInnerHTML={{ __html: barcodeSvg }}
-        />
-        <p className="text-center text-[10px] mt-0.5 tracking-wider">
-          {ean13Display(sale.sale_number)}
-        </p>
-      </div>
+        <div style={S.barcodeWrap}>
+          <div
+            style={S.barcodeBox}
+            dangerouslySetInnerHTML={{ __html: barcodeSvg }}
+          />
+          <div style={S.barcodeNum}>{ean13Display(sale.sale_number)}</div>
+        </div>
+      </main>
     </div>
+  );
+}
+
+/** "LOAGAN DENIM SHORTS - BLUE WASHED 38" → two lines. */
+function splitItemName(desc: string): React.ReactNode {
+  // Common separators we see in cart descriptions: " - ", " — ", "\n",
+  // or " / ". Anything else renders as a single line.
+  const match = desc.match(/^(.*?)\s*[\-—/\n]\s*(.+)$/);
+  if (!match) return desc;
+  return (
+    <>
+      <span style={S.productTitle}>{match[1]}</span>
+      <br />
+      <span style={S.productDetail}>{match[2]}</span>
+    </>
   );
 }
 
@@ -259,41 +290,42 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mt-3">
-      <p className="font-extrabold text-[12px] tracking-wider border-b border-black pb-0.5">
-        {title}
-      </p>
-      <div className="mt-1">{children}</div>
+    <section style={S.section}>
+      <div style={S.sectionTitle}>{title}</div>
+      {children}
     </section>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={S.infoRow}>
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
   );
 }
 
 function Row({
   label,
   value,
-  mono = false,
+  total = false,
   muted = false,
-  bold = false,
 }: {
   label: string;
   value: string;
-  mono?: boolean;
+  total?: boolean;
   muted?: boolean;
-  bold?: boolean;
 }) {
   return (
-    <div
-      className={`flex justify-between gap-2 ${muted ? "text-black/60" : ""} ${
-        bold ? "font-extrabold text-[13px]" : ""
-      }`}
-    >
+    <div style={total ? S.rowTotal : muted ? S.rowMuted : S.row}>
       <span>{label}</span>
-      <span className={mono ? "tabular-nums" : ""}>{value}</span>
+      <span style={S.alignRight}>{value}</span>
     </div>
   );
 }
 
-export function humanMethod(m: string): string {
+function humanMethod(m: string): string {
   return (
     {
       card: "Credit Card",
@@ -305,3 +337,176 @@ export function humanMethod(m: string): string {
     }[m] ?? m
   );
 }
+
+const FONT = "Arial, Helvetica, sans-serif";
+
+const S: Record<string, CSSProperties> = {
+  page: {
+    background: "#e9e9e9",
+    padding: 24,
+    display: "flex",
+    justifyContent: "center",
+    color: "#000",
+    fontFamily: FONT,
+  },
+  receipt: {
+    width: "80mm",
+    background: "#fff",
+    padding: "6mm 4mm 5mm",
+    boxShadow: "0 8px 28px rgba(0,0,0,.16)",
+    fontSize: 12,
+    lineHeight: 1.22,
+    boxSizing: "border-box",
+  },
+  center: {
+    textAlign: "center",
+  },
+  logo: {
+    width: "52mm",
+    maxWidth: "100%",
+    height: "auto",
+    display: "block",
+    margin: "0 auto 1.5mm",
+  },
+  address: {
+    fontSize: 11,
+    lineHeight: 1.08,
+    marginTop: 0,
+  },
+  title: {
+    marginTop: "4mm",
+    fontSize: 16,
+    fontWeight: 800,
+    letterSpacing: ".25px",
+  },
+  date: {
+    fontSize: 11,
+    marginTop: ".5mm",
+  },
+  info: {
+    marginTop: "5mm",
+    fontSize: 12,
+    lineHeight: 1.28,
+  },
+  infoRow: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "1.5mm",
+  },
+  itemsHeader: {
+    marginTop: "4mm",
+    display: "grid",
+    gridTemplateColumns: "1fr 11mm 18mm",
+    borderBottom: "1px solid #000",
+    fontWeight: 800,
+    fontSize: 12,
+    paddingBottom: ".7mm",
+  },
+  itemRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr 9mm 17mm",
+    borderBottom: "1px solid #000",
+    padding: ".8mm 0 1mm",
+    fontSize: 11,
+    lineHeight: 1.15,
+  },
+  itemName: {
+    fontWeight: 800,
+    letterSpacing: ".15px",
+  },
+  productTitle: {
+    whiteSpace: "nowrap",
+  },
+  productDetail: {
+    whiteSpace: "nowrap",
+  },
+  totals: {
+    marginTop: ".8mm",
+    marginLeft: "28mm",
+    fontSize: 12,
+    lineHeight: 1.45,
+  },
+  row: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto",
+    columnGap: "4mm",
+    alignItems: "baseline",
+  },
+  rowMuted: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto",
+    columnGap: "4mm",
+    alignItems: "baseline",
+    color: "rgba(0,0,0,.6)",
+  },
+  rowTotal: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto",
+    columnGap: "4mm",
+    alignItems: "baseline",
+    fontSize: 13,
+    fontWeight: 900,
+  },
+  section: {
+    marginTop: "5mm",
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 900,
+    letterSpacing: ".9px",
+    borderBottom: "1px solid #000",
+    paddingBottom: ".6mm",
+  },
+  payments: {
+    fontSize: 12,
+    lineHeight: 1.45,
+    marginTop: ".8mm",
+    marginLeft: "31mm",
+  },
+  rewardOffer: {
+    fontSize: 11,
+    lineHeight: 1.3,
+    marginTop: "1mm",
+  },
+  policy: {
+    marginTop: "5mm",
+    textAlign: "center",
+    fontSize: 13,
+    lineHeight: 1.15,
+    letterSpacing: ".3px",
+  },
+  policyMain: {
+    fontSize: 14,
+    letterSpacing: ".7px",
+    fontWeight: 900,
+  },
+  thanks: {
+    marginTop: "4mm",
+    textAlign: "center",
+    fontSize: 12,
+  },
+  barcodeWrap: {
+    marginTop: "4mm",
+    textAlign: "center",
+  },
+  barcodeBox: {
+    display: "block",
+    background: "#fff",
+    padding: 0,
+    border: 0,
+    width: "62mm",
+    margin: "0 auto",
+    // The injected <svg> has no width/height (we stripped them) so it
+    // inherits this width via SVG's intrinsic-size fallback.
+  },
+  barcodeNum: {
+    fontSize: 10,
+    letterSpacing: 2,
+    marginTop: ".5mm",
+  },
+  alignRight: {
+    textAlign: "right",
+  },
+};
+
+export { humanMethod };

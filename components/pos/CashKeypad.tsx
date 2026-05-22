@@ -22,6 +22,7 @@ export function CashKeypad({
 }) {
   const cashAmount = Number(value || 0);
   const change = Math.max(0, Math.round((cashAmount - total) * 100) / 100);
+  const totalRounded = Math.round(total * 100) / 100;
   const quick = [1, 5, 10, 20, 50, 100];
   return (
     <div>
@@ -33,12 +34,20 @@ export function CashKeypad({
         inputMode="decimal"
         step="0.01"
         min="0"
+        max={totalRounded * 10}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         autoFocus={autoFocus}
         className="tap-lg w-full rounded-2xl border border-[var(--color-pos-border)] text-3xl font-semibold px-4 mb-3"
         placeholder="0.00"
       />
+      <button
+        type="button"
+        onClick={() => onChange(totalRounded.toFixed(2))}
+        className="tap w-full rounded-xl bg-[var(--color-pos-ink)] text-white font-semibold mb-3"
+      >
+        Exact — pay {formatMoney(totalRounded)}
+      </button>
       <div className="grid grid-cols-3 gap-2 mb-4">
         {quick.map((q) => (
           <button
