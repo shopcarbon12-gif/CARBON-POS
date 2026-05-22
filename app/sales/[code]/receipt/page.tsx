@@ -1,8 +1,18 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ReceiptView } from "@/components/pos/ReceiptView";
+import {
+  bytesToHex,
+  canvasToEscPosRaster,
+  concatBytes,
+  escPosCut,
+  escPosFeed,
+  escPosInit,
+  escPosKickDrawer,
+  rasterizeElement,
+} from "@/lib/receipt-raster";
 
 type SaleDetail = {
   sale: {
@@ -65,6 +75,8 @@ function ReceiptInner() {
     "idle" | "sending" | "done" | "error"
   >("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const merchantRef = useRef<HTMLDivElement>(null);
+  const customerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!Number.isFinite(saleId)) return;
@@ -80,18 +92,17 @@ function ReceiptInner() {
     setPrintState("printing");
     setErrorMsg(null);
 
-    // 1) Cloud server builds the ESC/POS bytes (it knows the sale data,
-    //    formatting rules, sharp-rasterized logo, barcode). It does NOT
-    //    open a TCP socket — that's our job from this browser, which is
-    //    on the same LAN as the printer.
-    const res = await fetch(`/api/pos/sales/${saleId}/escpos`);
-    if (!res.ok) {
-      setErrorMsg("Couldn't build the receipt.");
+    // 1) Ask the server which printer to talk to. We don't use any of
+    //    the ESC/POS payload it builds — the receipt design comes from
+    //    the on-screen DOM, rasterized below.
+    const tgt = await fetch(`/api/pos/sales/${saleId}/escpos`);
+    if (!tgt.ok) {
+      setErrorMsg("Couldn't load the printer target.");
       setPrintState("error");
       return;
     }
-    const payload = await res.json();
-    if (payload.skipped) {
+    const target = await tgt.json();
+    if (target.skipped || !target.host) {
       setErrorMsg(
         "No receipt printer is configured for this location. Set it in Settings → Locations → printer host/port.",
       );
@@ -99,24 +110,52 @@ function ReceiptInner() {
       return;
     }
 
-    // 2) POST each copy as ePOS-Print XML to the printer over the LAN.
-    //    The TM-m30II accepts raw ESC/POS bytes inside a <command> tag
-    //    on its built-in /cgi-bin/epos/service.cgi endpoint.
+    // 2) Rasterize each on-screen ReceiptView to the printer's native
+    //    dot width. The merchant + customer ReceiptView nodes are
+    //    rendered (visible, scrollable) above; html-to-image walks the
+    //    DOM and produces a pixel-perfect canvas of what you see.
+    // The ref wraps ReceiptView, which renders <div page><main receipt>.
+    // Only the inner <main> (the white 80mm card) is the design — the
+    // outer page wrapper is gray screen padding we don't want to print.
+    const merchantMain = merchantRef.current?.querySelector("main");
+    const customerMain = customerRef.current?.querySelector("main");
+    if (!merchantMain || !customerMain) {
+      setErrorMsg("Receipt isn't rendered yet — wait a moment and retry.");
+      setPrintState("error");
+      return;
+    }
+
     try {
-      for (const copy of payload.copies as Array<{
-        variant: string;
-        hex: string;
-      }>) {
-        await sendToEposPrinter(payload.host, copy.hex);
-      }
+      const merchantCanvas = await rasterizeElement(
+        merchantMain as HTMLElement,
+      );
+      const customerCanvas = await rasterizeElement(
+        customerMain as HTMLElement,
+      );
+
+      const merchantJob = concatBytes(
+        escPosInit(),
+        canvasToEscPosRaster(merchantCanvas),
+        escPosFeed(3),
+        escPosCut(),
+      );
+      const customerJob = concatBytes(
+        escPosInit(),
+        canvasToEscPosRaster(customerCanvas),
+        escPosFeed(3),
+        escPosCut(),
+        escPosKickDrawer(),
+      );
+
+      await sendToEposPrinter(target.host, bytesToHex(merchantJob));
+      await sendToEposPrinter(target.host, bytesToHex(customerJob));
       setPrintState("done");
     } catch (err) {
-      console.error("[print] ePOS-Print POST failed", err);
+      console.error("[print] rasterize / ePOS-Print POST failed", err);
       setErrorMsg(
-        "Couldn't reach the printer over the LAN. First-time setup: open " +
-          `https://${
-            (await safeGetPrinterHost(saleId)) ?? "the printer IP"
-          } in a new tab and accept the certificate warning, then try again.`,
+        `Couldn't reach the printer at ${target.host}. First-time setup: ` +
+          `open https://${target.host}/ in a new tab and accept the ` +
+          `certificate warning, then try again.`,
       );
       setPrintState("error");
     }
@@ -153,20 +192,24 @@ function ReceiptInner() {
         className="rounded-2xl border border-[var(--color-pos-border)] overflow-y-auto bg-[#e9e9e9]"
         style={{ maxHeight: "60vh" }}
       >
-        <ReceiptView
-          sale={data.sale}
-          lines={data.lines}
-          payments={data.payments}
-          loyalty={data.loyalty}
-          variant="merchant"
-        />
-        <ReceiptView
-          sale={data.sale}
-          lines={data.lines}
-          payments={data.payments}
-          loyalty={data.loyalty}
-          variant="customer"
-        />
+        <div ref={merchantRef}>
+          <ReceiptView
+            sale={data.sale}
+            lines={data.lines}
+            payments={data.payments}
+            loyalty={data.loyalty}
+            variant="merchant"
+          />
+        </div>
+        <div ref={customerRef}>
+          <ReceiptView
+            sale={data.sale}
+            lines={data.lines}
+            payments={data.payments}
+            loyalty={data.loyalty}
+            variant="customer"
+          />
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -236,17 +279,6 @@ function ReceiptInner() {
  * round-trip as "delivered" and rely on the cashier to spot a missing
  * receipt.
  */
-async function safeGetPrinterHost(saleId: number): Promise<string | null> {
-  try {
-    const r = await fetch(`/api/pos/sales/${saleId}/escpos`);
-    if (!r.ok) return null;
-    const p = await r.json();
-    return typeof p?.host === "string" ? p.host : null;
-  } catch {
-    return null;
-  }
-}
-
 async function sendToEposPrinter(host: string, hexBytes: string): Promise<void> {
   const xml =
     `<?xml version="1.0" encoding="utf-8"?>` +
