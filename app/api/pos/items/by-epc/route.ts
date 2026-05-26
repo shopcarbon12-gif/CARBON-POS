@@ -119,24 +119,90 @@ export async function POST(req: Request) {
   const blocked: Array<{ epc: string; status: string }> = [];
   let droppedCount = 0;
 
+  // Auto-relocate any EPCs whose items row says a different location
+  // than the cashier's. Physical reality (the reader picked up the tag
+  // HERE) wins over the catalog's recorded location. Without this the
+  // sale would silently decrement the other store's stock; with the
+  // earlier guardrail it blocked the cashier — both wrong for day-to-
+  // day operation. Reassign the row + write the move to all three
+  // audit feeds (Asset Movements / Inventory Adjustments / Activity
+  // History) so the operator can investigate physical drift in WMS.
+  // The cashier sees no badge — the item proceeds as LIVE.
+  const crossLocation = rows.rows.filter(
+    (r) =>
+      r.sku_id &&
+      r.item_location_id &&
+      r.item_location_id !== cashier.lid,
+  );
+  if (crossLocation.length > 0) {
+    const oldLocIds = [...new Set(crossLocation.map((r) => r.item_location_id!))];
+    const locs = await pool.query<{ id: string; display: string }>(
+      `SELECT id::text,
+              COALESCE(name, code, id::text) AS display
+         FROM locations
+        WHERE id = ANY($1::uuid[])`,
+      [[...oldLocIds, cashier.lid]],
+    );
+    const nameById = new Map(locs.rows.map((r) => [r.id, r.display]));
+    const toName = nameById.get(cashier.lid) ?? cashier.lid;
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const r of crossLocation) {
+        const fromName = nameById.get(r.item_location_id!) ?? r.item_location_id!;
+        await client.query(
+          `UPDATE items SET location_id = $1::uuid WHERE epc = $2`,
+          [cashier.lid, r.epc],
+        );
+        await client.query(
+          `INSERT INTO asset_movements
+             (tenant_id, epc, from_location, to_location, user_id)
+           VALUES ($1::uuid, $2, $3, $4, NULL)`,
+          [cashier.tid, r.epc, fromName, toName],
+        );
+        await client.query(
+          `INSERT INTO inventory_audit_logs
+             (tenant_id, log_type, entity_type, entity_reference,
+              old_value, new_value, reason, user_id)
+           VALUES ($1::uuid, 'ADJUSTMENT', 'EPC', $2, $3, $4,
+                   'pos_auto_relocation', NULL)`,
+          [cashier.tid, r.epc, fromName, toName],
+        );
+        await client.query(
+          `INSERT INTO audit_log (tenant_id, user_id, action, entity, metadata)
+           VALUES ($1::uuid, $2::uuid, 'pos_auto_relocation', 'items', $3::jsonb)`,
+          [
+            cashier.tid,
+            cashier.user_id,
+            JSON.stringify({
+              epc: r.epc,
+              from_location_id: r.item_location_id,
+              from_location_name: fromName,
+              to_location_id: cashier.lid,
+              to_location_name: toName,
+              reason:
+                "Tag scanned at POS reader at a different location than its inventoried home; auto-reassigned to allow sale to proceed.",
+              cashier_user_id: cashier.user_id,
+            }),
+          ],
+        );
+        // Treat the row as if it lived here all along so the LIVE check
+        // below produces a usable cart item.
+        r.item_location_id = cashier.lid;
+      }
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   for (const r of rows.rows) {
     if (!r.sku_id) {
       droppedCount++;
-      continue;
-    }
-    // Location separation. The EPC lookup is global because EPCs are
-    // globally unique, but each items row is anchored to the WMS
-    // location_id where it physically lives. If the tag the POS reader
-    // picked up belongs to another store's inventory, refuse to sell
-    // it here — otherwise the sale silently decrements the other
-    // store's stock. Surface in `blocked` so the cashier escalates
-    // (return-to-other-store, request a real transfer, etc.) instead
-    // of getting a silent drop.
-    if (r.item_location_id && r.item_location_id !== cashier.lid) {
-      blocked.push({
-        epc: r.epc,
-        status: "Belongs to the other store — needs a transfer first",
-      });
       continue;
     }
     // ONLY LIVE (items.status='in-stock' → status_labels 'LIVE',
