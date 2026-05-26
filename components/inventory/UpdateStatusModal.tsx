@@ -80,6 +80,18 @@ export function UpdateStatusModal({
       seenRef.current.clear();
       return;
     }
+    // Same wake path the SellScreen fires on mount — clears scan_paused_at
+    // on the POS-dedicated reader and flips cdm_agents.live_scan_active to
+    // TRUE if dormant. Without this, opening the modal on a paused .34
+    // gives a green badge from the state poll but zero frames flow (the
+    // cashier saw exactly that on 2026-05-26). Fire-and-forget; the SSE
+    // bridge below connects in parallel, so the only cost is the ~2 s
+    // respawn before tags start landing.
+    void fetch("/api/pos/hardware/reader/start", {
+      method: "POST",
+      credentials: "same-origin",
+    }).catch(() => { /* best-effort */ });
+
     const es = new EventSource("/api/hardware/epcs/stream", { withCredentials: true });
     const buffer: string[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
