@@ -36,7 +36,7 @@ import { useEffect, useRef, useState } from "react";
 
 const MIN_DBM = 1;
 const MAX_DBM = 33;
-const DEFAULT_DBM = 15;
+const DEFAULT_DBM = 20;
 // Each PATCH triggers the supervisor to SIGTERM + respawn the reader
 // binary at the new power. That cycle costs ~5 s in the happy path; if
 // two kills overlap (cashier scrubs the slider), the on-exit backoff
