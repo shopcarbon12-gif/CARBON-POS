@@ -14,8 +14,15 @@ import { useEffect, useRef, useState } from "react";
  *   - Server writes pos_register_sessions.live_power_dbm. The agent's
  *     /api/cdm-agents/active-sessions poll surfaces this column to the
  *     supervisor on its next ~100 ms tick; the supervisor respawns the
- *     POS reader binary at the new power. End-to-end after release:
- *     ~5 s on the happy path; can stretch to 25 s+ on a wedged chip.
+ *     POS reader binary at the new power. The supervisor coalesces
+ *     PATCHes per slot inside a 5 s window (latest-wins) so rapid drags
+ *     can't stack respawns and wedge the chip.
+ *   - End-to-end after release:
+ *       wired-LAN reader: ~5 s.
+ *       reader behind a WiFi extender (e.g. .34 as of 2026-05-26): ~30 s,
+ *         dominated by the bridge warm-up on every respawn. Move the
+ *         reader to a wired switch port to shrink it; no amount of POS
+ *         or supervisor work can.
  *
  *   - When the cashier's register session closes, the override clears
  *     automatically (the column lives on the session row). The next
