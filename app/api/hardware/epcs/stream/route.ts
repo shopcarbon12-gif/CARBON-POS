@@ -98,6 +98,14 @@ export async function GET() {
   const upstream = await fetch(scopedUrl, {
     headers: {
       accept: "text/event-stream",
+      // SSE MUST NOT be gzipped — gzip buffers waiting for compressible
+      // data and breaks the flush-per-line streaming contract. WMS still
+      // sets content-encoding: gzip on these responses (server-side bug
+      // worth fixing eventually); meanwhile we explicitly ask for raw
+      // bytes. Confirmed 2026-05-26 the POS container's Node 20 fetch
+      // does NOT auto-decompress this stream — without identity, only
+      // the first 27 bytes ever arrive and the modal stays empty.
+      "accept-encoding": "identity",
       authorization: `Bearer ${upstreamToken}`,
     },
     signal: upstreamCtl.signal,
