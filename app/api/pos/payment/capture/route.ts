@@ -311,12 +311,36 @@ export async function POST(req: Request) {
         // had silently been targeting a non-existent relation. The
         // intent stays the same: every EPC on the completed sale flips
         // to 'sold' atomically with the pos_sales insert.
-        await client.query(
-          `UPDATE items
+        //
+        // We also write one STATUS_CHANGE row per actually-flipped EPC
+        // to inventory_audit_logs (same shape as WMS's bulk-status
+        // endpoint), so Inventory Adjustments + Activity History
+        // reports surface the sold flips alongside the bulk-status
+        // ones — previously the sold transitions were invisible there.
+        const flipped = await client.query<{ epc: string; old_status: string }>(
+          `WITH prev AS (
+             SELECT epc, status AS old_status
+               FROM items
+              WHERE epc = ANY($1::text[])
+           )
+           UPDATE items i
               SET status = 'sold'
-            WHERE epc = ANY($1::text[])`,
+             FROM prev p
+            WHERE i.epc = p.epc
+              AND i.status <> 'sold'
+           RETURNING i.epc, p.old_status`,
           [epcs],
         );
+        for (const r of flipped.rows) {
+          await client.query(
+            `INSERT INTO inventory_audit_logs
+               (tenant_id, log_type, entity_type, entity_reference,
+                old_value, new_value, reason, user_id, user_uuid)
+             VALUES ($1::uuid, 'STATUS_CHANGE', 'EPC', $2, $3, 'sold',
+                     'pos_sale', NULL, $4::uuid)`,
+            [cashier.tid, r.epc, r.old_status, cashier.user_id],
+          );
+        }
       }
 
       // Loyalty hook — queue earn + (optional) redemption rows in
