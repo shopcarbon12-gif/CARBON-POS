@@ -55,6 +55,7 @@ export async function POST(req: Request) {
   const rows = await pool.query<{
     epc: string;
     item_status: string;
+    item_location_id: string | null;
     sku_id: string | null;
     sku: string | null;
     upc: string | null;
@@ -70,6 +71,7 @@ export async function POST(req: Request) {
   }>(
     `SELECT i.epc,
             i.status                          AS item_status,
+            i.location_id::text               AS item_location_id,
             i.custom_sku_id                   AS sku_id,
             cs.sku,
             COALESCE(cs.upc, m.upc)           AS upc,
@@ -120,6 +122,21 @@ export async function POST(req: Request) {
   for (const r of rows.rows) {
     if (!r.sku_id) {
       droppedCount++;
+      continue;
+    }
+    // Location separation. The EPC lookup is global because EPCs are
+    // globally unique, but each items row is anchored to the WMS
+    // location_id where it physically lives. If the tag the POS reader
+    // picked up belongs to another store's inventory, refuse to sell
+    // it here — otherwise the sale silently decrements the other
+    // store's stock. Surface in `blocked` so the cashier escalates
+    // (return-to-other-store, request a real transfer, etc.) instead
+    // of getting a silent drop.
+    if (r.item_location_id && r.item_location_id !== cashier.lid) {
+      blocked.push({
+        epc: r.epc,
+        status: "Belongs to the other store — needs a transfer first",
+      });
       continue;
     }
     // ONLY LIVE (items.status='in-stock' → status_labels 'LIVE',
