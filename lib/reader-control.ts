@@ -75,6 +75,58 @@ export async function clearPosReaderPause(readerId: string): Promise<void> {
   );
 }
 
+/**
+ * Heartbeat-debounced pause.
+ *
+ * Reader-using surfaces (sell screen, Update Status modal) call
+ * /reader/keepalive every ~15 s while mounted, which updates
+ * `lastReaderHeartbeat[userId]`. When a surface unmounts it calls
+ * /reader/stop, which `scheduleReaderPause` defers by READER_PAUSE_GRACE_MS.
+ * At grace expiry the timer checks the heartbeat: if any other surface
+ * has pinged within HEARTBEAT_FRESH_WINDOW_MS, the pause is skipped —
+ * another tab is still using the reader.
+ *
+ * State lives in module-level Maps (in-memory, per-process). A Coolify
+ * redeploy resets them; tabs that survive the redeploy will keep
+ * heartbeating, which is enough to keep the reader alive after the
+ * restart. A reader that was mid-grace at redeploy time will NOT be
+ * paused (the timer dies with the process); next /reader/stop catches
+ * it. Acceptable for an infrequent-restart deployment.
+ */
+const READER_PAUSE_GRACE_MS = 30_000;
+const HEARTBEAT_FRESH_WINDOW_MS = 30_000;
+const lastReaderHeartbeat = new Map<string, number>();
+const pendingPauseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Mark a fresh heartbeat for a cashier and cancel any pending pause. */
+export function markReaderHeartbeat(userId: string): void {
+  lastReaderHeartbeat.set(userId, Date.now());
+  const t = pendingPauseTimers.get(userId);
+  if (t) {
+    clearTimeout(t);
+    pendingPauseTimers.delete(userId);
+  }
+}
+
+/** Schedule a pause after the grace window. Latest call wins. */
+export function scheduleReaderPause(userId: string, readerId: string): void {
+  const existing = pendingPauseTimers.get(userId);
+  if (existing) clearTimeout(existing);
+  const t = setTimeout(async () => {
+    pendingPauseTimers.delete(userId);
+    const lastBeat = lastReaderHeartbeat.get(userId) ?? 0;
+    if (Date.now() - lastBeat < HEARTBEAT_FRESH_WINDOW_MS) {
+      return; // another tab still alive
+    }
+    try {
+      await setPosReaderPause(readerId, userId);
+    } catch (e) {
+      console.error("[reader-control] delayed pause failed:", e);
+    }
+  }, READER_PAUSE_GRACE_MS);
+  pendingPauseTimers.set(userId, t);
+}
+
 /** Symmetric: pause ONLY the POS-dedicated reader. */
 export async function setPosReaderPause(
   readerId: string,

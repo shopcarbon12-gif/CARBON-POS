@@ -84,13 +84,20 @@ export function UpdateStatusModal({
     // on the POS-dedicated reader and flips cdm_agents.live_scan_active to
     // TRUE if dormant. Without this, opening the modal on a paused .34
     // gives a green badge from the state poll but zero frames flow (the
-    // cashier saw exactly that on 2026-05-26). Fire-and-forget; the SSE
-    // bridge below connects in parallel, so the only cost is the ~2 s
-    // respawn before tags start landing.
+    // cashier saw exactly that on 2026-05-26).
     void fetch("/api/pos/hardware/reader/start", {
       method: "POST",
       credentials: "same-origin",
     }).catch(() => { /* best-effort */ });
+    // Heartbeat keeps the reader alive across tabs. Server-side
+    // /reader/stop defers the actual pause by 30 s and skips it if any
+    // tab has pinged within the window — see reader-control.ts.
+    const heartbeat = setInterval(() => {
+      void fetch("/api/pos/hardware/reader/keepalive", {
+        method: "POST",
+        credentials: "same-origin",
+      }).catch(() => { /* best-effort */ });
+    }, 15_000);
 
     const es = new EventSource("/api/hardware/epcs/stream", { withCredentials: true });
     const buffer: string[] = [];
@@ -130,8 +137,18 @@ export function UpdateStatusModal({
       setStreamErr("Lost the connection to the RFID reader.");
     };
     return () => {
+      clearInterval(heartbeat);
       es.close();
       if (flushTimer) clearTimeout(flushTimer);
+      // Fire stop on modal close. Server defers the actual pause by 30 s;
+      // if the sell screen (or another modal) is still open in another
+      // tab, its heartbeat cancels the pause before it lands. Otherwise
+      // the reader winds down 30 s after the last surface closes.
+      void fetch("/api/pos/hardware/reader/stop", {
+        method: "POST",
+        keepalive: true,
+        credentials: "same-origin",
+      }).catch(() => { /* best-effort */ });
     };
   }, [open]);
 

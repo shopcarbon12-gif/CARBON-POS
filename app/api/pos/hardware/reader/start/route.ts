@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentCashier } from "@/lib/session";
 import {
   clearPosReaderPause,
+  markReaderHeartbeat,
   posReaderForCurrentSession,
   wakeAgentIfDormant,
 } from "@/lib/reader-control";
@@ -33,6 +34,10 @@ export async function POST() {
   }
   await wakeAgentIfDormant(info.agent_id, cashier.user_id);
   await clearPosReaderPause(info.reader_id);
+  // Mark a fresh heartbeat — also cancels any pending grace-pause from a
+  // recent stop, so opening a new tab within the 30 s window cleanly
+  // rescues the reader.
+  markReaderHeartbeat(cashier.user_id);
   return NextResponse.json({
     ok: true,
     reader_id: info.reader_id,

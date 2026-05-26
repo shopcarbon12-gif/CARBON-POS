@@ -229,6 +229,16 @@ export function SellScreen({
   // navigation to other tabs.
   useEffect(() => {
     void startReader();
+    // Heartbeat keeps the server-side grace-pause cancelled while the
+    // sell screen is mounted. If another tab fires /reader/stop, the
+    // 30 s timer arrives, checks heartbeats, sees one within the
+    // window, and skips the pause. Cross-tab safety net.
+    const heartbeat = setInterval(() => {
+      void fetch("/api/pos/hardware/reader/keepalive", {
+        method: "POST",
+        credentials: "same-origin",
+      }).catch(() => { /* best-effort */ });
+    }, 15_000);
     // Splash strategy per operator directive: DEFAULT splash visible
     // when the sale page first loads (no mount-preload of NEW — would
     // briefly leak "thanks for joining" onto an idle reader before the
@@ -237,6 +247,7 @@ export function SellScreen({
     // typing their number — the reader is showing collect_inputs UI
     // at that point so the customer can't see the splash mid-typing.
     return () => {
+      clearInterval(heartbeat);
       // Two best-effort, fire-and-forget calls on unmount:
       //  1. Cancel any in-flight Stripe action on the reader so the
       //     pinpad returns to the Carbon splash instead of staying
