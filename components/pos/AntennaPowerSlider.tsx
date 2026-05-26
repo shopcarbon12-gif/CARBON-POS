@@ -7,16 +7,21 @@ import { useEffect, useRef, useState } from "react";
  *
  *   - Range: 1–33 dBm (regulatory ceiling).
  *   - Hydrates initial value from /api/pos/hardware/reader/power.
- *   - Drag updates state optimistically; debounced 200 ms PATCH to the
- *     same endpoint. NO SAVE BUTTON — the slider IS the save.
+ *   - Drag updates state optimistically; debounced 1.5 s PATCH to the
+ *     same endpoint. NO SAVE BUTTON — the slider IS the save. The long
+ *     debounce is deliberate: each PATCH costs a SIGTERM + respawn of
+ *     the reader binary (see DEBOUNCE_MS constant for the rationale).
  *   - Server writes pos_register_sessions.live_power_dbm. The agent's
  *     /api/cdm-agents/active-sessions poll surfaces this column to the
  *     supervisor on its next ~100 ms tick; the supervisor respawns the
- *     POS reader binary at the new power. End-to-end: drag → ~1–2 s.
+ *     POS reader binary at the new power. End-to-end after release:
+ *     ~5 s on the happy path; can stretch to 25 s+ on a wedged chip.
  *
  *   - When the cashier's register session closes, the override clears
- *     automatically (the column lives on the session row) and the next
- *     session opens at WMS-configured (steady-state) power.
+ *     automatically (the column lives on the session row). The next
+ *     session opens at DEFAULT_DBM (15) — the slider auto-pushes that
+ *     value on mount when no override exists, so the slider's reading
+ *     is always the actual reader power, never WMS steady-state.
  *
  * Visual: full slider track, "WMS default" hint when at max, dBm
  * value next to the slider.
@@ -24,10 +29,17 @@ import { useEffect, useRef, useState } from "react";
 
 const MIN_DBM = 1;
 const MAX_DBM = 33;
-const DEBOUNCE_MS = 200;
+const DEFAULT_DBM = 15;
+// Each PATCH triggers the supervisor to SIGTERM + respawn the reader
+// binary at the new power. That cycle costs ~5 s in the happy path; if
+// two kills overlap (cashier scrubs the slider), the on-exit backoff
+// doubles and the WIZnet bridge starts leaking ghost TCP sessions,
+// wedging the chip within a few drags. A long debounce lets the
+// cashier scrub freely; only the value they SETTLE on hits the wire.
+const DEBOUNCE_MS = 1500;
 
 export function AntennaPowerSlider() {
-  const [value, setValue] = useState<number>(MAX_DBM);
+  const [value, setValue] = useState<number>(DEFAULT_DBM);
   const [hydrated, setHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState(false);
@@ -56,6 +68,16 @@ export function AntennaPowerSlider() {
           setSkipped(true);
         } else if (typeof j.live_power_dbm === "number") {
           setValue(j.live_power_dbm);
+        } else {
+          // No override yet on this session — push DEFAULT_DBM so the
+          // slider value is always the truth (reader runs at exactly
+          // what the cashier sees) instead of WMS steady-state power.
+          await fetch("/api/pos/hardware/reader/power", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ powerDbm: DEFAULT_DBM }),
+          }).catch(() => {/* best-effort */});
         }
         setHydrated(true);
       } catch (e) {
