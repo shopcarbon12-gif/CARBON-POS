@@ -93,6 +93,7 @@ export async function GET() {
     }
   })();
 
+  console.log(`[epcs/stream] open cashier=${cashier.user_id} posReaderId=${posReaderId} url=${scopedUrl}`);
   const upstreamCtl = new AbortController();
   const upstream = await fetch(scopedUrl, {
     headers: {
@@ -102,11 +103,14 @@ export async function GET() {
     signal: upstreamCtl.signal,
     cache: "no-store",
   }).catch((e: unknown) => {
+    console.error(`[epcs/stream] upstream fetch threw:`, e);
     return new Response(null, {
       status: 502,
       statusText: e instanceof Error ? e.message : "upstream_unreachable",
     });
   });
+
+  console.log(`[epcs/stream] upstream status=${upstream.status} body=${!!upstream.body} encoding=${upstream.headers?.get?.("content-encoding") ?? "none"}`);
 
   if (!upstream.ok || !upstream.body) {
     return new Response(
@@ -145,22 +149,53 @@ export async function GET() {
 
       const reader = upstream.body!.getReader();
       let buf = "";
+      let chunkCount = 0;
+      let frameCount = 0;
+      let matchCount = 0;
+      const startedAt = Date.now();
+      const stats = setInterval(() => {
+        console.log(`[epcs/stream] stats cashier=${cashier.user_id} sec=${((Date.now()-startedAt)/1000).toFixed(1)} chunks=${chunkCount} frames=${frameCount} matched=${matchCount}`);
+      }, 5000);
       try {
         for (;;) {
           const { value, done } = await reader.read();
-          if (done) break;
+          if (done) {
+            console.log(`[epcs/stream] upstream done after sec=${((Date.now()-startedAt)/1000).toFixed(1)} chunks=${chunkCount}`);
+            break;
+          }
+          chunkCount++;
+          if (chunkCount <= 3) console.log(`[epcs/stream] chunk#${chunkCount} len=${value?.length ?? 0}`);
           buf += decoder.decode(value, { stream: true });
-          // SSE frames are terminated by a blank line.
           let idx: number;
           while ((idx = buf.indexOf("\n\n")) !== -1) {
             const frame = buf.slice(0, idx);
             buf = buf.slice(idx + 2);
-            handleFrame(frame, posReaderId, send);
+            const sentBefore = matchCount;
+            handleFrame(frame, posReaderId, (chunk) => {
+              matchCount++;
+              send(chunk);
+            });
+            frameCount++;
+            if (frameCount <= 5 || (frameCount % 50 === 0)) {
+              const dl = frame.split("\n").find((l) => l.startsWith("data:"));
+              let did = "(no-data)";
+              if (dl) {
+                try {
+                  const obj = JSON.parse(dl.slice(5).trim()) as { deviceId?: unknown };
+                  did = typeof obj.deviceId === "string" ? obj.deviceId : "(none)";
+                } catch {
+                  did = "(parse-error)";
+                }
+              }
+              console.log(`[epcs/stream] frame#${frameCount} deviceId=${did} matched=${matchCount > sentBefore}`);
+            }
           }
         }
-      } catch {
-        /* upstream closed or aborted */
+      } catch (e) {
+        console.error(`[epcs/stream] read loop threw:`, e);
       } finally {
+        clearInterval(stats);
+        console.log(`[epcs/stream] close cashier=${cashier.user_id} total chunks=${chunkCount} frames=${frameCount} matched=${matchCount}`);
         clearInterval(ping);
         try {
           controller.close();
