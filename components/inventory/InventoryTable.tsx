@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Radio } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
+import { UpdateStatusModal } from "./UpdateStatusModal";
 
 type SortKey =
   | "item_name"
@@ -84,6 +85,7 @@ export function InventoryTable({
   const [total, setTotal] = useState(initialTotal);
   const [loading, setLoading] = useState(false);
   const [picked, setPicked] = useState<Row | null>(null);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
   const debounceRef = useRef<number | null>(null);
   // Ignore the very first effect run — the server already did the first
   // paint, so re-fetching would just duplicate work.
@@ -170,14 +172,15 @@ export function InventoryTable({
               className="flex-1 bg-transparent border-0 outline-none p-0 text-base font-semibold text-carbon-text placeholder:text-carbon-text-muted/70"
             />
           </div>
-          <span
-            title="Catalog is sourced from CarbonWMS — add SKUs there."
-            className="carbon-btn-primary tap px-4 font-semibold flex items-center gap-2 cursor-not-allowed opacity-90"
-            aria-disabled
+          <button
+            type="button"
+            onClick={() => setStatusModalOpen(true)}
+            className="carbon-btn-primary tap px-4 font-semibold flex items-center gap-2"
+            title="Scan tags and flip them to a target status in bulk"
           >
-            <span className="material-symbols-outlined text-base">add</span>
-            <span>Add Product</span>
-          </span>
+            <span className="material-symbols-outlined text-base">edit_note</span>
+            <span>Update Status Item</span>
+          </button>
         </div>
       </div>
 
@@ -337,6 +340,11 @@ export function InventoryTable({
       {picked ? (
         <ImagePopup row={picked} onClose={() => setPicked(null)} />
       ) : null}
+
+      <UpdateStatusModal
+        open={statusModalOpen}
+        onClose={() => setStatusModalOpen(false)}
+      />
     </>
   );
 }
