@@ -548,14 +548,14 @@ function PendingPhoneBox({
             value={firstName}
             onChange={(e) => onChangeFirst(capitalizeName(e.target.value))}
             placeholder="First name *"
-            className="flex-1 carbon-input tap px-3 text-sm"
+            className="flex-1 min-w-0 carbon-input tap px-3 text-sm"
             autoFocus
           />
           <input
             value={lastName}
             onChange={(e) => onChangeLast(capitalizeName(e.target.value))}
             placeholder="Last name *"
-            className="flex-1 carbon-input tap px-3 text-sm"
+            className="flex-1 min-w-0 carbon-input tap px-3 text-sm"
           />
         </div>
         <EmailInput value={email} onChange={onChangeEmail} />
