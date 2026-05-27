@@ -145,23 +145,23 @@ export function CartPanel({
                       {subtitle}
                     </p>
                   )}
-                  {/* Employee attribution chip — always visible (works on
-                      touch and mouse). Pulses to a soft blue when the row's
-                      attribution differs from the sale-wide value so the
-                      cashier can see at a glance which rows were
-                      individually re-assigned. */}
-                  <div className="mt-1.5">
-                    <EmployeeSelect
-                      employees={employees}
-                      value={line.attributed_employee_id ?? saleAttributedEmployeeId}
-                      differsFromSale={
-                        (line.attributed_employee_id ?? saleAttributedEmployeeId) !==
-                        saleAttributedEmployeeId
-                      }
-                      onChange={(id) => onChangeLineEmployee(line.cart_id, id)}
-                      size="sm"
-                    />
-                  </div>
+                </div>
+                {/* Per-row employee attribution — sits in its own middle
+                    column between the description and the qty/price block.
+                    Always visible (works on touch and mouse). Pulses to
+                    a soft Carbon-Blue when the row's pick differs from the
+                    sale-wide value so re-assigned lines are easy to spot. */}
+                <div className="shrink-0 mr-4 hidden sm:block">
+                  <EmployeeSelect
+                    employees={employees}
+                    value={line.attributed_employee_id ?? saleAttributedEmployeeId}
+                    differsFromSale={
+                      (line.attributed_employee_id ?? saleAttributedEmployeeId) !==
+                      saleAttributedEmployeeId
+                    }
+                    onChange={(id) => onChangeLineEmployee(line.cart_id, id)}
+                    size="sm"
+                  />
                 </div>
                 <div className="flex items-center gap-4 sm:gap-6 shrink-0">
                   {line.line_type === "product" ? (
