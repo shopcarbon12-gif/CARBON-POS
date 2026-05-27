@@ -179,7 +179,7 @@ export function InventoryTable({
             title="Scan tags and flip them to a target status in bulk"
           >
             <span className="material-symbols-outlined text-base">edit_note</span>
-            <span>Update Status Item</span>
+            <span>Update Item Status</span>
           </button>
         </div>
       </div>

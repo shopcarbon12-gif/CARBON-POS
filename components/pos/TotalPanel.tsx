@@ -340,7 +340,7 @@ function CustomerSearchRow({
           and the input + side buttons are visually the same height. */}
       <div className="flex items-stretch gap-2">
         {/* Search input — flex-1, leading magnifier */}
-        <div className="carbon-input tap flex-1 flex items-center gap-2 px-3">
+        <div className="carbon-input tap flex-1 min-w-0 flex items-center gap-2 px-3">
           <span
             className="material-symbols-outlined text-carbon-text-muted text-xl shrink-0"
             aria-hidden
@@ -356,7 +356,7 @@ function CustomerSearchRow({
             }}
             onFocus={() => results.length && setOpen(true)}
             placeholder="Search name, email, phone…"
-            className="flex-1 bg-transparent border-0 outline-none p-0 text-sm font-medium text-carbon-text placeholder:text-carbon-text-muted/70"
+            className="flex-1 min-w-0 bg-transparent border-0 outline-none p-0 text-sm font-medium text-carbon-text placeholder:text-carbon-text-muted/70"
           />
         </div>
         {/* Compact + button — same Carbon Blue, icon only, square */}
