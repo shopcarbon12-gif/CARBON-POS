@@ -10,14 +10,17 @@ import { SellScreen } from "@/components/pos/SellScreen";
  */
 export function SellScreenWrapper({
   taxRate,
+  cashierEmployeeId,
 }: {
   taxRate: number;
+  cashierEmployeeId: number;
 }) {
   const { code } = useParams<{ code: string }>();
   return (
     <SellScreen
       taxRate={taxRate}
       code={String(code ?? "")}
+      cashierEmployeeId={cashierEmployeeId}
     />
   );
 }

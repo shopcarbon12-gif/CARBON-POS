@@ -2,7 +2,7 @@
 
 import { Trash2, Minus, Plus, Barcode, Radio } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
-import type { CartLine } from "@/types/pos";
+import type { CartLine, AttributionEmployee } from "@/types/pos";
 
 /**
  * Left-side cart per the carbon_sales_interface_active_cart_light reference.
@@ -15,6 +15,10 @@ export function CartPanel({
   onRemove,
   onEditDiscount,
   saleNumberPreview,
+  employees,
+  saleAttributedEmployeeId,
+  onChangeSaleEmployee,
+  onChangeLineEmployee,
 }: {
   lines: CartLine[];
   onChangeQty: (cartId: string, next: number) => void;
@@ -24,6 +28,18 @@ export function CartPanel({
    *  sale will receive (e.g. "010012"). Rendered next to the "Cart"
    *  label in the header — purely informational. */
   saleNumberPreview?: string | null;
+  /** Active sales associates eligible to receive credit for this sale.
+   *  Powers both the cart-header dropdown and the per-row dropdowns. */
+  employees: AttributionEmployee[];
+  /** pos_employees.id currently set as the sale-wide attribution. The
+   *  cart-header dropdown reflects + edits this value; changing it
+   *  bulk-rewrites every line's attribution via onChangeSaleEmployee. */
+  saleAttributedEmployeeId: number;
+  /** Cart-header dropdown handler: caller is expected to overwrite every
+   *  line's attributed_employee_id to the new value (the header wins). */
+  onChangeSaleEmployee: (employeeId: number) => void;
+  /** Per-row dropdown handler. */
+  onChangeLineEmployee: (cartId: string, employeeId: number) => void;
 }) {
   const headerLabel = saleNumberPreview
     ? `Cart \\ Sale ${saleNumberPreview}`
@@ -31,9 +47,12 @@ export function CartPanel({
   if (lines.length === 0) {
     return (
       <div className="carbon-card flex-1 flex flex-col min-h-[200px]">
-        <div className="px-4 py-3 border-b border-[var(--carbon-border-soft)] text-xs uppercase tracking-wider font-bold text-[var(--carbon-muted)]">
-          {headerLabel}
-        </div>
+        <CartHeader
+          label={headerLabel}
+          employees={employees}
+          value={saleAttributedEmployeeId}
+          onChange={onChangeSaleEmployee}
+        />
         <div className="flex-1 flex items-center justify-center p-10 text-center">
           <p className="text-[var(--carbon-muted)]">
             Scan a barcode or search for an item to start a sale.
@@ -44,9 +63,12 @@ export function CartPanel({
   }
   return (
     <div className="carbon-card overflow-hidden flex-1 flex flex-col">
-      <div className="px-4 py-3 border-b border-[var(--carbon-border-soft)] text-xs uppercase tracking-wider font-bold text-[var(--carbon-muted)]">
-        {headerLabel}
-      </div>
+      <CartHeader
+        label={headerLabel}
+        employees={employees}
+        value={saleAttributedEmployeeId}
+        onChange={onChangeSaleEmployee}
+      />
       <div className="overflow-y-auto flex-1">
         <ul>
           {lines.map((line) => {
@@ -123,6 +145,23 @@ export function CartPanel({
                       {subtitle}
                     </p>
                   )}
+                  {/* Employee attribution chip — always visible (works on
+                      touch and mouse). Pulses to a soft blue when the row's
+                      attribution differs from the sale-wide value so the
+                      cashier can see at a glance which rows were
+                      individually re-assigned. */}
+                  <div className="mt-1.5">
+                    <EmployeeSelect
+                      employees={employees}
+                      value={line.attributed_employee_id ?? saleAttributedEmployeeId}
+                      differsFromSale={
+                        (line.attributed_employee_id ?? saleAttributedEmployeeId) !==
+                        saleAttributedEmployeeId
+                      }
+                      onChange={(id) => onChangeLineEmployee(line.cart_id, id)}
+                      size="sm"
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-4 sm:gap-6 shrink-0">
                   {line.line_type === "product" ? (
@@ -214,6 +253,101 @@ export function CartPanel({
  * the radio icon and only when an RFID-tagged item entered the cart via
  * a non-RFID path — flags a missed antenna read for the cashier.
  */
+/**
+ * Cart header row — left side is the "CART \ SALE 010012" label, right
+ * side is the sale-wide Employee dropdown. Changing the dropdown bulk-
+ * rewrites every cart row's attribution (header wins, by design).
+ */
+function CartHeader({
+  label,
+  employees,
+  value,
+  onChange,
+}: {
+  label: string;
+  employees: AttributionEmployee[];
+  value: number;
+  onChange: (employeeId: number) => void;
+}) {
+  return (
+    <div className="px-4 py-3 border-b border-[var(--carbon-border-soft)] flex items-center justify-between gap-3">
+      <span className="text-xs uppercase tracking-wider font-bold text-[var(--carbon-muted)]">
+        {label}
+      </span>
+      <EmployeeSelect
+        employees={employees}
+        value={value}
+        onChange={onChange}
+        size="md"
+      />
+    </div>
+  );
+}
+
+/**
+ * Compact "Employee:" dropdown. Native <select> — auto-handles touch,
+ * keyboard, and screen readers without us writing our own popover. The
+ * size variant controls vertical padding (sm for cart rows, md for the
+ * header) and we color-shift the chip when a row's pick differs from the
+ * sale-wide value so the cashier can spot re-assigned lines.
+ */
+function EmployeeSelect({
+  employees,
+  value,
+  onChange,
+  size,
+  differsFromSale,
+}: {
+  employees: AttributionEmployee[];
+  value: number;
+  onChange: (employeeId: number) => void;
+  size: "sm" | "md";
+  differsFromSale?: boolean;
+}) {
+  const padCls = size === "sm" ? "py-0.5 pl-2 pr-7 text-xs" : "py-1 pl-2.5 pr-8 text-sm";
+  // Soft Carbon-Blue tint when this row's employee differs from the
+  // sale-wide default — flags an individually re-assigned line.
+  const colorCls = differsFromSale
+    ? "border-carbon-blue/50 bg-carbon-blue-soft text-carbon-blue"
+    : "border-carbon-border bg-white text-carbon-text";
+  // If the current value isn't in the list yet (employees still loading)
+  // we keep the value attribute set so React doesn't fire an unexpected
+  // change event — the select just shows blank until the list arrives.
+  return (
+    <label className="relative inline-flex items-center gap-1.5 shrink-0">
+      <span
+        className={`material-symbols-outlined ${size === "sm" ? "text-[14px]" : "text-[16px]"} text-carbon-text-muted`}
+        aria-hidden
+      >
+        badge
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className={`appearance-none rounded border ${colorCls} ${padCls} font-medium focus:outline-none focus:border-carbon-blue cursor-pointer max-w-[180px] truncate`}
+        title="Employee credited for this line / sale"
+      >
+        {/* Render the current value even if it's not yet in the loaded
+            list — keeps the select stable across async loads. */}
+        {employees.find((e) => e.id === value) ? null : (
+          <option value={value}>—</option>
+        )}
+        {employees.map((emp) => (
+          <option key={emp.id} value={emp.id}>
+            {emp.display_name || emp.email}
+          </option>
+        ))}
+      </select>
+      <span
+        className={`material-symbols-outlined absolute right-1 ${size === "sm" ? "text-[14px]" : "text-[16px]"} text-carbon-text-muted pointer-events-none`}
+        aria-hidden
+      >
+        expand_more
+      </span>
+    </label>
+  );
+}
+
 function ModeBadge({
   source,
   isManualOnly,

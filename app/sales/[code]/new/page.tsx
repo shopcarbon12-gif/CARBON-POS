@@ -55,6 +55,7 @@ export default async function PosHomePage({
     >
       <SellScreenWrapper
         taxRate={Number(row.tax_rate)}
+        cashierEmployeeId={cashier.employee_id}
       />
     </AdminShell>
   );

@@ -9,7 +9,7 @@ import { RedeemPointsModal } from "./RedeemPointsModal";
 import { RFIDScanModal, type RfidResolvedItem } from "./RFIDScanModal";
 import { calculateTotals } from "@/lib/tax";
 import { capitalizeName } from "@/lib/utils";
-import type { CartLine } from "@/types/pos";
+import type { CartLine, AttributionEmployee } from "@/types/pos";
 
 /**
  * Sell screen. Renders inside the back-office AdminShell — the layout
@@ -30,16 +30,27 @@ import type { CartLine } from "@/types/pos";
 export function SellScreen({
   taxRate,
   code,
+  cashierEmployeeId,
 }: {
   taxRate: number;
   /** Active location code (e.g. "003") — used to build navigation URLs. */
   code: string;
+  /** pos_employees.id of the signed-in cashier. Used as the default
+   *  attributed employee for every new cart line and the cart-header
+   *  attribution dropdown. */
+  cashierEmployeeId: number;
   /** Kept for backward-compat; the AdminShell now handles sign-out. */
   onSignOut?: () => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [lines, setLines] = useState<CartLine[]>([]);
+  // Employee attribution: who gets credit for the sale. Defaults to the
+  // signed-in cashier; the cart-header dropdown bulk-rewrites every line
+  // when changed; each row has its own dropdown for individual overrides.
+  const [saleAttributedEmployeeId, setSaleAttributedEmployeeId] =
+    useState<number>(cashierEmployeeId);
+  const [employees, setEmployees] = useState<AttributionEmployee[]>([]);
   const [showRfid, setShowRfid] = useState(false);
   const [showMisc, setShowMisc] = useState(false);
   const [discountFor, setDiscountFor] = useState<string | "sale" | null>(null);
@@ -224,6 +235,26 @@ export function SellScreen({
     // pos_locations.next_sale_seq has incremented.
   }, [lines.length === 0]);
 
+  // Load active employees once on mount for the attribution dropdowns.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/pos/employees/active");
+        if (!r.ok) return;
+        const d = (await r.json()) as { employees?: AttributionEmployee[] };
+        if (!cancelled && Array.isArray(d.employees)) {
+          setEmployees(d.employees);
+        }
+      } catch {
+        /* best-effort — dropdown will just be empty until next mount */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Auto-start on mount, auto-stop on unmount. The unmount path covers
   // sale completion (capture redirects to /receipt), tab close, and
   // navigation to other tabs.
@@ -391,7 +422,18 @@ export function SellScreen({
       const qs = next.toString();
       router.replace(`/sales/${code}/new${qs ? `?${qs}` : ""}`);
     }
-    if (restoredLines.length) setLines(restoredLines);
+    if (restoredLines.length) {
+      // Lines persisted before the employee-attribution feature won't have
+      // `attributed_employee_id` — backfill them to the signed-in cashier so
+      // the dropdowns render and the capture call doesn't reject the row.
+      setLines(
+        restoredLines.map((l) =>
+          l.attributed_employee_id == null
+            ? { ...l, attributed_employee_id: cashierEmployeeId }
+            : l,
+        ),
+      );
+    }
     if (restoredCustomer) setCustomer(restoredCustomer);
     setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -872,6 +914,7 @@ export function SellScreen({
         discount_amount: dollars,
         tax_rate: 0,
         line_type: "loyalty_redemption",
+        attributed_employee_id: saleAttributedEmployeeId,
       },
     ]);
     setShowRedeem(false);
@@ -924,6 +967,7 @@ export function SellScreen({
           discount_amount: 0,
           tax_rate: taxRate,
           line_type: "product",
+          attributed_employee_id: saleAttributedEmployeeId,
         },
       ];
     });
@@ -971,6 +1015,7 @@ export function SellScreen({
           discount_amount: 0,
           tax_rate: taxRate,
           line_type: "product",
+          attributed_employee_id: saleAttributedEmployeeId,
         });
       }
       return next;
@@ -990,8 +1035,29 @@ export function SellScreen({
         discount_amount: 0,
         tax_rate: taxRate,
         line_type: "misc",
+        attributed_employee_id: saleAttributedEmployeeId,
       },
     ]);
+  }
+
+  /** Cart-header dropdown handler: rewrite EVERY line's attribution
+   *  to this employee. Per the agreed UX, the header is the boss — any
+   *  previous per-row overrides are cleared. */
+  function setSaleAttribution(employeeId: number) {
+    setSaleAttributedEmployeeId(employeeId);
+    setLines((prev) =>
+      prev.map((l) => ({ ...l, attributed_employee_id: employeeId })),
+    );
+  }
+
+  /** Per-row dropdown handler: change one line's attribution; leaves the
+   *  sale-wide header value alone. */
+  function setLineAttribution(cartId: string, employeeId: number) {
+    setLines((prev) =>
+      prev.map((l) =>
+        l.cart_id === cartId ? { ...l, attributed_employee_id: employeeId } : l,
+      ),
+    );
   }
 
   function changeQty(cartId: string, next: number) {
@@ -1044,6 +1110,7 @@ export function SellScreen({
         customerName: customer?.name ?? null,
         customerId: customer?.id ?? null,
         taxRate,
+        attributedEmployeeId: saleAttributedEmployeeId,
       }),
     );
     router.push(`/sales/${code}/payment?method=${method}&cart=${cart}`);
@@ -1093,6 +1160,10 @@ export function SellScreen({
             onRemove={removeLine}
             onEditDiscount={(id) => setDiscountFor(id)}
             saleNumberPreview={saleNumberPreview}
+            employees={employees}
+            saleAttributedEmployeeId={saleAttributedEmployeeId}
+            onChangeSaleEmployee={setSaleAttribution}
+            onChangeLineEmployee={setLineAttribution}
           />
 
           <div className="flex gap-4 pt-2">

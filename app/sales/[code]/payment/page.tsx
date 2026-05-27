@@ -14,6 +14,10 @@ type CartPayload = {
   customerName: string | null;
   customerId?: number | null;
   taxRate: number;
+  /** Sale-wide attributed employee, set in the cart-header dropdown.
+   *  Forwarded to /api/pos/payment/capture so the persisted sale row
+   *  records who got commission credit. */
+  attributedEmployeeId?: number | null;
 };
 
 type Method = "card" | "cash" | "other";
@@ -105,6 +109,7 @@ function PaymentInner() {
       body: JSON.stringify({
         register_id: registerId,
         customer_id: cart.customerId ?? null,
+        attributed_employee_id: cart.attributedEmployeeId ?? null,
         lines: cart.lines.map((l) => ({
           sku_id: l.sku_id,
           epc: l.epc,
@@ -116,6 +121,7 @@ function PaymentInner() {
           discount_amount: l.discount_amount,
           tax_rate: l.tax_rate,
           line_type: l.line_type,
+          attributed_employee_id: l.attributed_employee_id ?? null,
         })),
         payments,
       }),

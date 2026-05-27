@@ -19,6 +19,10 @@ const lineSchema = z.object({
   discount_amount: z.number().nonnegative(),
   tax_rate: z.number().nonnegative(),
   line_type: z.enum(["product", "misc", "gift_card", "loyalty_redemption"]),
+  /** pos_employees.id of the sales associate credited for this line.
+   *  Defaults server-side to the cashier when omitted, so cart payloads
+   *  saved before the attribution feature still capture cleanly. */
+  attributed_employee_id: z.number().int().positive().nullable().optional(),
 });
 
 const cardPayment = z.object({
@@ -63,6 +67,9 @@ const schema = z.object({
   register_id: z.number().int().positive(),
   customer_id: z.number().int().positive().nullable().optional(),
   notes: z.string().max(2000).optional(),
+  /** Sale-wide attributed employee. Defaults server-side to the cashier
+   *  when missing — keeps backwards compatibility with older cart payloads. */
+  attributed_employee_id: z.number().int().positive().nullable().optional(),
   lines: z.array(lineSchema).min(1),
   payments: z
     .array(
@@ -199,13 +206,15 @@ export async function POST(req: Request) {
         Number(seq.rows[0].seq),
       );
 
+      const saleAttributedEmployeeId =
+        data.attributed_employee_id ?? cashier.employee_id;
       const saleRow = await client.query(
         `INSERT INTO pos_sales
            (sale_number, register_id, pos_location_id, cashier_id, customer_id,
             subtotal, discount_amount, tax_amount, total_amount,
-            status, completed_at, notes)
+            status, completed_at, notes, attributed_employee_id)
          VALUES
-           ($1,$2,$3,$4,$5,$6,$7,$8,$9,'completed', now(), $10)
+           ($1,$2,$3,$4,$5,$6,$7,$8,$9,'completed', now(), $10, $11)
          RETURNING *`,
         [
           saleNumber,
@@ -218,6 +227,7 @@ export async function POST(req: Request) {
           tax,
           total,
           data.notes ?? null,
+          saleAttributedEmployeeId,
         ],
       );
       const sale = saleRow.rows[0];
@@ -230,8 +240,9 @@ export async function POST(req: Request) {
         await client.query(
           `INSERT INTO pos_sale_lines
              (sale_id, sku_id, epc, description, quantity, unit_price,
-              discount_amount, tax_rate, tax_amount, line_total, line_type)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+              discount_amount, tax_rate, tax_amount, line_total, line_type,
+              attributed_employee_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
           [
             sale.id,
             l.sku_id,
@@ -244,6 +255,7 @@ export async function POST(req: Request) {
             lineTax,
             lineTotal,
             l.line_type,
+            l.attributed_employee_id ?? saleAttributedEmployeeId,
           ],
         );
       }

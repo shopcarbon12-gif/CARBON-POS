@@ -238,6 +238,21 @@ export type CartLine = {
   discount_amount: number;
   tax_rate: number;
   line_type: "product" | "misc" | "gift_card" | "loyalty_redemption";
+  /** pos_employees.id of the sales associate getting credit for this line.
+   *  Defaults to the cashier ringing the sale; can be reassigned per-row
+   *  in the Cart panel, or in bulk via the cart-header dropdown. Required
+   *  on /api/pos/payment/capture so every persisted line has an
+   *  attribution. */
+  attributed_employee_id: number | null;
+};
+
+/** Active sales associates eligible to receive sale/line credit. Returned
+ *  by GET /api/pos/employees/active and rendered in the Cart attribution
+ *  dropdowns. */
+export type AttributionEmployee = {
+  id: number;
+  email: string;
+  display_name: string;
 };
 
 export type CartTotals = {

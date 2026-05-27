@@ -34,6 +34,11 @@ export default async function ReportsHomePage({
       desc: "Cashier productivity for a date range.",
     },
     {
+      href: `/reports/${code}/credit-by-employee`,
+      title: "Sales Credit by Employee",
+      desc: "Per-line attribution — who earned credit for each item. Use this for commissions.",
+    },
+    {
       href: `/reports/${code}/discounts`,
       title: "Discounts Applied",
       desc: "Every discount line in a date range — useful for spotting patterns.",
