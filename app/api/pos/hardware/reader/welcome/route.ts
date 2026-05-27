@@ -161,17 +161,29 @@ export async function POST(req: Request) {
   setTimeout(async () => {
     try {
       // 1. Flip the account-default splash back so future idle
-      //    transitions pull DEFAULT instead of NEW. This is enough on
-      //    its own — we no longer push a placeholder cart, which the
-      //    operator was rightly hating: it rendered visibly as
-      //    "Welcome to Carbon  $0.01" because Stripe Terminal renders
-      //    every line item regardless of zero/one-cent amounts.
-      // 2. cancel_action best-effort to clear the just-finished phone
-      //    collect_inputs action object so the reader sits cleanly on
-      //    splash. If the reader hasn't pulled the DEFAULT config yet
-      //    the welcome JPG may linger a few extra seconds before the
-      //    next config poll — strictly better than the $0.01 cart.
+      //    transitions pull DEFAULT instead of NEW.
       await setSplashTo(DEFAULT_SPLASH_FILE);
+      // 2. Decide whether to cancel_action. If the cashier triggered
+      //    the name-prompt during these 7 s, the reader is in the
+      //    middle of a collect_inputs for first/last name. Firing
+      //    cancel_action here would KILL that flow — the cashier
+      //    would see the name fields die mid-typing. Only kick the
+      //    reader when it has no active action (i.e., it's been
+      //    sitting on the JPG splash the whole 7 s).
+      const readerR = await stripe(`/v1/terminal/readers/${readerId}`, {
+        method: "GET",
+      });
+      let readerBusy = false;
+      if (readerR.ok) {
+        const readerJson = await readerR.json().catch(() => ({}));
+        readerBusy = readerJson?.action != null;
+      }
+      if (readerBusy) {
+        // Reader is doing something the cashier started — leave it
+        // alone. The DEFAULT splash will appear naturally when that
+        // action ends.
+        return;
+      }
       await stripe(`/v1/terminal/readers/${readerId}/cancel_action`, {
         method: "POST",
         body: "",

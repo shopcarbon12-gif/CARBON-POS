@@ -277,6 +277,18 @@ export function SellScreen({
     // phone prompt POSTs, i.e. once the customer is at the reader
     // typing their number — the reader is showing collect_inputs UI
     // at that point so the customer can't see the splash mid-typing.
+    //
+    // Mount-time defensive revert: if a previous new-customer flow
+    // stranded NEW on the account-wide config (deploy mid-dwell, tab
+    // close before the client-side 7.5 s fallback ran, or another
+    // register's flow leaked here), force DEFAULT now so the reader's
+    // next idle transition shows the Carbon splash — not the stuck
+    // "Thank you for Joining" JPG.
+    void fetch("/api/pos/hardware/reader/welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "revert" }),
+    }).catch(() => {});
     return () => {
       clearInterval(heartbeat);
       // Two best-effort, fire-and-forget calls on unmount:
