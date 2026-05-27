@@ -1083,6 +1083,20 @@ export function SellScreen({
     );
   }
 
+  /** Manual price override from the line editor's "Set Price" tab.
+   *  Replaces unit_price and clears any previously-applied discount on
+   *  that line (the cashier is restating the price from scratch — any
+   *  prior % or $ off no longer makes sense against the new base). */
+  function setLinePrice(cartId: string, newPrice: number) {
+    setLines((prev) =>
+      prev.map((l) =>
+        l.cart_id === cartId
+          ? { ...l, unit_price: Math.max(0, newPrice), discount_amount: 0 }
+          : l,
+      ),
+    );
+  }
+
   function applySaleDiscount(value: number, isPercent: boolean) {
     setLines((prev) => {
       const subtotal = prev.reduce(
@@ -1286,10 +1300,20 @@ export function SellScreen({
       {discountFor && (
         <DiscountModal
           target={discountFor}
+          currentPrice={
+            discountFor === "sale"
+              ? undefined
+              : lines.find((l) => l.cart_id === discountFor)?.unit_price
+          }
           onCancel={() => setDiscountFor(null)}
-          onApply={(value, isPercent) => {
-            if (discountFor === "sale") applySaleDiscount(value, isPercent);
-            else applyLineDiscount(discountFor, value, isPercent);
+          onApply={(payload) => {
+            if (payload.kind === "set-price") {
+              if (discountFor !== "sale") setLinePrice(discountFor, payload.value);
+            } else if (discountFor === "sale") {
+              applySaleDiscount(payload.value, payload.kind === "percent");
+            } else {
+              applyLineDiscount(discountFor, payload.value, payload.kind === "percent");
+            }
             setDiscountFor(null);
           }}
         />
@@ -1455,25 +1479,54 @@ function MiscChargeModal({
   );
 }
 
+type DiscountModalPayload =
+  | { kind: "percent"; value: number }
+  | { kind: "fixed"; value: number }
+  | { kind: "set-price"; value: number };
+
 function DiscountModal({
   target,
+  currentPrice,
   onCancel,
   onApply,
 }: {
   target: string | "sale";
+  /** Current unit_price of the line being edited — pre-fills the input
+   *  when the cashier switches to the "Set Price" tab. Omitted for the
+   *  sale-wide modal (which doesn't expose Set Price). */
+  currentPrice?: number;
   onCancel: () => void;
-  onApply: (value: number, isPercent: boolean) => void;
+  onApply: (payload: DiscountModalPayload) => void;
 }) {
+  const isLine = target !== "sale";
+  const [mode, setMode] = useState<"percent" | "fixed" | "set-price">(
+    "percent",
+  );
   const [value, setValue] = useState("");
-  const [mode, setMode] = useState<"percent" | "fixed">("percent");
+  // Pre-fill with the current price the first time the cashier flips to
+  // Set Price so they can edit instead of retyping. Switching back to a
+  // discount mode wipes the field so the % / $ doesn't inherit a price.
+  function changeMode(next: "percent" | "fixed" | "set-price") {
+    setMode(next);
+    if (next === "set-price" && currentPrice != null) {
+      setValue(currentPrice.toFixed(2));
+    } else {
+      setValue("");
+    }
+  }
+  const title = isLine
+    ? mode === "set-price"
+      ? "Set line price"
+      : "Discount line"
+    : "Discount the whole sale";
+  const placeholder =
+    mode === "percent" ? "10" : mode === "fixed" ? "5.00" : "12.99";
+  const applyLabel = mode === "set-price" ? "Set Price" : "Apply";
   return (
-    <BasicModal
-      title={target === "sale" ? "Discount the whole sale" : "Discount line"}
-      onCancel={onCancel}
-    >
-      <div className="grid grid-cols-2 gap-2 mt-2">
+    <BasicModal title={title} onCancel={onCancel}>
+      <div className={`grid ${isLine ? "grid-cols-3" : "grid-cols-2"} gap-2 mt-2`}>
         <button
-          onClick={() => setMode("percent")}
+          onClick={() => changeMode("percent")}
           className={`tap border ${
             mode === "percent"
               ? "carbon-btn-primary"
@@ -1483,7 +1536,7 @@ function DiscountModal({
           % Off
         </button>
         <button
-          onClick={() => setMode("fixed")}
+          onClick={() => changeMode("fixed")}
           className={`tap border ${
             mode === "fixed"
               ? "carbon-btn-primary"
@@ -1492,6 +1545,18 @@ function DiscountModal({
         >
           $ Off
         </button>
+        {isLine ? (
+          <button
+            onClick={() => changeMode("set-price")}
+            className={`tap border ${
+              mode === "set-price"
+                ? "carbon-btn-primary"
+                : "border-[var(--color-pos-border)]"
+            }`}
+          >
+            Set Price
+          </button>
+        ) : null}
       </div>
       <input
         autoFocus
@@ -1500,12 +1565,18 @@ function DiscountModal({
         min="0"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder={mode === "percent" ? "10" : "5.00"}
+        placeholder={placeholder}
         className="tap-lg w-full border border-[var(--color-pos-border)] px-3 text-3xl font-semibold mt-3"
       />
       {mode === "percent" && Number(value) > 20 && (
         <p className="text-xs text-amber-700 mt-2">
           Discounts over 20% need a manager PIN. (Phase 2 enforces this.)
+        </p>
+      )}
+      {mode === "set-price" && (
+        <p className="text-xs text-carbon-text-muted mt-2 leading-snug">
+          Replaces the line price. Any % / $ off on this line is cleared —
+          re-apply afterwards if needed.
         </p>
       )}
       <div className="mt-5 flex gap-2">
@@ -1518,12 +1589,15 @@ function DiscountModal({
         <button
           onClick={() => {
             const n = Number(value);
-            if (!Number.isFinite(n) || n <= 0) return;
-            onApply(n, mode === "percent");
+            if (!Number.isFinite(n) || n < 0) return;
+            // Discounts must be > 0 (zero discount is a no-op); a set
+            // price of 0 is legitimate (promo giveaway).
+            if (mode !== "set-price" && n <= 0) return;
+            onApply({ kind: mode, value: n });
           }}
           className="tap carbon-btn-primary flex-1 font-semibold"
         >
-          Apply
+          {applyLabel}
         </button>
       </div>
     </BasicModal>

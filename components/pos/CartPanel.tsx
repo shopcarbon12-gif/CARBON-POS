@@ -213,7 +213,7 @@ export function CartPanel({
                     type="button"
                     onClick={() => onEditDiscount(line.cart_id)}
                     className="text-right w-24 font-semibold tabular-nums hover:text-carbon-blue"
-                    title="Click to apply a line discount"
+                    title="Click to edit price or apply a discount"
                   >
                     {formatMoney(lineTotal)}
                   </button>
