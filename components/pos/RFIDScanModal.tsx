@@ -195,7 +195,7 @@ export function RFIDScanModal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white w-full sm:max-w-2xl rounded-2xl p-6 shadow-lg max-h-[85vh] flex flex-col">
+      <div className="bg-white w-full sm:max-w-2xl rounded-2xl p-4 sm:p-6 shadow-lg max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between mb-2 gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <h2 className="text-xl font-bold shrink-0">RFID Scan</h2>
@@ -304,18 +304,20 @@ export function RFIDScanModal({
             </ul>
           </div>
         )}
-        <div className="flex items-center justify-between mt-3">
+        {/* Bottom row stacks on mobile (counter above buttons), goes
+            side-by-side from sm+ so the buttons don't squish/wrap. */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-3">
           <p className="text-sm text-[var(--color-pos-muted)]">
             {selectionMode
               ? `${selected.size} of ${scanned.length} selected`
               : `${scanned.length} ready to add`}
           </p>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={rescan}
               disabled={scanned.length === 0 && blocked.length === 0}
-              className="tap rounded-xl border border-[var(--color-pos-border)] px-4 font-medium disabled:opacity-50 inline-flex items-center gap-1.5"
+              className="tap rounded-xl border border-[var(--color-pos-border)] px-3 sm:px-4 font-medium disabled:opacity-50 inline-flex items-center justify-center gap-1.5 flex-1 sm:flex-none whitespace-nowrap"
               title="Clear list and start scanning again"
             >
               <span className="material-symbols-outlined text-[18px]" aria-hidden>
@@ -325,7 +327,7 @@ export function RFIDScanModal({
             </button>
             <button
               onClick={onClose}
-              className="tap rounded-xl border border-[var(--color-pos-border)] px-4 font-medium"
+              className="tap rounded-xl border border-[var(--color-pos-border)] px-3 sm:px-4 font-medium flex-1 sm:flex-none whitespace-nowrap"
             >
               Cancel
             </button>
@@ -340,7 +342,7 @@ export function RFIDScanModal({
               disabled={
                 scanned.length === 0 || (selectionMode && selected.size === 0)
               }
-              className="tap rounded-xl bg-[var(--color-pos-accent)] text-white px-5 font-semibold disabled:opacity-50"
+              className="tap rounded-xl bg-[var(--color-pos-accent)] text-white px-3 sm:px-5 font-semibold disabled:opacity-50 flex-1 sm:flex-none whitespace-nowrap"
             >
               Add {selectionMode ? selected.size : scanned.length} to cart
             </button>
