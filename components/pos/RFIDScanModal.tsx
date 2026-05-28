@@ -251,20 +251,21 @@ export function RFIDScanModal({
                           check_circle
                         </span>
                       )}
-                      <p className="text-sm leading-tight">
+                      <p className="text-sm leading-tight min-w-0 break-words">
                         <span
                           className={`font-semibold ${isSelected ? "text-emerald-900" : "text-carbon-text"}`}
                         >
                           {it.item_name}
                         </span>
                         {meta.length > 0 && (
-                          <span className={isSelected ? "text-emerald-800" : "text-carbon-text-muted"}>
-                            {meta.map((m, idx) => (
-                              <span key={idx}>
-                                <span className="mx-1.5 opacity-50">·</span>
-                                {m}
-                              </span>
-                            ))}
+                          <span
+                            className={`ml-1.5 ${isSelected ? "text-emerald-800" : "text-carbon-text-muted"}`}
+                          >
+                            {/* Use real whitespace between dots so the
+                                browser can wrap; mx-1.5 margins on inline
+                                spans made the meta one unbreakable token
+                                and the price collided with the trash btn. */}
+                            {meta.join(" · ")}
                           </span>
                         )}
                       </p>
