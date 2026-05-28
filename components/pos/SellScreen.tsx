@@ -1153,6 +1153,51 @@ export function SellScreen({
       )}
 
 
+      {/* Mobile-only: customer block pinned ABOVE the cart per operator
+          directive. On lg+ the customer section lives inside the right-
+          column TotalPanel (mode="all"), so this slot is hidden. */}
+      <div className="lg:hidden">
+        <TotalPanel
+          mode="customer-only"
+          totals={totals}
+          customer={customer}
+          loyaltyBalance={loyaltyBalance}
+          onPickCustomer={setCustomer}
+          onClearCustomer={() => setCustomer(null)}
+          onNewCustomer={() => {
+            router.push(
+              `/customers/${code}/new?next=${encodeURIComponent(
+                `/sales/${code}/new`,
+              )}`,
+            );
+          }}
+          onRedeemPoints={() => setShowRedeem(true)}
+          onApplyDiscount={() => setDiscountFor("sale")}
+          onChargeCard={() => startCheckout("card")}
+          onTakeCash={() => startCheckout("cash")}
+          onOtherPayment={() => startCheckout("other")}
+          disabled={lines.length === 0}
+          pendingPhone={pendingPhone}
+          pendingFirstName={pendingFirstName}
+          pendingLastName={pendingLastName}
+          pendingEmail={pendingEmail}
+          pendingCreateError={pendingCreateError}
+          nameSendingToReader={nameSendingToReader}
+          phonePromptCollecting={
+            phonePromptStatus === "collecting" ||
+            phonePromptStatus === "looking-up"
+          }
+          onChangePendingFirstName={(v) => { setPendingFirstName(v); setPendingCreateError(null); }}
+          onChangePendingLastName={(v) => { setPendingLastName(v); setPendingCreateError(null); }}
+          onChangePendingEmail={(v) => { setPendingEmail(v); setPendingCreateError(null); }}
+          onSendNameToReader={sendNameToReader}
+          onConfirmCreateCustomer={confirmCreateCustomer}
+          onCancelPendingPhone={cancelPendingPhone}
+          onCancelPhonePrompt={cancelPhonePrompt}
+          onResendPhonePrompt={resendPhonePrompt}
+        />
+      </div>
+
       {/* Main POS area. Drops the side-by-side breakpoint from xl (1280)
           to lg (1024) so tablets in portrait get the stacked layout. */}
       <div className="flex flex-1 gap-4 sm:gap-6 min-h-0 flex-col lg:flex-row">
@@ -1231,50 +1276,96 @@ export function SellScreen({
           </div>
         </div>
 
-        {/* Right column — checkout. Fixed 420 px from lg+ (where the layout
-            goes side-by-side); full width when stacked. */}
+        {/* Right column — checkout. On lg+ this is the fixed 420 px
+            sidebar with the FULL panel (customer + totals + payment).
+            On mobile (<lg), customer already lives above the cart in
+            the dedicated slot, so this slot renders summary-only
+            (totals + payment buttons). */}
         <div className="lg:w-[420px] flex-shrink-0">
-          <TotalPanel
-            totals={totals}
-            customer={customer}
-            loyaltyBalance={loyaltyBalance}
-            onPickCustomer={setCustomer}
-            onClearCustomer={() => setCustomer(null)}
-            onNewCustomer={() => {
-              // Round-trip: cart + customer are already persisted to LS.
-              // CustomerForm appends ?customer_id&customer_name on its
-              // post-create redirect when ?next= is present.
-              router.push(
-                `/customers/${code}/new?next=${encodeURIComponent(
-                  `/sales/${code}/new`,
-                )}`,
-              );
-            }}
-            onRedeemPoints={() => setShowRedeem(true)}
-            onApplyDiscount={() => setDiscountFor("sale")}
-            onChargeCard={() => startCheckout("card")}
-            onTakeCash={() => startCheckout("cash")}
-            onOtherPayment={() => startCheckout("other")}
-            disabled={lines.length === 0}
-            pendingPhone={pendingPhone}
-            pendingFirstName={pendingFirstName}
-            pendingLastName={pendingLastName}
-            pendingEmail={pendingEmail}
-            pendingCreateError={pendingCreateError}
-            nameSendingToReader={nameSendingToReader}
-            phonePromptCollecting={
-              phonePromptStatus === "collecting" ||
-              phonePromptStatus === "looking-up"
-            }
-            onChangePendingFirstName={(v) => { setPendingFirstName(v); setPendingCreateError(null); }}
-            onChangePendingLastName={(v) => { setPendingLastName(v); setPendingCreateError(null); }}
-            onChangePendingEmail={(v) => { setPendingEmail(v); setPendingCreateError(null); }}
-            onSendNameToReader={sendNameToReader}
-            onConfirmCreateCustomer={confirmCreateCustomer}
-            onCancelPendingPhone={cancelPendingPhone}
-            onCancelPhonePrompt={cancelPhonePrompt}
-            onResendPhonePrompt={resendPhonePrompt}
-          />
+          {/* Mobile: summary-only (customer already shown above the cart). */}
+          <div className="lg:hidden">
+            <TotalPanel
+              mode="summary-only"
+              totals={totals}
+              customer={customer}
+              loyaltyBalance={loyaltyBalance}
+              onPickCustomer={setCustomer}
+              onClearCustomer={() => setCustomer(null)}
+              onNewCustomer={() => {
+                router.push(
+                  `/customers/${code}/new?next=${encodeURIComponent(
+                    `/sales/${code}/new`,
+                  )}`,
+                );
+              }}
+              onRedeemPoints={() => setShowRedeem(true)}
+              onApplyDiscount={() => setDiscountFor("sale")}
+              onChargeCard={() => startCheckout("card")}
+              onTakeCash={() => startCheckout("cash")}
+              onOtherPayment={() => startCheckout("other")}
+              disabled={lines.length === 0}
+              pendingPhone={pendingPhone}
+              pendingFirstName={pendingFirstName}
+              pendingLastName={pendingLastName}
+              pendingEmail={pendingEmail}
+              pendingCreateError={pendingCreateError}
+              nameSendingToReader={nameSendingToReader}
+              phonePromptCollecting={
+                phonePromptStatus === "collecting" ||
+                phonePromptStatus === "looking-up"
+              }
+              onChangePendingFirstName={(v) => { setPendingFirstName(v); setPendingCreateError(null); }}
+              onChangePendingLastName={(v) => { setPendingLastName(v); setPendingCreateError(null); }}
+              onChangePendingEmail={(v) => { setPendingEmail(v); setPendingCreateError(null); }}
+              onSendNameToReader={sendNameToReader}
+              onConfirmCreateCustomer={confirmCreateCustomer}
+              onCancelPendingPhone={cancelPendingPhone}
+              onCancelPhonePrompt={cancelPhonePrompt}
+              onResendPhonePrompt={resendPhonePrompt}
+            />
+          </div>
+          {/* Desktop: full panel — customer + totals + payment buttons. */}
+          <div className="hidden lg:block">
+            <TotalPanel
+              mode="all"
+              totals={totals}
+              customer={customer}
+              loyaltyBalance={loyaltyBalance}
+              onPickCustomer={setCustomer}
+              onClearCustomer={() => setCustomer(null)}
+              onNewCustomer={() => {
+                router.push(
+                  `/customers/${code}/new?next=${encodeURIComponent(
+                    `/sales/${code}/new`,
+                  )}`,
+                );
+              }}
+              onRedeemPoints={() => setShowRedeem(true)}
+              onApplyDiscount={() => setDiscountFor("sale")}
+              onChargeCard={() => startCheckout("card")}
+              onTakeCash={() => startCheckout("cash")}
+              onOtherPayment={() => startCheckout("other")}
+              disabled={lines.length === 0}
+              pendingPhone={pendingPhone}
+              pendingFirstName={pendingFirstName}
+              pendingLastName={pendingLastName}
+              pendingEmail={pendingEmail}
+              pendingCreateError={pendingCreateError}
+              nameSendingToReader={nameSendingToReader}
+              phonePromptCollecting={
+                phonePromptStatus === "collecting" ||
+                phonePromptStatus === "looking-up"
+              }
+              onChangePendingFirstName={(v) => { setPendingFirstName(v); setPendingCreateError(null); }}
+              onChangePendingLastName={(v) => { setPendingLastName(v); setPendingCreateError(null); }}
+              onChangePendingEmail={(v) => { setPendingEmail(v); setPendingCreateError(null); }}
+              onSendNameToReader={sendNameToReader}
+              onConfirmCreateCustomer={confirmCreateCustomer}
+              onCancelPendingPhone={cancelPendingPhone}
+              onCancelPhonePrompt={cancelPhonePrompt}
+              onResendPhonePrompt={resendPhonePrompt}
+            />
+          </div>
           {customer && loyaltyBalance !== null ? (
             <RedeemPointsModal
               open={showRedeem}

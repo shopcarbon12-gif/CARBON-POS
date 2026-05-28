@@ -58,7 +58,16 @@ export function TotalPanel({
   onCancelPendingPhone,
   onCancelPhonePrompt,
   onResendPhonePrompt,
+  mode = "all",
 }: {
+  /** Lets the sell screen split the panel on mobile: the customer block
+   *  pinned ABOVE the cart, and totals + payment buttons stacked BELOW
+   *  the cart. Desktop keeps "all" in the right sidebar.
+   *    "all"           — customer + totals + payment buttons (default)
+   *    "customer-only" — just the customer block (above the cart on mobile)
+   *    "summary-only"  — totals + payment buttons (below the cart on mobile)
+   */
+  mode?: "all" | "customer-only" | "summary-only";
   totals: CartTotals;
   customer: PickedCustomer | null;
   /** Loyalty points balance for the attached customer (null = unknown / loading). */
@@ -96,10 +105,15 @@ export function TotalPanel({
    *  skip, or for a returning customer who needs a re-scan). */
   onResendPhonePrompt: () => void;
 }) {
+  const showCustomer = mode === "all" || mode === "customer-only";
+  const showSummary = mode === "all" || mode === "summary-only";
   return (
     <aside className="carbon-card flex flex-col">
       {/* Customer */}
-      <div className="p-6 border-b border-[var(--carbon-border-soft)]">
+      {showCustomer ? (
+      <div
+        className={`p-4 sm:p-6 ${showSummary ? "border-b border-[var(--carbon-border-soft)]" : ""}`}
+      >
         <div className="text-xs text-carbon-text-muted mb-2 uppercase tracking-wider font-bold">
           Customer
         </div>
@@ -151,9 +165,12 @@ export function TotalPanel({
           />
         )}
       </div>
+      ) : null}
 
+      {showSummary ? (
+      <>
       {/* Totals */}
-      <div className="p-6 space-y-3 flex-1">
+      <div className="p-4 sm:p-6 space-y-3 flex-1">
         <div className="flex justify-between text-[var(--carbon-muted)]">
           <span>Subtotal</span>
           <span className="font-medium text-carbon-text tabular-nums">
@@ -183,7 +200,7 @@ export function TotalPanel({
       </div>
 
       {/* Payment buttons */}
-      <div className="p-6 space-y-4 bg-[var(--carbon-surface-soft)] border-t border-[var(--carbon-border-soft)]">
+      <div className="p-4 sm:p-6 space-y-3 sm:space-y-4 bg-[var(--carbon-surface-soft)] border-t border-[var(--carbon-border-soft)]">
         <button
           type="button"
           onClick={onApplyDiscount}
@@ -229,6 +246,8 @@ export function TotalPanel({
           Other (Store Credit, Account, Gift Card)
         </button>
       </div>
+      </>
+      ) : null}
     </aside>
   );
 }
