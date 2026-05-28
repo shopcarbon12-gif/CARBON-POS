@@ -56,7 +56,7 @@ export default async function ReportsHomePage({
   ];
   return (
     <AdminShell email={cashier.email} active="reports" code={code}>
-      <section className="p-6">
+      <section className="p-3 sm:p-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl">
           {cards.map((c) => (
             <Link

@@ -166,7 +166,7 @@ export default async function DashboardPage({
 
   return (
     <AdminShell email={cashier.email} active="dashboard" code={code}>
-      <main className="p-6 lg:p-10">
+      <main className="p-3 sm:p-6 lg:p-10">
         <div className="max-w-[1440px] mx-auto space-y-6">
           {/* Header */}
           <div className="flex flex-wrap justify-between items-end gap-3 mb-2">

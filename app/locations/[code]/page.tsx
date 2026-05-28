@@ -45,7 +45,7 @@ export default async function LocationsPage({
       code={code}
       title="Switch Location"
     >
-      <main className="p-6 lg:p-10">
+      <main className="p-3 sm:p-6 lg:p-10">
         <div className="max-w-3xl mx-auto">
           <header className="mb-6">
             <h2 className="text-2xl font-bold tracking-tight">

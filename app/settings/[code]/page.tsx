@@ -43,7 +43,7 @@ export default async function SettingsHomePage({
   ];
   return (
     <AdminShell email={cashier.email} active="settings" code={code}>
-      <section className="p-6">
+      <section className="p-3 sm:p-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
           {cards.map((c) => (
             <Link

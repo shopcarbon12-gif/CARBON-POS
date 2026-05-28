@@ -154,7 +154,7 @@ export function InventoryTable({
               as shorthand, which silently wins over Tailwind's pl-*
               utility and collapses the icon on top of the typed text.
               Same pattern as ItemSearch.tsx. */}
-          <div className="carbon-input tap w-80 flex items-center gap-2 pl-3 pr-2">
+          <div className="carbon-input tap w-full sm:w-80 min-w-0 flex items-center gap-2 pl-3 pr-2">
             <span
               className="material-symbols-outlined text-carbon-text-muted text-xl shrink-0"
               aria-hidden

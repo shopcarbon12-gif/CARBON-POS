@@ -107,14 +107,13 @@ export function CartPanel({
             return (
               <li
                 key={line.cart_id}
-                className="flex items-center justify-between px-4 py-2 border-b border-[var(--carbon-border-soft)] last:border-b-0 hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                className="flex items-center justify-between px-3 sm:px-4 py-2 gap-2 sm:gap-0 border-b border-[var(--carbon-border-soft)] last:border-b-0 hover:bg-[var(--carbon-surface-soft)] transition-colors"
               >
-                {/* Thumbnail — bigger square (was w-14 h-14). Row vertical
-                    padding dropped from py-4 → py-2 so the row height is
-                    the same as before (image now dictates it). */}
+                {/* Thumbnail — hidden on mobile to give the description room.
+                    Row vertical padding stays py-2 so each row aligns. */}
                 {line.line_type === "product" ? (
                   <div
-                    className="w-20 h-20 shrink-0 mr-4 flex items-center justify-center bg-[var(--carbon-surface-soft)] border border-[var(--carbon-border-soft)]"
+                    className="w-20 h-20 shrink-0 mr-4 hidden md:flex items-center justify-center bg-[var(--carbon-surface-soft)] border border-[var(--carbon-border-soft)]"
                     aria-hidden
                   >
                     <span className="material-symbols-outlined text-[40px] text-[var(--carbon-muted)]">
@@ -136,12 +135,12 @@ export function CartPanel({
                     isManualOnly={line.is_manual_only ?? false}
                   />
                 ) : null}
-                <div className="flex-1 min-w-0 pr-4">
-                  <h3 className="text-base font-semibold truncate">
+                <div className="flex-1 min-w-0 pr-2 sm:pr-4">
+                  <h3 className="text-sm sm:text-base font-semibold truncate">
                     {line.description}
                   </h3>
                   {subtitle && (
-                    <p className="text-sm text-carbon-text font-medium mt-1 truncate">
+                    <p className="text-xs sm:text-sm text-carbon-text font-medium mt-0.5 sm:mt-1 truncate">
                       {subtitle}
                     </p>
                   )}
@@ -163,7 +162,7 @@ export function CartPanel({
                     size="sm"
                   />
                 </div>
-                <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+                <div className="flex items-center gap-2 sm:gap-4 lg:gap-6 shrink-0">
                   {line.line_type === "product" ? (
                     line.source === "rfid" ? (
                       // RFID-stacked rows: qty equals the EPC count and
@@ -171,7 +170,7 @@ export function CartPanel({
                       // physical item. Removing the row drops all EPCs
                       // in this stack.
                       <span
-                        className="inline-flex items-center justify-center min-w-[3rem] px-3 py-1 border border-[var(--carbon-border)] bg-carbon-surface-soft text-carbon-text font-semibold tabular-nums"
+                        className="inline-flex items-center justify-center min-w-[2.25rem] sm:min-w-[3rem] px-2 sm:px-3 py-1 border border-[var(--carbon-border)] bg-carbon-surface-soft text-carbon-text font-semibold tabular-nums text-sm"
                         title="Quantity follows the scanned tags — adjust by scanning more or removing the row."
                       >
                         {line.quantity}
@@ -187,32 +186,32 @@ export function CartPanel({
                             )
                           }
                           aria-label="Decrease quantity"
-                          className="px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                          className="px-2 sm:px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
                         >
                           <Minus size={16} />
                         </button>
-                        <span className="px-3 py-1 font-medium border-x border-[var(--carbon-border)] min-w-[2.5rem] text-center tabular-nums">
+                        <span className="px-2 sm:px-3 py-1 font-medium border-x border-[var(--carbon-border)] min-w-[2rem] sm:min-w-[2.5rem] text-center tabular-nums text-sm">
                           {line.quantity}
                         </span>
                         <button
                           type="button"
                           onClick={() => onChangeQty(line.cart_id, line.quantity + 1)}
                           aria-label="Increase quantity"
-                          className="px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                          className="px-2 sm:px-3 py-1 text-[var(--carbon-muted)] hover:bg-[var(--carbon-surface-soft)] transition-colors"
                         >
                           <Plus size={16} />
                         </button>
                       </div>
                     )
                   ) : (
-                    <span className="text-xs text-[var(--carbon-muted)] uppercase tracking-wider font-bold">
+                    <span className="text-[10px] sm:text-xs text-[var(--carbon-muted)] uppercase tracking-wider font-bold">
                       Misc
                     </span>
                   )}
                   <button
                     type="button"
                     onClick={() => onEditDiscount(line.cart_id)}
-                    className="text-right w-24 font-semibold tabular-nums hover:text-carbon-blue"
+                    className="text-right w-16 sm:w-24 text-sm sm:text-base font-semibold tabular-nums hover:text-carbon-blue"
                     title="Click to edit price or apply a discount"
                   >
                     {formatMoney(lineTotal)}
@@ -221,7 +220,7 @@ export function CartPanel({
                     type="button"
                     onClick={() => onRemove(line.cart_id)}
                     aria-label="Remove item"
-                    className="text-[var(--carbon-muted)] hover:text-carbon-danger transition-colors"
+                    className="text-[var(--carbon-muted)] hover:text-carbon-danger transition-colors p-1"
                   >
                     <Trash2 size={18} />
                   </button>
@@ -371,7 +370,7 @@ function ModeBadge({
   return (
     <span
       title={title}
-      className={`tap shrink-0 mr-3 inline-flex w-[64px] items-center justify-center border px-2 leading-none ${colorClass}`}
+      className={`tap shrink-0 mr-2 sm:mr-3 inline-flex w-[44px] sm:w-[64px] items-center justify-center border px-2 leading-none ${colorClass}`}
     >
       <IconCmp className="h-7 w-7" aria-hidden />
     </span>

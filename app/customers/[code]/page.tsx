@@ -40,7 +40,7 @@ export default async function CustomersPage({
   );
   return (
     <AdminShell email={cashier.email} active="customers" code={code}>
-      <section className="p-6">
+      <section className="p-3 sm:p-6">
         <div className="flex items-end justify-between mb-4 gap-3 flex-wrap">
           <form className="flex gap-2 items-end">
             <label className="text-xs font-medium text-[var(--color-pos-muted)]">

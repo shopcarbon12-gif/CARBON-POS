@@ -144,7 +144,7 @@ export default async function SalesPage({
 
   return (
     <AdminShell email={cashier.email} active="sales" code={code}>
-      <section className="p-6">
+      <section className="p-3 sm:p-6">
         {/* ───── Section 1 — Current sale ─────
             New Sale / Exchange / Refund / Lookup when a register is open;
             Open Register / Lookup when none is. */}

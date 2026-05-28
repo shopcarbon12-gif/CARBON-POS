@@ -1143,22 +1143,26 @@ export function SellScreen({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 flex flex-col space-y-6">
+    <div className="flex-1 overflow-y-auto p-3 sm:p-6 flex flex-col space-y-4 sm:space-y-6">
       {/* "Hello, Elior" — appears when a customer is attached and we have
           at least one item in cart. Sits above the cart per design. */}
       {customer && lines.length > 0 && (
-        <div className="text-2xl font-semibold text-carbon-text">
+        <div className="text-xl sm:text-2xl font-semibold text-carbon-text">
           Hello {customer.name.split(" ")[0]},
         </div>
       )}
 
 
-      {/* Main POS area */}
-      <div className="flex flex-1 gap-6 min-h-0 flex-col xl:flex-row">
+      {/* Main POS area. Drops the side-by-side breakpoint from xl (1280)
+          to lg (1024) so tablets in portrait get the stacked layout. */}
+      <div className="flex flex-1 gap-4 sm:gap-6 min-h-0 flex-col lg:flex-row">
         {/* Left column — search + cart + bottom actions */}
         <div className="flex-1 flex flex-col space-y-4 min-w-0">
-          <div className="flex gap-4">
-            <div className="flex-1">
+          {/* Search row: stacks under the Scan-RFID button on tiny phones
+              (the button needs ~140 px and the search needs at least that
+              wide to be useful), side-by-side from sm+. */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+            <div className="flex-1 min-w-0">
               <ItemSearch onPick={addProduct} />
             </div>
             <button
@@ -1168,7 +1172,7 @@ export function SellScreen({
                 setShowRfid(true);
               }}
               title={readerStateLabel(readerState)}
-              className="carbon-btn-secondary tap-lg px-6 font-semibold whitespace-nowrap inline-flex items-center gap-2"
+              className="carbon-btn-secondary tap-lg px-4 sm:px-6 font-semibold whitespace-nowrap inline-flex items-center justify-center gap-2"
             >
               <span
                 className={`w-2.5 h-2.5 rounded-full shrink-0 ${
@@ -1192,10 +1196,12 @@ export function SellScreen({
             onChangeLineEmployee={setLineAttribution}
           />
 
-          <div className="flex gap-4 pt-2">
+          {/* Three secondary actions — flex-wrap so they reflow to 2+1 or
+              stack on narrow widths instead of squishing the icons + labels. */}
+          <div className="flex flex-wrap gap-2 sm:gap-4 pt-2">
             <button
               onClick={() => setShowMisc(true)}
-              className="flex-1 carbon-btn-secondary tap font-semibold inline-flex items-center justify-center gap-2"
+              className="flex-1 min-w-[140px] carbon-btn-secondary tap font-semibold inline-flex items-center justify-center gap-2"
             >
               <span className="material-symbols-outlined text-[20px]" aria-hidden>
                 add_circle
@@ -1204,7 +1210,7 @@ export function SellScreen({
             </button>
             <button
               disabled={lines.length === 0}
-              className="flex-1 carbon-btn-secondary tap font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2"
+              className="flex-1 min-w-[140px] carbon-btn-secondary tap font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2"
               title="Phase 2"
             >
               <span className="material-symbols-outlined text-[20px]" aria-hidden>
@@ -1215,7 +1221,7 @@ export function SellScreen({
             <button
               onClick={() => setLines([])}
               disabled={lines.length === 0}
-              className="flex-1 tap font-semibold border border-red-200 text-carbon-danger bg-white hover:bg-red-50 disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
+              className="flex-1 min-w-[140px] tap font-semibold border border-red-200 text-carbon-danger bg-white hover:bg-red-50 disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
             >
               <span className="material-symbols-outlined text-[20px]" aria-hidden>
                 cancel
@@ -1225,8 +1231,9 @@ export function SellScreen({
           </div>
         </div>
 
-        {/* Right column — checkout */}
-        <div className="xl:w-[420px] flex-shrink-0">
+        {/* Right column — checkout. Fixed 420 px from lg+ (where the layout
+            goes side-by-side); full width when stacked. */}
+        <div className="lg:w-[420px] flex-shrink-0">
           <TotalPanel
             totals={totals}
             customer={customer}

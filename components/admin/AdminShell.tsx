@@ -95,11 +95,11 @@ export function AdminShell({
   return (
     <div className="min-h-screen bg-carbon-bg text-carbon-text flex flex-col">
       {/* Top nav bar */}
-      <header className="carbon-topbar sticky top-0 z-30 flex items-center justify-between gap-4 px-4 lg:px-6">
+      <header className="carbon-topbar sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-4 px-2 sm:px-4 lg:px-6">
         {/* Brand */}
         <Link
           href={`/dashboard/${code}`}
-          className="flex items-center gap-2 shrink-0 pr-2"
+          className="flex items-center gap-2 shrink-0 pr-1 sm:pr-2"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -118,12 +118,13 @@ export function AdminShell({
           >
             C
           </span>
-          <span className="carbon-wordmark text-lg font-semibold tracking-tight text-carbon-text whitespace-nowrap">
+          {/* Wordmark hides on small screens to keep room for the tab strip. */}
+          <span className="carbon-wordmark text-lg font-semibold tracking-tight text-carbon-text whitespace-nowrap hidden sm:inline">
             <span className="text-carbon-blue">Carbon</span>POS
           </span>
         </Link>
 
-        {/* Tabs */}
+        {/* Tabs — labels hide on small screens (icon-only), full label appears at md+. */}
         <nav className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto overflow-y-hidden scrollbar-none">
           {NAV.map((item) => {
             const isActive = item.key === active;
@@ -132,6 +133,8 @@ export function AdminShell({
                 key={item.key}
                 href={item.href(code)}
                 aria-current={isActive ? "page" : undefined}
+                aria-label={TAB_LABELS[item.key]}
+                title={TAB_LABELS[item.key]}
                 className={`carbon-tab ${isActive ? "carbon-tab-active" : ""}`}
               >
                 <span
@@ -140,7 +143,9 @@ export function AdminShell({
                 >
                   {item.icon}
                 </span>
-                <span className="whitespace-nowrap">{TAB_LABELS[item.key]}</span>
+                <span className="whitespace-nowrap hidden md:inline">
+                  {TAB_LABELS[item.key]}
+                </span>
               </Link>
             );
           })}
@@ -226,7 +231,7 @@ function LocationUserMenu({
       <button
         type="button"
         onClick={onToggle}
-        className="flex items-center gap-2 border border-carbon-border bg-carbon-surface px-3 h-10 hover:bg-[var(--carbon-surface-soft)] transition-colors"
+        className="flex items-center gap-1 sm:gap-2 border border-carbon-border bg-carbon-surface px-2 sm:px-3 h-10 hover:bg-[var(--carbon-surface-soft)] transition-colors"
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -236,18 +241,20 @@ function LocationUserMenu({
         >
           store
         </span>
-        <span className="text-sm font-bold text-carbon-text truncate max-w-[160px]">
+        {/* Location name + caret hide on the smallest screens — initials box
+            stays as the always-visible affordance. */}
+        <span className="text-sm font-bold text-carbon-text truncate max-w-[120px] sm:max-w-[160px] hidden sm:inline">
           {locName}
         </span>
         <span
-          className="material-symbols-outlined text-carbon-text-muted text-[18px]"
+          className="material-symbols-outlined text-carbon-text-muted text-[18px] hidden sm:inline"
           aria-hidden
         >
           expand_more
         </span>
         <span
           aria-hidden
-          className="ml-1 w-8 h-8 bg-carbon-blue text-white text-xs font-bold flex items-center justify-center"
+          className="ml-0 sm:ml-1 w-8 h-8 bg-carbon-blue text-white text-xs font-bold flex items-center justify-center"
         >
           {initials}
         </span>

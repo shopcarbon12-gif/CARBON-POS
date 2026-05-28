@@ -228,7 +228,7 @@ function SignInInner() {
           />
         </div>
 
-        <div className="carbon-card w-full p-10 pt-14">
+        <div className="carbon-card w-full p-6 sm:p-10 pt-12 sm:pt-14">
           {stage === "creds" ? (
             <>
               <h1 className="text-2xl font-bold tracking-tight text-center mb-1">

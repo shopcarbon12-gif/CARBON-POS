@@ -168,7 +168,7 @@ export default async function InventoryPage({
       code={code}
       title="Inventory"
     >
-      <main className="p-6 lg:p-10">
+      <main className="p-3 sm:p-6 lg:p-10">
         <div className="max-w-[1440px] mx-auto">
           <InventoryTable
             code={code}

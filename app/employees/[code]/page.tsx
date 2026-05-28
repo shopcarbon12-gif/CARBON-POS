@@ -22,7 +22,7 @@ export default async function EmployeesPage({
   );
   return (
     <AdminShell email={cashier.email} active="settings" code={code} title="Employees">
-      <section className="p-6">
+      <section className="p-3 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <p className="text-sm text-[var(--color-pos-muted)]">
             Cashiers and back-office staff. PINs are 4-digit codes used at the
