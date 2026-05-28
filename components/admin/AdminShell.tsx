@@ -68,6 +68,24 @@ export function AdminShell({
   const [locName, setLocName] = useState<string | null>(null);
   const [canSwitchLoc, setCanSwitchLoc] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  // Mobile-only nav drawer — opens left-to-right when the Carbon logo
+  // is tapped on <md. Desktop layout keeps the inline tab strip and the
+  // logo links straight to dashboard.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Close drawer on Esc; lock body scroll while open.
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileNavOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [mobileNavOpen]);
   const router = useRouter();
 
   useEffect(() => {
@@ -96,10 +114,21 @@ export function AdminShell({
     <div className="min-h-screen bg-carbon-bg text-carbon-text flex flex-col">
       {/* Top nav bar */}
       <header className="carbon-topbar sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-4 px-2 sm:px-4 lg:px-6">
-        {/* Brand */}
+        {/* Brand — on md+ it's a link to dashboard, on <md it's the
+            hamburger trigger for the slide-in nav drawer. */}
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          className="md:hidden flex items-center gap-2 shrink-0 pr-1"
+          aria-label="Open navigation menu"
+          aria-expanded={mobileNavOpen}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.jpg" alt="Carbon" className="w-9 h-9 object-cover shrink-0" />
+        </button>
         <Link
           href={`/dashboard/${code}`}
-          className="flex items-center gap-2 shrink-0 pr-1 sm:pr-2"
+          className="hidden md:flex items-center gap-2 shrink-0 pr-2"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -118,14 +147,14 @@ export function AdminShell({
           >
             C
           </span>
-          {/* Wordmark hides on small screens to keep room for the tab strip. */}
-          <span className="carbon-wordmark text-lg font-semibold tracking-tight text-carbon-text whitespace-nowrap hidden sm:inline">
+          <span className="carbon-wordmark text-lg font-semibold tracking-tight text-carbon-text whitespace-nowrap">
             <span className="text-carbon-blue">Carbon</span>POS
           </span>
         </Link>
 
-        {/* Tabs — labels hide on small screens (icon-only), full label appears at md+. */}
-        <nav className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto overflow-y-hidden scrollbar-none">
+        {/* Inline tab strip — md+ only. On <md the tabs live inside the
+            slide-in drawer triggered by the Carbon logo. */}
+        <nav className="hidden md:flex flex-1 min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden scrollbar-none">
           {NAV.map((item) => {
             const isActive = item.key === active;
             return (
@@ -150,6 +179,69 @@ export function AdminShell({
             );
           })}
         </nav>
+        {/* Spacer so the location chip stays right-aligned on mobile
+            (where the tab nav is hidden). */}
+        <div className="md:hidden flex-1" />
+
+        {/* Mobile nav drawer — backdrop + slide-in panel from the left. */}
+        {mobileNavOpen ? (
+          <div className="md:hidden fixed inset-0 z-40">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setMobileNavOpen(false)}
+              aria-hidden
+            />
+            {/* Panel */}
+            <aside
+              role="dialog"
+              aria-label="Navigation menu"
+              className="absolute left-0 top-0 bottom-0 w-72 max-w-[85%] bg-carbon-surface border-r border-carbon-border shadow-xl flex flex-col"
+            >
+              <div className="flex items-center justify-between px-4 h-16 border-b border-carbon-border-soft">
+                <span className="carbon-wordmark text-lg font-semibold tracking-tight">
+                  <span className="text-carbon-blue">Carbon</span>POS
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMobileNavOpen(false)}
+                  aria-label="Close menu"
+                  className="text-carbon-text-muted hover:text-carbon-text p-2"
+                >
+                  <span className="material-symbols-outlined text-[22px]" aria-hidden>
+                    close
+                  </span>
+                </button>
+              </div>
+              <nav className="flex-1 overflow-y-auto py-2">
+                {NAV.map((item) => {
+                  const isActive = item.key === active;
+                  return (
+                    <Link
+                      key={item.key}
+                      href={item.href(code)}
+                      aria-current={isActive ? "page" : undefined}
+                      onClick={() => setMobileNavOpen(false)}
+                      className={`flex items-center gap-3 px-5 py-3 text-base ${
+                        isActive
+                          ? "bg-carbon-blue text-white font-bold"
+                          : "text-carbon-text hover:bg-[var(--carbon-surface-soft)] font-medium"
+                      }`}
+                    >
+                      <span
+                        className="material-symbols-outlined text-[22px] leading-none"
+                        aria-hidden
+                      >
+                        {item.icon}
+                      </span>
+                      <span>{TAB_LABELS[item.key]}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+            </aside>
+          </div>
+        ) : null}
 
         {/* Right cluster: optional page slot + location/user */}
         <div className="flex items-center gap-3 shrink-0">

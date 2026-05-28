@@ -1,6 +1,7 @@
 "use client";
 
-import { Trash2, Minus, Plus, Barcode, Radio } from "lucide-react";
+import { useState } from "react";
+import { Trash2, Minus, Plus, Barcode, Radio, ChevronDown } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 import type { CartLine, AttributionEmployee } from "@/types/pos";
 
@@ -41,6 +42,10 @@ export function CartPanel({
   /** Per-row dropdown handler. */
   onChangeLineEmployee: (cartId: string, employeeId: number) => void;
 }) {
+  // Which row is currently expanded — at most one at a time. Tapping a
+  // row toggles; tapping interactive children (qty, price, trash, employee)
+  // is suppressed via stopPropagation so they don't accidentally toggle.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const headerLabel = saleNumberPreview
     ? `Cart \\ Sale ${saleNumberPreview}`
     : "Cart";
@@ -107,7 +112,21 @@ export function CartPanel({
             return (
               <li
                 key={line.cart_id}
-                className="flex items-center justify-between px-3 sm:px-4 py-2 gap-2 sm:gap-0 border-b border-[var(--carbon-border-soft)] last:border-b-0 hover:bg-[var(--carbon-surface-soft)] transition-colors"
+                className="border-b border-[var(--carbon-border-soft)] last:border-b-0"
+              >
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  setExpandedId((cur) => (cur === line.cart_id ? null : line.cart_id))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setExpandedId((cur) => (cur === line.cart_id ? null : line.cart_id));
+                  }
+                }}
+                className="flex items-center justify-between px-3 sm:px-4 py-2 gap-2 sm:gap-0 hover:bg-[var(--carbon-surface-soft)] transition-colors cursor-pointer select-none"
               >
                 {/* Thumbnail — hidden on mobile to give the description room.
                     Row vertical padding stays py-2 so each row aligns. */}
@@ -150,7 +169,10 @@ export function CartPanel({
                     Always visible (works on touch and mouse). Pulses to
                     a soft Carbon-Blue when the row's pick differs from the
                     sale-wide value so re-assigned lines are easy to spot. */}
-                <div className="shrink-0 mr-4 hidden sm:block">
+                <div
+                  className="shrink-0 mr-4 hidden sm:block"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <EmployeeSelect
                     employees={employees}
                     value={line.attributed_employee_id ?? saleAttributedEmployeeId}
@@ -162,7 +184,10 @@ export function CartPanel({
                     size="sm"
                   />
                 </div>
-                <div className="flex items-center gap-2 sm:gap-4 lg:gap-6 shrink-0">
+                <div
+                  className="flex items-center gap-2 sm:gap-4 lg:gap-6 shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {line.line_type === "product" ? (
                     line.source === "rfid" ? (
                       // RFID-stacked rows: qty equals the EPC count and
@@ -224,7 +249,25 @@ export function CartPanel({
                   >
                     <Trash2 size={18} />
                   </button>
+                  {/* Chevron — purely a visual affordance showing the
+                      row can be expanded. The whole row is the toggle. */}
+                  <ChevronDown
+                    size={16}
+                    aria-hidden
+                    className={`text-carbon-text-muted shrink-0 transition-transform ${
+                      expandedId === line.cart_id ? "rotate-180" : ""
+                    }`}
+                  />
                 </div>
+              </div>
+              {expandedId === line.cart_id ? (
+                <ExpandedDetails
+                  line={line}
+                  employees={employees}
+                  saleAttributedEmployeeId={saleAttributedEmployeeId}
+                  onChangeLineEmployee={onChangeLineEmployee}
+                />
+              ) : null}
               </li>
             );
           })}
@@ -257,6 +300,95 @@ export function CartPanel({
  * side is the sale-wide Employee dropdown. Changing the dropdown bulk-
  * rewrites every cart row's attribution (header wins, by design).
  */
+/**
+ * Drops below the row when expanded — shows everything the compact row
+ * truncates: full description, SKU, UPC, source/mode, EPC list (RFID
+ * rows), attributed employee, unit price + discount math, and the
+ * inline employee dropdown so re-assignment works on mobile (where the
+ * inline-row dropdown is hidden for space). Tapping interactive
+ * elements inside is stop-propagated by the wrapper so they don't
+ * collapse the row.
+ */
+function ExpandedDetails({
+  line,
+  employees,
+  saleAttributedEmployeeId,
+  onChangeLineEmployee,
+}: {
+  line: CartLine;
+  employees: AttributionEmployee[];
+  saleAttributedEmployeeId: number;
+  onChangeLineEmployee: (cartId: string, employeeId: number) => void;
+}) {
+  const lineSubtotal = line.unit_price * line.quantity;
+  const lineTotal = lineSubtotal - line.discount_amount;
+  const epcs = line.epcs ?? (line.epc ? [line.epc] : []);
+  type DetailRow = { k: string; v: React.ReactNode };
+  const rows: DetailRow[] = ([
+    { k: "Description", v: line.description },
+    line.sku ? { k: "SKU", v: line.sku } : null,
+    line.upc ? { k: "UPC", v: line.upc } : null,
+    line.line_type === "product"
+      ? {
+          k: "Source",
+          v: line.source === "rfid" ? "RFID scan" : "Manual entry",
+        }
+      : null,
+    line.line_type === "product" && line.is_manual_only != null
+      ? {
+          k: "Catalog mode",
+          v: line.is_manual_only ? "Manual-only" : "RFID-enabled",
+        }
+      : null,
+    { k: "Unit price", v: formatMoney(line.unit_price) },
+    { k: "Quantity", v: String(line.quantity) },
+    line.discount_amount > 0
+      ? { k: "Discount", v: `−${formatMoney(line.discount_amount)}` }
+      : null,
+    { k: "Line total", v: formatMoney(lineTotal) },
+  ] as Array<DetailRow | null>).filter((r): r is DetailRow => r !== null);
+  return (
+    <div
+      className="px-3 sm:px-4 pb-3 pt-1 bg-[var(--carbon-surface-soft)] border-t border-[var(--carbon-border-soft)]"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-xs sm:text-sm">
+        {rows.map((r) => (
+          <div key={r.k} className="contents">
+            <dt className="text-carbon-text-muted">{r.k}</dt>
+            <dd className="text-carbon-text font-medium break-words">{r.v}</dd>
+          </div>
+        ))}
+        {epcs.length > 0 ? (
+          <div className="contents">
+            <dt className="text-carbon-text-muted">
+              EPC{epcs.length === 1 ? "" : `s (${epcs.length})`}
+            </dt>
+            <dd className="text-carbon-text font-mono text-[11px] break-all">
+              {epcs.join(", ")}
+            </dd>
+          </div>
+        ) : null}
+        <div className="contents">
+          <dt className="text-carbon-text-muted">Employee</dt>
+          <dd>
+            <EmployeeSelect
+              employees={employees}
+              value={line.attributed_employee_id ?? saleAttributedEmployeeId}
+              differsFromSale={
+                (line.attributed_employee_id ?? saleAttributedEmployeeId) !==
+                saleAttributedEmployeeId
+              }
+              onChange={(id) => onChangeLineEmployee(line.cart_id, id)}
+              size="sm"
+            />
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 function CartHeader({
   label,
   employees,
