@@ -37,8 +37,11 @@ export default async function CustomerDetailPage({
       [cid],
     ),
     pool.query(
-      `SELECT s.id, s.sale_number, s.total_amount, s.status, s.completed_at,
-              r.name AS register_name
+      `SELECT s.id, s.sale_number, s.subtotal, s.discount_amount, s.tax_amount,
+              s.total_amount, s.status, s.completed_at, s.created_at,
+              r.name AS register_name,
+              (SELECT COALESCE(SUM(sl.quantity), 0)
+                 FROM pos_sale_lines sl WHERE sl.sale_id = s.id) AS item_count
          FROM pos_sales s
          JOIN pos_registers r ON r.id = s.register_id
         WHERE s.customer_id = $1
@@ -124,36 +127,81 @@ export default async function CustomerDetailPage({
             {sales.rows.length === 0 ? (
               <p className="text-sm text-carbon-text-muted">No purchases yet.</p>
             ) : (
-              <ul className="text-sm divide-y divide-carbon-border-soft">
-                {sales.rows.map((s) => (
-                  <li
-                    key={s.id}
-                    className="py-2 flex items-start justify-between gap-3"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <Link
-                        className="hover:underline tabular-nums block truncate text-carbon-blue"
-                        href={`/sales/${code}/${s.id}`}
-                        title={s.sale_number}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-carbon-surface-soft text-left text-xs uppercase tracking-wider text-carbon-text-muted">
+                    <tr>
+                      <th className="px-3 py-2 font-bold">Sale #</th>
+                      <th className="px-3 py-2 font-bold">Date</th>
+                      <th className="px-3 py-2 font-bold">Register</th>
+                      <th className="px-3 py-2 font-bold text-right">Items</th>
+                      <th className="px-3 py-2 font-bold text-right">Subtotal</th>
+                      <th className="px-3 py-2 font-bold text-right">Discount</th>
+                      <th className="px-3 py-2 font-bold text-right">Tax</th>
+                      <th className="px-3 py-2 font-bold text-right">Total</th>
+                      <th className="px-3 py-2 font-bold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sales.rows.map((s) => (
+                      <tr
+                        key={s.id}
+                        className="border-t border-carbon-border-soft"
                       >
-                        {s.sale_number}
-                      </Link>
-                      <span className="text-xs text-carbon-text-muted block truncate">
-                        {s.completed_at &&
-                          new Date(s.completed_at).toLocaleDateString()}{" "}
-                        · {s.register_name}
-                      </span>
-                    </span>
-                    <span className="text-right font-medium tabular-nums shrink-0">
-                      {formatMoney(s.total_amount)}
-                      <br />
-                      <span className="text-xs text-carbon-text-muted">
-                        {s.status}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                        <td className="px-3 py-2">
+                          <Link
+                            className="hover:underline tabular-nums text-carbon-blue font-medium"
+                            href={`/sales/${code}/${s.id}`}
+                          >
+                            {s.sale_number}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-carbon-text-muted">
+                          {s.completed_at || s.created_at
+                            ? new Date(
+                                s.completed_at ?? s.created_at,
+                              ).toLocaleDateString()
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {s.register_name}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {s.item_count}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatMoney(s.subtotal)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {Number(s.discount_amount) > 0
+                            ? `−${formatMoney(s.discount_amount)}`
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatMoney(s.tax_amount)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium">
+                          {formatMoney(s.total_amount)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-block px-2 py-0.5 text-xs font-semibold ${
+                              s.status === "completed"
+                                ? "bg-[rgba(22,138,63,0.10)] text-carbon-success"
+                                : s.status === "refunded" ||
+                                    s.status === "voided"
+                                  ? "bg-[rgba(186,26,26,0.08)] text-carbon-danger"
+                                  : "bg-carbon-surface-soft text-carbon-text-muted"
+                            }`}
+                          >
+                            {s.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

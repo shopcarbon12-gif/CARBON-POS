@@ -54,7 +54,7 @@ export default async function CustomersPage({
                 name="q"
                 defaultValue={q}
                 placeholder="Name, email, phone…"
-                className="carbon-input tap-lg w-72 sm:w-[34rem] text-base"
+                className="carbon-input tap-lg w-56 sm:w-80 text-base"
               />
             </label>
             <button
