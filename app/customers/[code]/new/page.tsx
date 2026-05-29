@@ -26,7 +26,7 @@ export default async function NewCustomerPage({
       code={code}
       title="New customer"
     >
-      <section className="p-6 max-w-7xl">
+      <section className="p-6">
         <Link
           href={`/customers/${code}`}
           className="text-xs uppercase tracking-wider font-bold text-carbon-blue hover:underline"
