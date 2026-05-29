@@ -12,3 +12,6 @@ out
 tsconfig.tsbuildinfo
 next-env.d.ts
 .claude/
+
+# Coolify deploy credentials (never commit)
+.env.coolify.local
