@@ -47,9 +47,7 @@ export function CustomerListRow({
       aria-label={`Open ${name}`}
       className="border-t border-[var(--color-pos-border)] cursor-pointer hover:bg-[var(--color-pos-bg)] focus:bg-[var(--color-pos-bg)] focus:outline-none"
     >
-      <td className="px-3 py-2 font-medium text-carbon-blue">
-        {c.first_name || "—"}
-      </td>
+      <td className="px-3 py-2">{c.first_name || "—"}</td>
       <td className="px-3 py-2">{c.last_name ?? "—"}</td>
       <td className="px-3 py-2 tabular-nums">{c.phone ?? "—"}</td>
       <td className="px-3 py-2 tabular-nums">{c.phone_2 ?? "—"}</td>
