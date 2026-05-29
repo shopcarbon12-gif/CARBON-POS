@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { CustomerListRow } from "@/components/admin/CustomerListRow";
 
 export default async function CustomersPage({
   params,
@@ -44,28 +45,28 @@ export default async function CustomersPage({
   return (
     <AdminShell email={cashier.email} active="customers" code={code}>
       <section className="p-3 sm:p-6">
-        <div className="flex items-end justify-between mb-4 gap-3 flex-wrap">
-          <form className="flex gap-2 items-end">
-            <label className="text-xs font-medium text-[var(--color-pos-muted)]">
-              <span className="block mb-1">Search</span>
+        <div className="flex items-end justify-between mb-5 gap-3 flex-wrap">
+          <form className="flex gap-3 items-end">
+            <label className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted">
+              <span className="block mb-1.5">Search</span>
               <input
                 type="text"
                 name="q"
                 defaultValue={q}
-                placeholder="Name, email, phone"
-                className="tap rounded-lg border border-[var(--color-pos-border)] px-3"
+                placeholder="Name, email, phone…"
+                className="carbon-input tap-lg w-72 sm:w-[34rem] text-base"
               />
             </label>
             <button
               type="submit"
-              className="tap rounded-xl bg-[var(--color-pos-ink)] text-white font-semibold px-4"
+              className="carbon-btn-primary tap-lg inline-flex items-center justify-center px-7 text-base font-semibold"
             >
               Search
             </button>
           </form>
           <Link
             href={`/customers/${code}/new`}
-            className="tap rounded-xl bg-[var(--color-pos-accent)] text-white font-semibold px-5"
+            className="carbon-btn-primary tap-lg inline-flex items-center justify-center px-7 text-base font-semibold"
           >
             + New customer
           </Link>
@@ -98,35 +99,24 @@ export default async function CustomersPage({
                 </tr>
               ) : (
                 r.rows.map((c) => (
-                  <tr
+                  <CustomerListRow
                     key={c.id}
-                    className="border-t border-[var(--color-pos-border)]"
-                  >
-                    <td className="px-3 py-2">
-                      <Link
-                        href={`/customers/${code}/${c.id}`}
-                        className="font-medium text-carbon-blue hover:underline"
-                      >
-                        {c.first_name || "—"}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2">{c.last_name ?? "—"}</td>
-                    <td className="px-3 py-2 tabular-nums">{c.phone ?? "—"}</td>
-                    <td className="px-3 py-2 tabular-nums">{c.phone_2 ?? "—"}</td>
-                    <td className="px-3 py-2">{c.email ?? "—"}</td>
-                    <td className="px-3 py-2">{c.email_2 ?? "—"}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {c.sales_count}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {Number(c.points).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-[var(--color-pos-muted)]">
-                      {c.created_at
+                    code={code}
+                    c={{
+                      id: c.id,
+                      first_name: c.first_name,
+                      last_name: c.last_name,
+                      phone: c.phone,
+                      phone_2: c.phone_2,
+                      email: c.email,
+                      email_2: c.email_2,
+                      sales_count: c.sales_count,
+                      points: c.points,
+                      created: c.created_at
                         ? new Date(c.created_at).toLocaleDateString()
-                        : "—"}
-                    </td>
-                  </tr>
+                        : null,
+                    }}
+                  />
                 ))
               )}
             </tbody>
