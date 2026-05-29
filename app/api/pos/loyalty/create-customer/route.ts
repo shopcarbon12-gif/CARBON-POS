@@ -131,15 +131,25 @@ export async function POST(req: Request) {
     // form path AND the pinpad reader-name-prompt path) was 500-ing
     // with "violates check constraint pos_customers_created_via_check"
     // — operator saw "Couldn't create the customer record" every time.
+    // Stamp the store this customer was created at, from the cashier's
+    // signed-in location (session WMS location UUID → pos_locations row).
+    let posLocationId: number | null = null;
+    if (cashier.lid) {
+      const lr = await client.query<{ id: number }>(
+        `SELECT id FROM pos_locations WHERE wms_location_id = $1::uuid LIMIT 1`,
+        [cashier.lid],
+      );
+      posLocationId = lr.rows[0]?.id ?? null;
+    }
     const created = await client.query(
       `INSERT INTO pos_customers
          (first_name, last_name, email, phone,
-          contact_email_ok, created_by_user_id, created_via)
+          contact_email_ok, pos_location_id, created_by_user_id, created_via)
        VALUES ($1, $2, $3, $4,
-               $5, $6::uuid, 'pos')
+               $5, $6, $7::uuid, 'pos')
        RETURNING id, first_name, last_name, email, phone, phone_2,
                  store_credit_balance`,
-      [first, last, email, phone, email !== null, cashier.user_id],
+      [first, last, email, phone, email !== null, posLocationId, cashier.user_id],
     );
     const customer = created.rows[0];
 

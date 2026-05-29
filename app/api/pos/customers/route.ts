@@ -80,6 +80,17 @@ export async function POST(req: Request) {
   }
   const d = parsed.data;
   const pool = getPool();
+  // Stamp the store the customer was created at: use an explicit
+  // pos_location_id if one was passed, else resolve the cashier's signed-in
+  // location (session carries the WMS location UUID) to its pos_locations row.
+  let posLocationId = d.pos_location_id ?? null;
+  if (posLocationId == null && cashier.lid) {
+    const lr = await pool.query<{ id: number }>(
+      `SELECT id FROM pos_locations WHERE wms_location_id = $1::uuid LIMIT 1`,
+      [cashier.lid],
+    );
+    posLocationId = lr.rows[0]?.id ?? null;
+  }
   const r = await pool.query(
     `INSERT INTO pos_customers
        (first_name, last_name, birthday,
@@ -112,7 +123,7 @@ export async function POST(req: Request) {
       d.contact_email_ok ?? false,
       d.contact_mail_ok ?? false,
       d.contact_call_ok ?? false,
-      d.pos_location_id ?? null,
+      posLocationId,
       d.notes ?? null,
       cashier.user_id,
     ],

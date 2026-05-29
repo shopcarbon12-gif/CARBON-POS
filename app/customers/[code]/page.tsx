@@ -35,7 +35,10 @@ export default async function CustomersPage({
               WHERE s.customer_id = pos_customers.id
                 AND s.status = 'completed') AS sales_count,
             (SELECT COALESCE(SUM(ll.delta_points), 0) FROM loyalty_ledger ll
-              WHERE ll.customer_id = pos_customers.id) AS points
+              WHERE ll.customer_id = pos_customers.id) AS points,
+            (SELECT l.name FROM pos_locations pl
+               JOIN locations l ON l.id = pl.wms_location_id
+              WHERE pl.id = pos_customers.pos_location_id) AS created_location
        FROM pos_customers
        ${where}
       ORDER BY last_name NULLS LAST, first_name
@@ -85,13 +88,14 @@ export default async function CustomersPage({
                 <th className="px-3 py-2 text-right">Sales</th>
                 <th className="px-3 py-2 text-right">Points</th>
                 <th className="px-3 py-2">Created</th>
+                <th className="px-3 py-2">Created at</th>
               </tr>
             </thead>
             <tbody>
               {r.rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-3 py-6 text-center text-[var(--color-pos-muted)]"
                   >
                     No customers yet.
@@ -115,6 +119,7 @@ export default async function CustomersPage({
                       created: c.created_at
                         ? new Date(c.created_at).toLocaleDateString()
                         : null,
+                      created_location: c.created_location ?? null,
                     }}
                   />
                 ))

@@ -30,7 +30,10 @@ export default async function CustomerDetailPage({
   const pool = getPool();
   const [c, sales] = await Promise.all([
     pool.query(
-      `SELECT pc.*, u.email AS created_by_email
+      `SELECT pc.*, u.email AS created_by_email,
+              (SELECT l.name FROM pos_locations pl
+                 JOIN locations l ON l.id = pl.wms_location_id
+                WHERE pl.id = pc.pos_location_id) AS created_location
          FROM pos_customers pc
          LEFT JOIN users u ON u.id = pc.created_by_user_id
         WHERE pc.id = $1`,
@@ -98,8 +101,11 @@ export default async function CustomerDetailPage({
           {[customer.first_name, customer.last_name].filter(Boolean).join(" ")}
         </h1>
         <p className="text-sm text-carbon-text-muted mt-1 mb-6 max-w-2xl">
-          Customer since {new Date(customer.created_at).toLocaleDateString()}.
-          Edit their details below — changes save when you press Save.
+          Customer since {new Date(customer.created_at).toLocaleDateString()}
+          {customer.created_location
+            ? ` · Created at ${customer.created_location}`
+            : ""}
+          . Edit their details below — changes save when you press Save.
         </p>
 
         <CustomerForm code={code} initial={initial} />

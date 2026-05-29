@@ -19,6 +19,7 @@ export type CustomerListItem = {
   sales_count: number | string;
   points: number | string;
   created: string | null;
+  created_location: string | null;
 };
 
 export function CustomerListRow({
@@ -59,6 +60,9 @@ export function CustomerListRow({
       </td>
       <td className="px-3 py-2 whitespace-nowrap text-[var(--color-pos-muted)]">
         {c.created ?? "—"}
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        {c.created_location ?? "—"}
       </td>
     </tr>
   );
