@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  User,
+  Phone,
+  MapPin,
+  Mail,
+  Tag,
+  Bell,
+  FileText,
+  type LucideIcon,
+} from "lucide-react";
 
 export type CustomerFormInitial = {
   id?: number;
@@ -35,12 +46,13 @@ export type CustomerFormInitial = {
 
 /**
  * Shared customer form used on both /customers/{code}/new and the editor on
- * /customers/{code}/{id}. Layout follows the supplied screenshot:
+ * /customers/{code}/{id}. Three-column card layout with stacked,
+ * plain-language field labels for a friendlier feel:
  *
- *   left column  : Type, Created (display only on edit), Biographical, Phones
- *   middle column: Address, Other (Email 1 / Email 2), Tags
- *   right column : Contact channel + consent
- *   below        : Notes
+ *   left column  : Profile (Type, Created on edit, name, company, birthday),
+ *                  Phone numbers
+ *   middle column: Address, Email, Tags
+ *   right column : Contact preferences (consent + channels), Notes
  *
  * Per spec we OMIT: Discount, Sales Tax, Title, Pager, Fax, Custom field,
  * Website, Custom (in Other), Saved Payment Methods, Custom Fields panel.
@@ -202,12 +214,18 @@ export function CustomerForm({
 
   return (
     <form onSubmit={submit} className="space-y-6 min-w-0">
+      <p className="text-sm text-carbon-text-muted">
+        Fields marked <span className="text-carbon-danger font-semibold">*</span>{" "}
+        are required. Everything else you can fill in later.
+      </p>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
-        {/* LEFT: Type / Created / Biographical / Phones */}
+        {/* LEFT: Profile + Phones */}
         <div className="space-y-6 min-w-0">
-          <Section title={null}>
-            <Row label="Type">
+          <Section title="Profile" icon={User}>
+            <Field label="Customer type" htmlFor="cust-type">
               <select
+                id="cust-type"
                 value={type}
                 onChange={(e) =>
                   setType(
@@ -221,243 +239,281 @@ export function CustomerForm({
                 <option value="staff">Staff</option>
                 <option value="wholesale">Wholesale</option>
               </select>
-            </Row>
+            </Field>
             {isEdit ? (
-              <Row label="Created">
-                <span className="text-sm text-[var(--color-pos-muted)]">
+              <Field label="Created">
+                <p className="text-sm text-carbon-text-muted">
                   {initial?.created_at
                     ? new Date(initial.created_at).toLocaleString()
                     : "—"}
                   {initial?.created_by_email ? (
-                    <>
+                    <span className="opacity-75">
                       {" "}
-                      <span className="opacity-75">
-                        by {initial.created_by_email}
-                      </span>
-                    </>
+                      by {initial.created_by_email}
+                    </span>
                   ) : null}
-                </span>
-              </Row>
+                </p>
+              </Field>
             ) : null}
-          </Section>
-
-          <Section title="Biographical">
-            <Row label="First Name">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="First name" htmlFor="cust-first" required>
+                <input
+                  id="cust-first"
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="carbon-input tap w-full"
+                  placeholder="Jane"
+                />
+              </Field>
+              <Field label="Last name" htmlFor="cust-last">
+                <input
+                  id="cust-last"
+                  value={lastName ?? ""}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="carbon-input tap w-full"
+                  placeholder="Doe"
+                />
+              </Field>
+            </div>
+            <Field label="Company" htmlFor="cust-company">
               <input
-                required
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="carbon-input tap w-full"
-                placeholder="First Name"
-              />
-            </Row>
-            <Row label="Last Name">
-              <input
-                value={lastName ?? ""}
-                onChange={(e) => setLastName(e.target.value)}
-                className="carbon-input tap w-full"
-                placeholder="Last Name"
-              />
-            </Row>
-            <Row label="Company">
-              <input
+                id="cust-company"
                 value={company ?? ""}
                 onChange={(e) => setCompany(e.target.value)}
                 className="carbon-input tap w-full"
-                placeholder="Company"
+                placeholder="Optional"
               />
-            </Row>
-            <Row label="Birth Date">
+            </Field>
+            <Field label="Birth date" htmlFor="cust-birthday">
               <input
+                id="cust-birthday"
                 type="date"
                 value={birthday ?? ""}
                 onChange={(e) => setBirthday(e.target.value)}
                 className="carbon-input tap w-full"
               />
-            </Row>
+            </Field>
           </Section>
 
-          <Section title="Phones (numeric only)">
-            <Row label="Home">
+          <Section title="Phone numbers" icon={Phone}>
+            <Field label="Mobile" htmlFor="cust-mobile">
               <input
-                inputMode="tel"
-                value={homePhone ?? ""}
-                onChange={(e) => setHomePhone(e.target.value)}
-                className="carbon-input tap w-full"
-                placeholder="Home"
-              />
-            </Row>
-            <Row label="Work">
-              <input
-                inputMode="tel"
-                value={workPhone ?? ""}
-                onChange={(e) => setWorkPhone(e.target.value)}
-                className="carbon-input tap w-full"
-                placeholder="Work"
-              />
-            </Row>
-            <Row label="Mobile">
-              <input
+                id="cust-mobile"
                 inputMode="tel"
                 value={mobilePhone ?? ""}
                 onChange={(e) => setMobilePhone(e.target.value)}
                 className="carbon-input tap w-full"
-                placeholder="Mobile"
+                placeholder="Numbers only"
               />
-            </Row>
+            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="Home" htmlFor="cust-home">
+                <input
+                  id="cust-home"
+                  inputMode="tel"
+                  value={homePhone ?? ""}
+                  onChange={(e) => setHomePhone(e.target.value)}
+                  className="carbon-input tap w-full"
+                  placeholder="Numbers only"
+                />
+              </Field>
+              <Field label="Work" htmlFor="cust-work">
+                <input
+                  id="cust-work"
+                  inputMode="tel"
+                  value={workPhone ?? ""}
+                  onChange={(e) => setWorkPhone(e.target.value)}
+                  className="carbon-input tap w-full"
+                  placeholder="Numbers only"
+                />
+              </Field>
+            </div>
           </Section>
         </div>
 
-        {/* MIDDLE: Address / Other / Tags */}
+        {/* MIDDLE: Address / Email / Tags */}
         <div className="space-y-6 min-w-0">
-          <Section title="Address">
-            <Row label="Country">
+          <Section title="Address" icon={MapPin}>
+            <Field label="Street address" htmlFor="cust-addr1">
               <input
-                value={country ?? ""}
-                onChange={(e) => setCountry(e.target.value)}
-                className="carbon-input tap w-full"
-                placeholder="Country"
-              />
-            </Row>
-            <Row label="Address">
-              <input
+                id="cust-addr1"
                 value={address1 ?? ""}
                 onChange={(e) => setAddress1(e.target.value)}
                 className="carbon-input tap w-full"
-                placeholder="Address"
+                placeholder="123 Main St"
               />
-            </Row>
-            <Row label="Address 2">
+            </Field>
+            <Field label="Apartment, suite, etc." htmlFor="cust-addr2">
               <input
+                id="cust-addr2"
                 value={address2 ?? ""}
                 onChange={(e) => setAddress2(e.target.value)}
                 className="carbon-input tap w-full"
-                placeholder="Address 2"
+                placeholder="Optional"
               />
-            </Row>
-            <Row label="City">
+            </Field>
+            <Field label="City" htmlFor="cust-city">
               <input
+                id="cust-city"
                 value={city ?? ""}
                 onChange={(e) => setCity(e.target.value)}
                 className="carbon-input tap w-full"
                 placeholder="City"
               />
-            </Row>
-            <Row label="State">
+            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="State / Region" htmlFor="cust-state">
+                <input
+                  id="cust-state"
+                  value={state ?? ""}
+                  onChange={(e) => setState(e.target.value)}
+                  className="carbon-input tap w-full"
+                  placeholder="State"
+                />
+              </Field>
+              <Field label="ZIP / Postal code" htmlFor="cust-zip">
+                <input
+                  id="cust-zip"
+                  value={zip ?? ""}
+                  onChange={(e) => setZip(e.target.value)}
+                  className="carbon-input tap w-full"
+                  placeholder="ZIP"
+                />
+              </Field>
+            </div>
+            <Field label="Country" htmlFor="cust-country">
               <input
-                value={state ?? ""}
-                onChange={(e) => setState(e.target.value)}
+                id="cust-country"
+                value={country ?? ""}
+                onChange={(e) => setCountry(e.target.value)}
                 className="carbon-input tap w-full"
-                placeholder="State"
+                placeholder="Country"
               />
-            </Row>
-            <Row label="ZIP">
-              <input
-                value={zip ?? ""}
-                onChange={(e) => setZip(e.target.value)}
-                className="carbon-input tap w-full"
-                placeholder="ZIP"
-              />
-            </Row>
+            </Field>
           </Section>
 
-          <Section title="Other">
-            <Row label="Email 1">
+          <Section title="Email" icon={Mail}>
+            <Field label="Primary email" htmlFor="cust-email1">
               <input
+                id="cust-email1"
                 type="email"
                 value={email1 ?? ""}
                 onChange={(e) => setEmail1(e.target.value)}
                 className="carbon-input tap w-full"
-                placeholder="Email 1"
+                placeholder="name@example.com"
               />
-            </Row>
-            <Row label="Email 2">
+            </Field>
+            <Field label="Secondary email" htmlFor="cust-email2">
               <input
+                id="cust-email2"
                 type="email"
                 value={email2 ?? ""}
                 onChange={(e) => setEmail2(e.target.value)}
                 className="carbon-input tap w-full"
-                placeholder="Email 2"
+                placeholder="Optional"
               />
-            </Row>
+            </Field>
           </Section>
 
-          <Section title="Tags">
-            <Row label={null}>
+          <Section title="Tags" icon={Tag}>
+            <Field
+              label="Tags"
+              htmlFor="cust-tags"
+              hint="Separate multiple tags with commas — e.g. local, frequent, gift-buyer."
+            >
               <input
+                id="cust-tags"
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
                 className="carbon-input tap w-full"
-                placeholder="comma-separated tag(s)"
+                placeholder="local, frequent"
               />
-            </Row>
+            </Field>
           </Section>
         </div>
 
-        {/* RIGHT: Contact channel + consent */}
+        {/* RIGHT: Contact preferences + consent */}
         <div className="space-y-6 min-w-0">
-          <Section title="Contact">
-            <p className="text-xs text-[var(--color-pos-muted)] px-3 pt-1 pb-2">
-              To select your customer&apos;s preferred contact method, you need
-              their explicit consent.
+          <Section title="Contact preferences" icon={Bell}>
+            <p className="text-sm text-carbon-text-muted">
+              To set how this customer prefers to hear from you, first confirm
+              you have their explicit consent.
             </p>
-            <label className="flex items-center gap-2 px-3 py-2 cursor-pointer">
+            <label className="flex items-start gap-2.5 border border-carbon-border bg-carbon-surface-soft p-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={consent}
                 onChange={(e) => setConsent(e.target.checked)}
-                className="w-4 h-4"
+                className="w-5 h-5 mt-0.5 accent-carbon-blue shrink-0"
               />
               <span className="text-sm font-medium">
                 Yes, I have consent from my customer.
               </span>
             </label>
-            <ChannelRow
-              label="Email"
-              checked={emailOk}
-              disabled={!consent}
-              onChange={setEmailOk}
-            />
-            <ChannelRow
-              label="Mail"
-              checked={mailOk}
-              disabled={!consent}
-              onChange={setMailOk}
-            />
-            <ChannelRow
-              label="Call"
-              checked={callOk}
-              disabled={!consent}
-              onChange={setCallOk}
-            />
+            <div className="space-y-2">
+              <ChannelRow
+                label="Email"
+                checked={emailOk}
+                disabled={!consent}
+                onChange={setEmailOk}
+              />
+              <ChannelRow
+                label="Mail"
+                checked={mailOk}
+                disabled={!consent}
+                onChange={setMailOk}
+              />
+              <ChannelRow
+                label="Phone call"
+                checked={callOk}
+                disabled={!consent}
+                onChange={setCallOk}
+              />
+            </div>
+          </Section>
+
+          <Section title="Notes" icon={FileText}>
+            <Field
+              label="Internal notes"
+              htmlFor="cust-notes"
+              hint="Don't enter sensitive information like login or credit card details."
+            >
+              <textarea
+                id="cust-notes"
+                value={notes ?? ""}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={6}
+                className="carbon-input w-full py-2.5"
+                placeholder="Preferences, allergies, sizing, anything worth remembering…"
+              />
+            </Field>
           </Section>
         </div>
       </div>
 
-      {/* Notes (full width) */}
-      <Section title="Notes">
-        <div className="px-3 py-2">
-          <p className="text-xs text-[var(--color-pos-muted)] mb-2">
-            Don&apos;t enter sensitive information like login or credit card
-            details
-          </p>
-          <textarea
-            value={notes ?? ""}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={5}
-            className="carbon-input w-full p-3"
-          />
+      {error && (
+        <div className="border border-carbon-danger bg-[rgba(186,26,26,0.06)] px-4 py-3 text-sm font-medium text-carbon-danger">
+          {error}
         </div>
-      </Section>
+      )}
+      {done && (
+        <div className="border border-carbon-success bg-[rgba(22,138,63,0.08)] px-4 py-3 text-sm font-medium text-carbon-success">
+          Saved ✓ — your changes are live.
+        </div>
+      )}
 
-      {error && <p className="text-carbon-danger">{error}</p>}
-      {done && <p className="text-green-700">Saved ✓</p>}
-
-      <div className="flex justify-end">
+      <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 border-t border-carbon-border pt-5">
+        <Link
+          href={`/customers/${code}`}
+          className="carbon-btn-secondary tap inline-flex items-center justify-center px-6 font-semibold"
+        >
+          Cancel
+        </Link>
         <button
           type="submit"
           disabled={busy || firstName.trim().length === 0}
-          className="carbon-btn-primary tap px-5 font-semibold"
+          className="carbon-btn-primary tap inline-flex items-center justify-center px-6 font-semibold"
         >
           {busy ? "Saving…" : isEdit ? "Save changes" : "Create customer"}
         </button>
@@ -468,40 +524,56 @@ export function CustomerForm({
 
 function Section({
   title,
+  icon: Icon,
   children,
 }: {
-  title: string | null;
+  title: string;
+  icon?: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
-    <div className="border border-[var(--color-pos-border)] bg-white">
-      {title ? (
-        <h3 className="bg-[var(--color-pos-bg)] px-3 py-2 text-sm font-bold border-b border-[var(--color-pos-border)]">
-          {title}
-        </h3>
-      ) : null}
-      <div className="divide-y divide-[var(--color-pos-border)]">{children}</div>
+    <div className="border border-carbon-border bg-white">
+      <div className="flex items-center gap-2.5 bg-carbon-surface-soft px-4 py-3 border-b border-carbon-border">
+        {Icon ? (
+          <Icon className="w-4 h-4 text-carbon-blue shrink-0" strokeWidth={2.25} />
+        ) : null}
+        <h3 className="text-sm font-bold tracking-tight">{title}</h3>
+      </div>
+      <div className="p-4 space-y-4">{children}</div>
     </div>
   );
 }
 
-function Row({
+function Field({
   label,
+  htmlFor,
+  required,
+  hint,
   children,
 }: {
-  label: string | null;
+  label: string;
+  htmlFor?: string;
+  required?: boolean;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 px-3 py-2">
-      {label ? (
-        <label className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted break-words">
-          {label}
-        </label>
-      ) : (
-        <span />
-      )}
-      <div className="min-w-0">{children}</div>
+    <div className="space-y-1.5 min-w-0">
+      <label
+        htmlFor={htmlFor}
+        className="flex items-center gap-1 text-sm font-semibold text-carbon-text"
+      >
+        {label}
+        {required ? (
+          <span className="text-carbon-danger" aria-hidden="true">
+            *
+          </span>
+        ) : null}
+      </label>
+      {children}
+      {hint ? (
+        <p className="text-xs text-carbon-text-muted">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -519,8 +591,10 @@ function ChannelRow({
 }) {
   return (
     <label
-      className={`flex items-center justify-between gap-3 px-3 py-2 cursor-pointer ${
-        disabled ? "opacity-50 cursor-not-allowed" : ""
+      className={`flex items-center justify-between gap-3 border border-carbon-border-soft px-3 py-2.5 ${
+        disabled
+          ? "opacity-50 cursor-not-allowed"
+          : "cursor-pointer hover:bg-carbon-surface-soft"
       }`}
     >
       <span className="text-sm font-medium">{label}</span>
@@ -529,7 +603,7 @@ function ChannelRow({
         disabled={disabled}
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="w-4 h-4"
+        className="w-5 h-5 accent-carbon-blue"
       />
     </label>
   );

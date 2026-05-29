@@ -33,7 +33,11 @@ export default async function NewCustomerPage({
         >
           ← All customers
         </Link>
-        <h1 className="text-2xl font-bold mt-2 mb-6">New customer</h1>
+        <h1 className="text-2xl font-bold mt-2">New customer</h1>
+        <p className="text-sm text-carbon-text-muted mt-1 mb-6 max-w-2xl">
+          Add a profile so you can attach sales, track loyalty, and reach out
+          with their consent. Only a first name is required to get started.
+        </p>
         <CustomerForm code={code} initial={null} />
       </section>
     </AdminShell>
