@@ -47,8 +47,8 @@ export type CustomerFormInitial = {
  * plain-language field labels for a friendlier feel:
  *
  *   left column  : Profile (Created on edit, name, birthday), Phone numbers
- *                  (Phone 1 / Phone 2)
- *   middle column: Address, Email (Email 1 / Email 2), Tags
+ *                  (Phone 1 / Phone 2), Email (Email 1 / Email 2)
+ *   middle column: Address, Tags
  *   right column : Contact preferences (consent + channels), Notes
  *
  * Contact model is two phones + two emails. We OMIT: customer type, company,
@@ -278,9 +278,32 @@ export function CustomerForm({
               />
             </Field>
           </Section>
+
+          <Section title="Email" icon={Mail}>
+            <Field label="Email 1" htmlFor="cust-email1">
+              <input
+                id="cust-email1"
+                type="email"
+                value={email1 ?? ""}
+                onChange={(e) => setEmail1(e.target.value)}
+                className="carbon-input tap w-full"
+                placeholder="name@example.com"
+              />
+            </Field>
+            <Field label="Email 2" htmlFor="cust-email2">
+              <input
+                id="cust-email2"
+                type="email"
+                value={email2 ?? ""}
+                onChange={(e) => setEmail2(e.target.value)}
+                className="carbon-input tap w-full"
+                placeholder="Optional"
+              />
+            </Field>
+          </Section>
         </div>
 
-        {/* MIDDLE: Address / Email / Tags */}
+        {/* MIDDLE: Address / Tags */}
         <div className="space-y-6 min-w-0">
           <Section title="Address" icon={MapPin}>
             <Field label="Street address" htmlFor="cust-addr1">
@@ -337,29 +360,6 @@ export function CustomerForm({
                 onChange={(e) => setCountry(e.target.value)}
                 className="carbon-input tap w-full"
                 placeholder="Country"
-              />
-            </Field>
-          </Section>
-
-          <Section title="Email" icon={Mail}>
-            <Field label="Email 1" htmlFor="cust-email1">
-              <input
-                id="cust-email1"
-                type="email"
-                value={email1 ?? ""}
-                onChange={(e) => setEmail1(e.target.value)}
-                className="carbon-input tap w-full"
-                placeholder="name@example.com"
-              />
-            </Field>
-            <Field label="Email 2" htmlFor="cust-email2">
-              <input
-                id="cust-email2"
-                type="email"
-                value={email2 ?? ""}
-                onChange={(e) => setEmail2(e.target.value)}
-                className="carbon-input tap w-full"
-                placeholder="Optional"
               />
             </Field>
           </Section>
