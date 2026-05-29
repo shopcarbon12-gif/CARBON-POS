@@ -21,6 +21,8 @@ type SaleDetail = {
     location_name: string;
     register_name: string;
     cashier_email: string;
+    cashier_first_name?: string | null;
+    cashier_last_name?: string | null;
     subtotal: string;
     discount_amount: string;
     tax_amount: string;

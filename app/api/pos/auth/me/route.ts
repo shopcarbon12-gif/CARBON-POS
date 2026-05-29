@@ -14,7 +14,7 @@ export async function GET() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const pool = getPool();
-  const [locR, countR] = await Promise.all([
+  const [locR, countR, userR] = await Promise.all([
     pool.query<{ name: string; code: string }>(
       `SELECT name, code FROM locations WHERE id = $1::uuid LIMIT 1`,
       [cashier.lid],
@@ -27,11 +27,17 @@ export async function GET() {
           AND l.is_active = TRUE`,
       [cashier.user_id],
     ),
+    pool.query<{ first_name: string | null; last_name: string | null }>(
+      `SELECT first_name, last_name FROM users WHERE id = $1::uuid LIMIT 1`,
+      [cashier.user_id],
+    ),
   ]);
   const accessible = Number(countR.rows[0]?.n ?? 0);
   return NextResponse.json({
     role: cashier.role,
     email: cashier.email,
+    first_name: userR.rows[0]?.first_name ?? null,
+    last_name: userR.rows[0]?.last_name ?? null,
     location_id: cashier.lid,
     location_code: locR.rows[0]?.code ?? cashier.lcode,
     location_name: locR.rows[0]?.name ?? cashier.lcode,

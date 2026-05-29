@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatEmployeeShort } from "@/lib/utils";
 import { ean13Display } from "@/lib/barcode";
 import { renderBarcodeSvg } from "@/lib/barcode-browser";
 
@@ -10,6 +10,8 @@ type SaleHeader = {
   location_name: string;
   register_name: string;
   cashier_email: string;
+  cashier_first_name?: string | null;
+  cashier_last_name?: string | null;
   subtotal: string;
   discount_amount: string;
   tax_amount: string;
@@ -152,7 +154,14 @@ export function ReceiptView({
         <section style={S.info}>
           <InfoRow label="Ticket:" value={sale.sale_number} />
           <InfoRow label="Register:" value={sale.register_name} />
-          <InfoRow label="Employee:" value={sale.cashier_email} />
+          <InfoRow
+            label="Employee:"
+            value={formatEmployeeShort(
+              sale.cashier_first_name,
+              sale.cashier_last_name,
+              sale.cashier_email,
+            )}
+          />
           {customerName && <InfoRow label="Customer:" value={customerName} />}
         </section>
 

@@ -33,6 +33,8 @@ export async function GET(
             pl.printer_host, pl.printer_port,
             l.name AS location_name, r.name AS register_name,
             u.email AS cashier_email,
+            u.first_name AS cashier_first_name,
+            u.last_name  AS cashier_last_name,
             c.first_name AS customer_first_name,
             c.last_name  AS customer_last_name,
             c.store_credit_balance AS customer_store_credit_balance

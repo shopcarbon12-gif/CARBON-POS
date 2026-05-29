@@ -15,10 +15,11 @@ export default async function EmployeesPage({
   }, { requireRole: ["manager", "admin"] });
   const pool = getPool();
   const r = await pool.query(
-    `SELECT pe.id, pe.role, pe.is_active, pe.created_at, u.email
+    `SELECT pe.id, pe.role, pe.is_active, pe.created_at,
+            u.email, u.first_name, u.last_name
        FROM pos_employees pe
        JOIN users u ON u.id = pe.user_id
-      ORDER BY pe.is_active DESC, u.email`,
+      ORDER BY pe.is_active DESC, u.last_name NULLS LAST, u.first_name, u.email`,
   );
   return (
     <AdminShell email={cashier.email} active="settings" code={code} title="Employees">
@@ -30,7 +31,7 @@ export default async function EmployeesPage({
           </p>
           <Link
             href={`/employees/${code}/new`}
-            className="tap rounded-xl bg-[var(--color-pos-accent)] text-white font-semibold px-5"
+            className="carbon-btn-primary tap inline-flex items-center justify-center px-6 font-semibold"
           >
             + New employee
           </Link>
@@ -38,6 +39,8 @@ export default async function EmployeesPage({
         <table className="w-full text-sm border border-[var(--color-pos-border)] rounded-xl overflow-hidden">
           <thead className="bg-[var(--color-pos-bg)]">
             <tr className="text-left">
+              <th className="px-3 py-2">First name</th>
+              <th className="px-3 py-2">Last name</th>
               <th className="px-3 py-2">Email</th>
               <th className="px-3 py-2">Role</th>
               <th className="px-3 py-2">Status</th>
@@ -49,7 +52,7 @@ export default async function EmployeesPage({
             {r.rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={7}
                   className="px-3 py-6 text-center text-[var(--color-pos-muted)]"
                 >
                   No employees set up yet — add one to enable PIN sign-in.
@@ -61,6 +64,8 @@ export default async function EmployeesPage({
                   key={e.id}
                   className="border-t border-[var(--color-pos-border)]"
                 >
+                  <td className="px-3 py-2">{e.first_name ?? "—"}</td>
+                  <td className="px-3 py-2">{e.last_name ?? "—"}</td>
                   <td className="px-3 py-2">{e.email}</td>
                   <td className="px-3 py-2">{e.role}</td>
                   <td className="px-3 py-2">

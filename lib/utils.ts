@@ -55,3 +55,21 @@ export function capitalizeName(raw: string): string {
     .toLowerCase()
     .replace(/(^|[\s'-])([a-z])/g, (_, sep, ch: string) => sep + ch.toUpperCase());
 }
+
+/**
+ * Short employee label for receipts: first name + last initial, e.g.
+ * "Elior Perez" → "Elior P.". Falls back to whatever's available, then to
+ * the supplied fallback (typically the email) so a row never renders blank.
+ */
+export function formatEmployeeShort(
+  firstName?: string | null,
+  lastName?: string | null,
+  fallback?: string | null,
+): string {
+  const f = (firstName ?? "").trim();
+  const l = (lastName ?? "").trim();
+  if (f && l) return `${f} ${l[0].toUpperCase()}.`;
+  if (f) return f;
+  if (l) return l;
+  return (fallback ?? "").trim();
+}

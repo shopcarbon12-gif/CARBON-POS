@@ -1,7 +1,7 @@
 import path from "node:path";
 import { printer as Printer, types as PrinterTypes } from "node-thermal-printer";
 import sharp from "sharp";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatEmployeeShort } from "@/lib/utils";
 import { ean13Display } from "@/lib/barcode";
 import { renderBarcodePng } from "@/lib/barcode-node";
 
@@ -63,6 +63,8 @@ type SaleRow = {
   location_name: string;
   register_name: string;
   cashier_email: string;
+  cashier_first_name?: string | null;
+  cashier_last_name?: string | null;
   customer_first_name?: string | null;
   customer_last_name?: string | null;
   customer_store_credit_balance?: string | number | null;
@@ -287,7 +289,13 @@ async function printSaleCopy(
     .join(" ");
   printer.println(`Ticket:    ${sale.sale_number}`);
   printer.println(`Register:  ${sale.register_name}`);
-  printer.println(`Employee:  ${sale.cashier_email}`);
+  printer.println(
+    `Employee:  ${formatEmployeeShort(
+      sale.cashier_first_name,
+      sale.cashier_last_name,
+      sale.cashier_email,
+    )}`,
+  );
   if (customerName) printer.println(`Customer:  ${customerName}`);
 
   printer.newLine();

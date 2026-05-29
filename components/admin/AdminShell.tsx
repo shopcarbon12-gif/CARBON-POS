@@ -67,6 +67,7 @@ export function AdminShell({
   // `code` while loading so the chrome doesn't flash.
   const [locName, setLocName] = useState<string | null>(null);
   const [canSwitchLoc, setCanSwitchLoc] = useState(false);
+  const [fullName, setFullName] = useState<string | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   // Mobile-only nav drawer — opens left-to-right when the Carbon logo
   // is tapped on <md. Desktop layout keeps the inline tab strip and the
@@ -97,10 +98,17 @@ export function AdminShell({
         const data = (await res.json()) as {
           location_name?: string;
           can_switch_location?: boolean;
+          first_name?: string | null;
+          last_name?: string | null;
         };
         if (cancelled) return;
         if (data.location_name) setLocName(data.location_name);
         setCanSwitchLoc(Boolean(data.can_switch_location));
+        const name = [data.first_name, data.last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        if (name) setFullName(name);
       } catch {
         /* ignore — chrome falls back to the URL code */
       }
@@ -252,6 +260,7 @@ export function AdminShell({
             code={code}
             locName={locName ?? code}
             email={email}
+            fullName={fullName}
             canSwitch={canSwitchLoc}
             open={userMenuOpen}
             onToggle={() => setUserMenuOpen((v) => !v)}
@@ -278,6 +287,7 @@ function LocationUserMenu({
   code,
   locName,
   email,
+  fullName,
   canSwitch,
   open,
   onToggle,
@@ -287,6 +297,7 @@ function LocationUserMenu({
   code: string;
   locName: string;
   email: string | null;
+  fullName: string | null;
   canSwitch: boolean;
   open: boolean;
   onToggle: () => void;
@@ -311,12 +322,22 @@ function LocationUserMenu({
     };
   }, [open, onClose]);
 
-  const initials = (email ?? "?")
-    .split(/[@.\s]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((s) => s[0]?.toUpperCase() ?? "")
-    .join("") || "?";
+  // Prefer the person's name for initials (Elior Perez → "EP"); fall back to
+  // the email local-part only if we don't have a name yet.
+  const initials =
+    (fullName
+      ? fullName
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((s) => s[0]?.toUpperCase() ?? "")
+          .join("")
+      : (email ?? "?")
+          .split(/[@.\s]+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((s) => s[0]?.toUpperCase() ?? "")
+          .join("")) || "?";
 
   return (
     <div data-locuser className="relative">
@@ -361,9 +382,20 @@ function LocationUserMenu({
             <p className="text-[10px] uppercase tracking-wider font-bold text-carbon-text-muted">
               Signed in
             </p>
-            <p className="text-sm text-carbon-text truncate mt-0.5">
-              {email ?? "—"}
-            </p>
+            {fullName ? (
+              <>
+                <p className="text-sm font-semibold text-carbon-text truncate mt-0.5">
+                  {fullName}
+                </p>
+                <p className="text-xs text-carbon-text-muted truncate">
+                  {email ?? "—"}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-carbon-text truncate mt-0.5">
+                {email ?? "—"}
+              </p>
+            )}
           </div>
           {canSwitch ? (
             <button
