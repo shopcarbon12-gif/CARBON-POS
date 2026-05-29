@@ -6,6 +6,7 @@ import { formatMoney } from "@/lib/utils";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { CustomerForm, type CustomerFormInitial } from "@/components/admin/CustomerForm";
 import { StoreCreditAdjuster } from "./StoreCreditAdjuster";
+import { isStoreCreditApprover } from "@/lib/store-credit";
 
 /**
  * Customer detail / edit page. Uses the same shared CustomerForm as the
@@ -110,7 +111,10 @@ export default async function CustomerDetailPage({
             <p className="total-display text-3xl mt-1 break-words">
               {formatMoney(customer.store_credit_balance)}
             </p>
-            <StoreCreditAdjuster customerId={cid} />
+            <StoreCreditAdjuster
+              customerId={cid}
+              isApprover={isStoreCreditApprover(cashier.email)}
+            />
           </div>
 
           <div className="border border-carbon-border bg-white p-4 min-w-0 lg:col-span-2">
