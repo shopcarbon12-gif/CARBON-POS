@@ -16,14 +16,11 @@ import {
 
 export type CustomerFormInitial = {
   id?: number;
-  customer_type?: "regular" | "vip" | "staff" | "wholesale";
   first_name?: string;
   last_name?: string | null;
-  company?: string | null;
   birthday?: string | null;
-  home_phone?: string | null;
-  work_phone?: string | null;
-  mobile_phone?: string | null;
+  phone?: string | null;
+  phone_2?: string | null;
   email?: string | null;
   email_2?: string | null;
   country?: string | null;
@@ -49,13 +46,13 @@ export type CustomerFormInitial = {
  * /customers/{code}/{id}. Three-column card layout with stacked,
  * plain-language field labels for a friendlier feel:
  *
- *   left column  : Profile (Type, Created on edit, name, company, birthday),
- *                  Phone numbers
- *   middle column: Address, Email, Tags
+ *   left column  : Profile (Created on edit, name, birthday), Phone numbers
+ *                  (Phone 1 / Phone 2)
+ *   middle column: Address, Email (Email 1 / Email 2), Tags
  *   right column : Contact preferences (consent + channels), Notes
  *
- * Per spec we OMIT: Discount, Sales Tax, Title, Pager, Fax, Custom field,
- * Website, Custom (in Other), Saved Payment Methods, Custom Fields panel.
+ * Contact model is two phones + two emails. We OMIT: customer type, company,
+ * discount, sales tax, title, pager, fax, website, saved payment methods.
  */
 export function CustomerForm({
   code,
@@ -72,16 +69,11 @@ export function CustomerForm({
   const [error, setError] = useState<string | null>(null);
 
   // Form state
-  const [type, setType] = useState<"regular" | "vip" | "staff" | "wholesale">(
-    initial?.customer_type ?? "regular",
-  );
   const [firstName, setFirstName] = useState(initial?.first_name ?? "");
   const [lastName, setLastName] = useState(initial?.last_name ?? "");
-  const [company, setCompany] = useState(initial?.company ?? "");
   const [birthday, setBirthday] = useState(initial?.birthday ?? "");
-  const [homePhone, setHomePhone] = useState(initial?.home_phone ?? "");
-  const [workPhone, setWorkPhone] = useState(initial?.work_phone ?? "");
-  const [mobilePhone, setMobilePhone] = useState(initial?.mobile_phone ?? "");
+  const [phone1, setPhone1] = useState(initial?.phone ?? "");
+  const [phone2, setPhone2] = useState(initial?.phone_2 ?? "");
   const [country, setCountry] = useState(initial?.country ?? "");
   const [address1, setAddress1] = useState(initial?.address_line1 ?? "");
   const [address2, setAddress2] = useState(initial?.address_line2 ?? "");
@@ -101,14 +93,11 @@ export function CustomerForm({
   // edit page revalidates after a save).
   useEffect(() => {
     if (!initial) return;
-    setType(initial.customer_type ?? "regular");
     setFirstName(initial.first_name ?? "");
     setLastName(initial.last_name ?? "");
-    setCompany(initial.company ?? "");
     setBirthday(initial.birthday ?? "");
-    setHomePhone(initial.home_phone ?? "");
-    setWorkPhone(initial.work_phone ?? "");
-    setMobilePhone(initial.mobile_phone ?? "");
+    setPhone1(initial.phone ?? "");
+    setPhone2(initial.phone_2 ?? "");
     setCountry(initial.country ?? "");
     setAddress1(initial.address_line1 ?? "");
     setAddress2(initial.address_line2 ?? "");
@@ -135,14 +124,11 @@ export function CustomerForm({
       .map((t) => t.trim())
       .filter((t) => t.length > 0);
     const payload: Record<string, unknown> = {
-      customer_type: type,
       first_name: firstName.trim(),
       last_name: ns(lastName),
-      company: ns(company),
       birthday: ns(birthday),
-      home_phone: ns(homePhone),
-      work_phone: ns(workPhone),
-      mobile_phone: ns(mobilePhone),
+      phone: ns(phone1),
+      phone_2: ns(phone2),
       country: ns(country),
       address_line1: ns(address1),
       address_line2: ns(address2),
@@ -183,8 +169,8 @@ export function CustomerForm({
           first_name?: string;
           last_name?: string | null;
           email?: string | null;
-          mobile_phone?: string | null;
           phone?: string | null;
+          phone_2?: string | null;
         };
       };
       const c = j.customer;
@@ -200,7 +186,7 @@ export function CustomerForm({
         params.set("customer_id", String(newId));
         params.set("customer_name", fullName);
         if (c?.email) params.set("customer_email", c.email);
-        const phone = c?.mobile_phone || c?.phone;
+        const phone = c?.phone || c?.phone_2;
         if (phone) params.set("customer_phone", phone);
         const sep = next.includes("?") ? "&" : "?";
         router.replace(`${next}${sep}${params.toString()}`);
@@ -223,23 +209,6 @@ export function CustomerForm({
         {/* LEFT: Profile + Phones */}
         <div className="space-y-6 min-w-0">
           <Section title="Profile" icon={User}>
-            <Field label="Customer type" htmlFor="cust-type">
-              <select
-                id="cust-type"
-                value={type}
-                onChange={(e) =>
-                  setType(
-                    e.target.value as "regular" | "vip" | "staff" | "wholesale",
-                  )
-                }
-                className="carbon-input tap w-full"
-              >
-                <option value="regular">Regular</option>
-                <option value="vip">VIP</option>
-                <option value="staff">Staff</option>
-                <option value="wholesale">Wholesale</option>
-              </select>
-            </Field>
             {isEdit ? (
               <Field label="Created">
                 <p className="text-sm text-carbon-text-muted">
@@ -276,15 +245,6 @@ export function CustomerForm({
                 />
               </Field>
             </div>
-            <Field label="Company" htmlFor="cust-company">
-              <input
-                id="cust-company"
-                value={company ?? ""}
-                onChange={(e) => setCompany(e.target.value)}
-                className="carbon-input tap w-full"
-                placeholder="Optional"
-              />
-            </Field>
             <Field label="Birth date" htmlFor="cust-birthday">
               <input
                 id="cust-birthday"
@@ -297,38 +257,26 @@ export function CustomerForm({
           </Section>
 
           <Section title="Phone numbers" icon={Phone}>
-            <Field label="Mobile" htmlFor="cust-mobile">
+            <Field label="Phone 1" htmlFor="cust-phone1">
               <input
-                id="cust-mobile"
+                id="cust-phone1"
                 inputMode="tel"
-                value={mobilePhone ?? ""}
-                onChange={(e) => setMobilePhone(e.target.value)}
+                value={phone1 ?? ""}
+                onChange={(e) => setPhone1(e.target.value)}
                 className="carbon-input tap w-full"
-                placeholder="Numbers only"
+                placeholder="Primary number"
               />
             </Field>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Home" htmlFor="cust-home">
-                <input
-                  id="cust-home"
-                  inputMode="tel"
-                  value={homePhone ?? ""}
-                  onChange={(e) => setHomePhone(e.target.value)}
-                  className="carbon-input tap w-full"
-                  placeholder="Numbers only"
-                />
-              </Field>
-              <Field label="Work" htmlFor="cust-work">
-                <input
-                  id="cust-work"
-                  inputMode="tel"
-                  value={workPhone ?? ""}
-                  onChange={(e) => setWorkPhone(e.target.value)}
-                  className="carbon-input tap w-full"
-                  placeholder="Numbers only"
-                />
-              </Field>
-            </div>
+            <Field label="Phone 2" htmlFor="cust-phone2">
+              <input
+                id="cust-phone2"
+                inputMode="tel"
+                value={phone2 ?? ""}
+                onChange={(e) => setPhone2(e.target.value)}
+                className="carbon-input tap w-full"
+                placeholder="Optional second number"
+              />
+            </Field>
           </Section>
         </div>
 
@@ -394,7 +342,7 @@ export function CustomerForm({
           </Section>
 
           <Section title="Email" icon={Mail}>
-            <Field label="Primary email" htmlFor="cust-email1">
+            <Field label="Email 1" htmlFor="cust-email1">
               <input
                 id="cust-email1"
                 type="email"
@@ -404,7 +352,7 @@ export function CustomerForm({
                 placeholder="name@example.com"
               />
             </Field>
-            <Field label="Secondary email" htmlFor="cust-email2">
+            <Field label="Email 2" htmlFor="cust-email2">
               <input
                 id="cust-email2"
                 type="email"

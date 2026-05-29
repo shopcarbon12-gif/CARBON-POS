@@ -51,16 +51,13 @@ export default async function CustomerDetailPage({
 
   const initial: CustomerFormInitial = {
     id: customer.id,
-    customer_type: customer.customer_type,
     first_name: customer.first_name,
     last_name: customer.last_name,
-    company: customer.company,
     birthday: customer.birthday
       ? new Date(customer.birthday).toISOString().slice(0, 10)
       : null,
-    home_phone: customer.home_phone,
-    work_phone: customer.work_phone,
-    mobile_phone: customer.mobile_phone,
+    phone: customer.phone,
+    phone_2: customer.phone_2,
     email: customer.email,
     email_2: customer.email_2,
     country: customer.country,

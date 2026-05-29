@@ -82,11 +82,11 @@ export async function POST(req: Request) {
 
     // Phone-race check inside the txn.
     const existing = await client.query(
-      `SELECT id, first_name, last_name, email, phone, mobile_phone,
-              customer_type, store_credit_balance
+      `SELECT id, first_name, last_name, email, phone, phone_2,
+              store_credit_balance
          FROM pos_customers
-        WHERE regexp_replace(COALESCE(mobile_phone,''), '[^0-9+]', '', 'g') = $1
-           OR regexp_replace(COALESCE(phone,''),        '[^0-9+]', '', 'g') = $1
+        WHERE regexp_replace(COALESCE(phone,''),   '[^0-9+]', '', 'g') = $1
+           OR regexp_replace(COALESCE(phone_2,''), '[^0-9+]', '', 'g') = $1
         ORDER BY id ASC LIMIT 1`,
       [phone],
     );
@@ -133,12 +133,12 @@ export async function POST(req: Request) {
     // — operator saw "Couldn't create the customer record" every time.
     const created = await client.query(
       `INSERT INTO pos_customers
-         (first_name, last_name, email, mobile_phone, phone,
+         (first_name, last_name, email, phone,
           contact_email_ok, created_by_user_id, created_via)
-       VALUES ($1, $2, $3, $4, $4,
+       VALUES ($1, $2, $3, $4,
                $5, $6::uuid, 'pos')
-       RETURNING id, first_name, last_name, email, phone, mobile_phone,
-                 customer_type, store_credit_balance`,
+       RETURNING id, first_name, last_name, email, phone, phone_2,
+                 store_credit_balance`,
       [first, last, email, phone, email !== null, cashier.user_id],
     );
     const customer = created.rows[0];

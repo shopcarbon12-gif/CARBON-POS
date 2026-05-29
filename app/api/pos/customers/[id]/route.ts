@@ -4,18 +4,13 @@ import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
 
 const patchSchema = z.object({
-  customer_type: z
-    .enum(["regular", "vip", "staff", "wholesale"])
-    .optional(),
   first_name: z.string().min(1).max(120).optional(),
   last_name: z.string().max(120).nullable().optional(),
-  company: z.string().max(256).nullable().optional(),
   birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  home_phone: z.string().max(40).nullable().optional(),
-  work_phone: z.string().max(40).nullable().optional(),
-  mobile_phone: z.string().max(40).nullable().optional(),
-  /** Legacy single phone field — kept on PATCH for back-compat callers. */
+  /** Phone 1 (primary). */
   phone: z.string().max(40).nullable().optional(),
+  /** Phone 2 (secondary). */
+  phone_2: z.string().max(40).nullable().optional(),
   email: z.string().email().max(256).nullable().optional(),
   email_2: z.string().email().max(256).nullable().optional(),
   country: z.string().max(64).nullable().optional(),
@@ -81,16 +76,6 @@ export async function PATCH(
     );
   }
   const fields = parsed.data as Record<string, unknown>;
-
-  // Mirror mobile_phone into the legacy `phone` column when the caller
-  // didn't pass one explicitly so downstream readers (receipts etc.) keep
-  // working with the new mobile-only form.
-  if (
-    !Object.prototype.hasOwnProperty.call(fields, "phone") &&
-    Object.prototype.hasOwnProperty.call(fields, "mobile_phone")
-  ) {
-    fields.phone = fields.mobile_phone;
-  }
 
   const sets: string[] = [];
   const args: unknown[] = [];

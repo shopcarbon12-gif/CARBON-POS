@@ -146,7 +146,6 @@ function NewRule() {
       <Input label="Value *" name="value" type="number" step="0.01" required />
       <Select label="Applies to" name="applies_to" defaultValue="all">
         <option value="all">All sales</option>
-        <option value="customer_type">Customer type</option>
         <option value="sku_id">A specific SKU</option>
       </Select>
       <Input

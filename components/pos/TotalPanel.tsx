@@ -18,7 +18,7 @@ type SearchResult = {
   last_name: string | null;
   email: string | null;
   phone: string | null;
-  mobile_phone: string | null;
+  phone_2: string | null;
 };
 
 /**
@@ -344,7 +344,7 @@ function CustomerSearchRow({
       id: r.id,
       name: fullName || r.email || "Customer",
       email: r.email,
-      phone: r.mobile_phone || r.phone,
+      phone: r.phone || r.phone_2,
     });
     setQ("");
     setResults([]);
@@ -429,7 +429,7 @@ function CustomerSearchRow({
                 const fullName =
                   [r.first_name, r.last_name].filter(Boolean).join(" ") ||
                   "(no name)";
-                const phone = r.mobile_phone || r.phone || "";
+                const phone = r.phone || r.phone_2 || "";
                 return (
                   <li key={r.id}>
                     <button

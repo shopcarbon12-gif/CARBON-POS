@@ -591,7 +591,7 @@ export function SellScreen({
             .then((r) => r.json())
             .catch(() => null as null | {
               found?: boolean;
-              customer?: { id: number; first_name: string; last_name: string | null; email: string | null; phone: string | null; mobile_phone: string | null };
+              customer?: { id: number; first_name: string; last_name: string | null; email: string | null; phone: string | null; phone_2: string | null };
               phone?: string;
             });
           if (!lookup) {
@@ -607,7 +607,7 @@ export function SellScreen({
               id: c.id,
               name,
               email: c.email ?? null,
-              phone: c.mobile_phone ?? c.phone ?? null,
+              phone: c.phone ?? c.phone_2 ?? null,
             });
             setPhonePromptStatus("done");
             // Existing customer — revert the preloaded new-customer
@@ -838,7 +838,7 @@ export function SellScreen({
         id: c.id,
         name,
         email: c.email ?? null,
-        phone: c.mobile_phone ?? c.phone ?? null,
+        phone: c.phone ?? c.phone_2 ?? null,
       });
       // Cancel any in-flight reader action so cart-mirror can take over.
       fetch("/api/pos/loyalty/reader-prompt", { method: "DELETE" }).catch(

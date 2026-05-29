@@ -38,13 +38,11 @@ export async function POST(req: Request) {
 
   const pool = getPool();
   const hit = await pool.query(
-    `SELECT id, first_name, last_name, email, phone, mobile_phone,
-            customer_type, store_credit_balance
+    `SELECT id, first_name, last_name, email, phone, phone_2,
+            store_credit_balance
        FROM pos_customers
-      WHERE regexp_replace(COALESCE(mobile_phone,''), '[^0-9+]', '', 'g') = $1
-         OR regexp_replace(COALESCE(phone,''),        '[^0-9+]', '', 'g') = $1
-         OR regexp_replace(COALESCE(home_phone,''),   '[^0-9+]', '', 'g') = $1
-         OR regexp_replace(COALESCE(work_phone,''),   '[^0-9+]', '', 'g') = $1
+      WHERE regexp_replace(COALESCE(phone,''),   '[^0-9+]', '', 'g') = $1
+         OR regexp_replace(COALESCE(phone_2,''), '[^0-9+]', '', 'g') = $1
       ORDER BY id ASC
       LIMIT 1`,
     [phone],

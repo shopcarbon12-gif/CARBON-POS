@@ -5,11 +5,10 @@ import { formatMoney } from "@/lib/utils";
 
 /**
  * Full-table customer search in a modal popup. Mirrors the columns +
- * row layout of the /customers/[code] admin page (Name / Email / Phone
- * / Type / Sales / Store credit) so the cashier can browse a wider
- * list without leaving the sell screen. Picking a row calls back to
- * the parent's onPick (same payload shape the inline search uses) and
- * closes the modal.
+ * row layout of the /customers/[code] admin page (Name / Email / Phone /
+ * Sales / Store credit) so the cashier can browse a wider list without
+ * leaving the sell screen. Picking a row calls back to the parent's
+ * onPick (same payload shape the inline search uses) and closes the modal.
  */
 
 type CustomerRow = {
@@ -18,8 +17,7 @@ type CustomerRow = {
   last_name: string | null;
   email: string | null;
   phone: string | null;
-  mobile_phone?: string | null;
-  customer_type: string;
+  phone_2?: string | null;
   store_credit_balance: string | number;
   sales_count: number;
 };
@@ -131,7 +129,6 @@ export function CustomerExpandModal({
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Email</th>
                 <th className="px-3 py-2">Phone</th>
-                <th className="px-3 py-2">Type</th>
                 <th className="px-3 py-2 text-right">Sales</th>
                 <th className="px-3 py-2 text-right">Store credit</th>
               </tr>
@@ -140,7 +137,7 @@ export function CustomerExpandModal({
               {rows.length === 0 && !busy ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={5}
                     className="px-3 py-8 text-center text-carbon-text-muted"
                   >
                     {q.trim()
@@ -163,7 +160,7 @@ export function CustomerExpandModal({
                           id: c.id,
                           name: fullName,
                           email: c.email,
-                          phone: c.mobile_phone || c.phone,
+                          phone: c.phone || c.phone_2 || null,
                         });
                         onClose();
                       }}
@@ -173,7 +170,6 @@ export function CustomerExpandModal({
                         {c.email ?? "—"}
                       </td>
                       <td className="px-3 py-2">{c.phone ?? "—"}</td>
-                      <td className="px-3 py-2">{c.customer_type}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {c.sales_count}
                       </td>
