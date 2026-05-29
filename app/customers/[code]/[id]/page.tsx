@@ -83,7 +83,7 @@ export default async function CustomerDetailPage({
       code={code}
       title={[customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Customer"}
     >
-      <section className="p-6 max-w-7xl min-w-0">
+      <section className="p-6">
         <Link
           href={`/customers/${code}`}
           className="text-xs uppercase tracking-wider font-bold text-carbon-blue hover:underline"
@@ -93,65 +93,65 @@ export default async function CustomerDetailPage({
         <h1 className="text-2xl font-bold mt-2 break-words">
           {[customer.first_name, customer.last_name].filter(Boolean).join(" ")}
         </h1>
-        <p className="text-xs text-[var(--color-pos-muted)] mb-6">
-          Customer since {new Date(customer.created_at).toLocaleDateString()}
+        <p className="text-sm text-carbon-text-muted mt-1 mb-6 max-w-2xl">
+          Customer since {new Date(customer.created_at).toLocaleDateString()}.
+          Edit their details below — changes save when you press Save.
         </p>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
-          <div className="min-w-0">
-            <CustomerForm code={code} initial={initial} />
+        <CustomerForm code={code} initial={initial} />
+
+        {/* Account cards — full width below the form, same card styling as
+            the form sections so the page reads as one continuous sheet. */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+          <div className="border border-carbon-border bg-white p-4 min-w-0">
+            <p className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted">
+              Store credit
+            </p>
+            <p className="total-display text-3xl mt-1 break-words">
+              {formatMoney(customer.store_credit_balance)}
+            </p>
+            <StoreCreditAdjuster customerId={cid} />
           </div>
 
-          <aside className="space-y-4 min-w-0">
-            <div className="bg-white border border-[var(--color-pos-border)] p-4">
-              <p className="text-xs text-[var(--color-pos-muted)]">
-                Store credit
-              </p>
-              <p className="total-display text-3xl mt-1 break-words">
-                {formatMoney(customer.store_credit_balance)}
-              </p>
-              <StoreCreditAdjuster customerId={cid} />
-            </div>
-            <div className="bg-white border border-[var(--color-pos-border)] p-4">
-              <h2 className="font-semibold mb-2">Purchase history</h2>
-              {sales.rows.length === 0 ? (
-                <p className="text-sm text-[var(--color-pos-muted)]">
-                  No purchases yet.
-                </p>
-              ) : (
-                <ul className="text-sm divide-y divide-[var(--color-pos-border)]">
-                  {sales.rows.map((s) => (
-                    <li
-                      key={s.id}
-                      className="py-2 flex items-start justify-between gap-3"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <Link
-                          className="hover:underline tabular-nums block truncate"
-                          href={`/sales/${code}/${s.id}`}
-                          title={s.sale_number}
-                        >
-                          {s.sale_number}
-                        </Link>
-                        <span className="text-xs text-[var(--color-pos-muted)] block truncate">
-                          {s.completed_at &&
-                            new Date(s.completed_at).toLocaleDateString()}{" "}
-                          · {s.register_name}
-                        </span>
+          <div className="border border-carbon-border bg-white p-4 min-w-0 lg:col-span-2">
+            <h2 className="text-sm font-bold tracking-tight mb-2">
+              Purchase history
+            </h2>
+            {sales.rows.length === 0 ? (
+              <p className="text-sm text-carbon-text-muted">No purchases yet.</p>
+            ) : (
+              <ul className="text-sm divide-y divide-carbon-border-soft">
+                {sales.rows.map((s) => (
+                  <li
+                    key={s.id}
+                    className="py-2 flex items-start justify-between gap-3"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <Link
+                        className="hover:underline tabular-nums block truncate text-carbon-blue"
+                        href={`/sales/${code}/${s.id}`}
+                        title={s.sale_number}
+                      >
+                        {s.sale_number}
+                      </Link>
+                      <span className="text-xs text-carbon-text-muted block truncate">
+                        {s.completed_at &&
+                          new Date(s.completed_at).toLocaleDateString()}{" "}
+                        · {s.register_name}
                       </span>
-                      <span className="text-right font-medium tabular-nums shrink-0">
-                        {formatMoney(s.total_amount)}
-                        <br />
-                        <span className="text-xs text-[var(--color-pos-muted)]">
-                          {s.status}
-                        </span>
+                    </span>
+                    <span className="text-right font-medium tabular-nums shrink-0">
+                      {formatMoney(s.total_amount)}
+                      <br />
+                      <span className="text-xs text-carbon-text-muted">
+                        {s.status}
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </aside>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </section>
     </AdminShell>
