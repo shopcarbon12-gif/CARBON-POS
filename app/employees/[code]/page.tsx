@@ -2,6 +2,8 @@ import Link from "next/link";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { posRoleLabel } from "@/lib/pos-roles";
+import { EmployeeRowActions } from "./EmployeeRowActions";
 
 export default async function EmployeesPage({
   params,
@@ -16,9 +18,11 @@ export default async function EmployeesPage({
   const pool = getPool();
   const r = await pool.query(
     `SELECT pe.id, pe.role, pe.is_active, pe.created_at,
-            u.email, u.first_name, u.last_name
+            u.email, u.first_name, u.last_name,
+            ur.name AS pos_role_name
        FROM pos_employees pe
        JOIN users u ON u.id = pe.user_id
+       LEFT JOIN user_roles ur ON ur.id = pe.pos_role_id AND ur.scope = 'pos'
       ORDER BY pe.is_active DESC, u.last_name NULLS LAST, u.first_name, u.email`,
   );
   return (
@@ -67,13 +71,15 @@ export default async function EmployeesPage({
                   <td className="px-3 py-2">{e.first_name ?? "—"}</td>
                   <td className="px-3 py-2">{e.last_name ?? "—"}</td>
                   <td className="px-3 py-2">{e.email}</td>
-                  <td className="px-3 py-2">{e.role}</td>
+                  <td className="px-3 py-2">
+                    {posRoleLabel(e.pos_role_name, e.role)}
+                  </td>
                   <td className="px-3 py-2">
                     {e.is_active ? (
                       <span className="text-green-700">Active</span>
                     ) : (
-                      <span className="text-[var(--color-pos-muted)]">
-                        Disabled
+                      <span className="text-[var(--color-pos-danger)] font-medium">
+                        Archived
                       </span>
                     )}
                   </td>
@@ -81,12 +87,11 @@ export default async function EmployeesPage({
                     {new Date(e.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-3 py-2">
-                    <Link
-                      href={`/employees/${code}/${e.id}`}
-                      className="text-[var(--color-pos-muted)] underline"
-                    >
-                      Edit
-                    </Link>
+                    <EmployeeRowActions
+                      code={code}
+                      id={e.id}
+                      isActive={e.is_active}
+                    />
                   </td>
                 </tr>
               ))

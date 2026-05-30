@@ -48,6 +48,8 @@ export default function NewEmployeePage() {
     const payload: Record<string, unknown> = {
       email: String(fd.get("email") || ""),
       pin: String(fd.get("pin") || ""),
+      first_name: String(fd.get("first_name") || "").trim() || null,
+      last_name: String(fd.get("last_name") || "").trim() || null,
       role: legacyRoleFor(posRoleName),
       ...(posRoleId ? { pos_role_id: posRoleId } : {}),
       ...(password.trim().length >= 8 ? { set_password: password.trim() } : {}),
@@ -77,11 +79,16 @@ export default function NewEmployeePage() {
         </Link>
         <h1 className="text-xl font-bold mt-1">New employee</h1>
         <p className="text-xs text-[var(--color-pos-muted)] mt-1">
-          The employee&apos;s email must already exist as a WMS user. (The same
-          login powers both apps.)
+          Creates a POS login for this location. The employee can sign in to POS
+          only (not WMS), and will appear in the WMS back office for management.
+          If the email already exists, it&apos;s linked instead.
         </p>
       </header>
       <form onSubmit={submit} className="max-w-xl p-6 grid gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="First name" name="first_name" />
+          <Field label="Last name" name="last_name" />
+        </div>
         <Field label="Email" name="email" type="email" required />
         <Field label="Register PIN (4 digits)" name="pin" required pattern="\d{4}" />
         <label className="text-sm font-medium">
@@ -107,7 +114,7 @@ export default function NewEmployeePage() {
           </span>
         </label>
         <Field
-          label="Set / reset their WMS password (optional, min 8 chars)"
+          label="Set a POS password (optional, min 8 chars)"
           name="set_password"
           type="text"
         />

@@ -19,8 +19,11 @@ export default async function EmployeeDetailPage({
   const pool = getPool();
   const [emp, clock] = await Promise.all([
     pool.query(
-      `SELECT pe.*, u.email
-         FROM pos_employees pe JOIN users u ON u.id = pe.user_id
+      `SELECT pe.*, u.email, u.first_name, u.last_name,
+              ur.name AS pos_role_name
+         FROM pos_employees pe
+         JOIN users u ON u.id = pe.user_id
+         LEFT JOIN user_roles ur ON ur.id = pe.pos_role_id AND ur.scope = 'pos'
         WHERE pe.id = $1`,
       [eid],
     ),
@@ -44,9 +47,13 @@ export default async function EmployeeDetailPage({
         >
           ← All employees
         </Link>
-        <h1 className="text-xl font-bold mt-1">{employee.email}</h1>
+        <h1 className="text-xl font-bold mt-1">
+          {[employee.first_name, employee.last_name].filter(Boolean).join(" ") ||
+            employee.email}
+        </h1>
         <p className="text-xs text-[var(--color-pos-muted)]">
           Joined {new Date(employee.created_at).toLocaleDateString()}
+          {employee.is_active ? "" : " · Archived"}
         </p>
       </header>
 
@@ -55,6 +62,11 @@ export default async function EmployeeDetailPage({
           <EmployeeEditor
             initial={{
               id: employee.id,
+              first_name: employee.first_name ?? "",
+              last_name: employee.last_name ?? "",
+              email: employee.email,
+              pos_role_id: employee.pos_role_id ?? null,
+              pos_role_name: employee.pos_role_name ?? null,
               role: employee.role,
               is_active: employee.is_active,
             }}
