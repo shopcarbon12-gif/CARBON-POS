@@ -29,6 +29,11 @@ export type PosReaderInfo = {
   /** Agent-reported software recovery state ('recovering' | 'hard_resetting' |
    *  null). Drives the "Reader recovering…" indicator on the sell screen. */
   recovery_state: string | null;
+  /** Per-reader store-hours schedule (devices.scan_schedule) — used to decide
+   *  whether the reader is within its open hours right now. */
+  scan_schedule: import("@/lib/scan-schedule").ScanSchedule | null;
+  /** A cashier (this session) is actively present — monitor_armed_at fresh. */
+  armed: boolean;
 };
 
 /**
@@ -45,7 +50,10 @@ export async function posReaderForCurrentSession(
             d.status_online                         AS status_online,
             (d.scan_paused_at IS NOT NULL)          AS scan_paused,
             ag.live_scan_active                     AS agent_live_scan_active,
-            d.recovery_state                        AS recovery_state
+            d.recovery_state                        AS recovery_state,
+            d.scan_schedule                         AS scan_schedule,
+            (s.monitor_armed_at IS NOT NULL
+               AND s.monitor_armed_at > now() - interval '30 seconds') AS armed
        FROM pos_register_sessions s
        JOIN pos_registers reg ON reg.id = s.register_id
        JOIN cdm_agents ag      ON ag.id = reg.cdm_agent_id

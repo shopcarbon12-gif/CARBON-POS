@@ -135,6 +135,8 @@ export function SellScreen({
     ok?: boolean;
     skipped?: boolean;
     reason?: string;
+    running?: boolean;
+    armed?: boolean;
     scan_paused?: boolean;
     status_online?: boolean;
     agent_active?: boolean;
@@ -144,17 +146,21 @@ export function SellScreen({
     if (r.skipped && r.reason === "no_agent") return "no_reader";
     if (r.error) return "unreachable";
     // The agent's explicit recovery signal wins — it's actively self-healing
-    // the reader (armed). Shows the amber "Reader recovering…" indicator.
+    // the reader (only ever set while armed). Amber "Reader recovering…".
     if (
       r.recovery_state === "recovering" ||
       r.recovery_state === "hard_resetting"
     )
       return "recovering";
-    if (typeof r.scan_paused !== "boolean") return "unreachable";
-    if (r.scan_paused) return "off";
+    if (typeof r.scan_paused === "boolean" && r.scan_paused) return "off";
+    // Authoritative on/off: the reader RUNS during store hours or while a
+    // cashier is present (armed); otherwise it's intentionally OFF. (status_
+    // online is just "producing reads lately" and flips on quiet periods, so
+    // it's no longer the on/off source.)
+    if (typeof r.running === "boolean") return r.running ? "on" : "off";
+    // Legacy fallback (old server without `running`): keep prior behavior.
     if (r.status_online === true) return "on";
-    if (r.status_online === false) return "recovering";
-    return "on";
+    return "off";
   };
 
   const fetchState = async (): Promise<ReaderState> => {

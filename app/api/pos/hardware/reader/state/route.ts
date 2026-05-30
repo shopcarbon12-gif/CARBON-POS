@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentCashier } from "@/lib/session";
 import { posReaderForCurrentSession } from "@/lib/reader-control";
+import { isReaderScheduledOpen } from "@/lib/scan-schedule";
 
 /**
  * GET /api/pos/hardware/reader/state
@@ -29,9 +30,17 @@ export async function GET() {
   if (!info) {
     return NextResponse.json({ ok: true, skipped: true, reason: "no_agent" });
   }
+  // The reader's start/stop is governed by the schedule + a cashier's presence,
+  // NOT by scan_paused_at anymore. It is RUNNING when within store hours OR
+  // armed (a cashier is here); otherwise it's intentionally OFF. This is the
+  // authoritative on/off the sell-screen dot shows.
+  const running = isReaderScheduledOpen(info.scan_schedule) || info.armed;
+
   return NextResponse.json({
     ok: true,
     reader_id: info.reader_id,
+    running,
+    armed: info.armed,
     status_online: info.status_online,
     scan_paused: info.scan_paused,
     agent_active: info.agent_live_scan_active,
