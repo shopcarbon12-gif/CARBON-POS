@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { formatMoney } from "@/lib/utils";
-import { AntennaPowerSlider } from "./AntennaPowerSlider";
+import { RssiFilterSlider, RSSI_DEFAULT } from "./RssiFilterSlider";
 
 export type RfidResolvedItem = {
   epc: string;
@@ -58,6 +58,15 @@ export function RFIDScanModal({
     [],
   );
   const [streamErr, setStreamErr] = useState<string | null>(null);
+  // RSSI proximity threshold (negative dBm). The slider sets it; reads weaker
+  // (farther) than this are filtered out of the scan list. Held in a ref too so
+  // the long-lived EventSource handler reads the latest value without being
+  // re-created on every slider drag.
+  const [rssiThreshold, setRssiThreshold] = useState<number>(RSSI_DEFAULT);
+  const rssiThresholdRef = useRef<number>(RSSI_DEFAULT);
+  useEffect(() => {
+    rssiThresholdRef.current = rssiThreshold;
+  }, [rssiThreshold]);
   // De-dupe set held in a ref so the trash + Rescan handlers can mutate
   // it (an item removed from the cart should be re-scannable; Rescan
   // clears everything).
@@ -166,12 +175,22 @@ export function RFIDScanModal({
 
     es.addEventListener("epc", (e: MessageEvent) => {
       try {
-        const payload = JSON.parse(e.data) as { epc?: string };
+        const payload = JSON.parse(e.data) as {
+          epc?: string;
+          rssi?: number | null;
+        };
         // SSE emits lowercase hex; items.epc + cart EPCs are stored
         // upper-cased. Normalize on the way in so the dedup check and
         // the by-epc lookup both speak the same case.
         const epc = payload.epc?.toUpperCase();
-        if (!epc || seenRef.current.has(epc)) return;
+        if (!epc) return;
+        // Proximity filter: the reader runs at a constant 33 dBm, so drop tags
+        // weaker (farther) than the cashier's threshold BEFORE dedup — a tag
+        // that's far now can still surface once it's brought close to the
+        // register. Reads with no RSSI fall through (shown).
+        const rssi = typeof payload.rssi === "number" ? payload.rssi : null;
+        if (rssi !== null && rssi < rssiThresholdRef.current) return;
+        if (seenRef.current.has(epc)) return;
         seenRef.current.add(epc);
         buffer.push(epc);
         if (!flushTimer) flushTimer = setTimeout(flush, 200);
@@ -214,7 +233,7 @@ export function RFIDScanModal({
           picked up.
         </p>
         <div className="mb-3">
-          <AntennaPowerSlider />
+          <RssiFilterSlider value={rssiThreshold} onChange={setRssiThreshold} />
         </div>
         {streamErr && (
           <p className="text-sm text-[var(--color-pos-danger)] mb-2">

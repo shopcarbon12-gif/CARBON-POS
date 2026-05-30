@@ -6,6 +6,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
+ * Hard RSSI floor (dBm, negative). The POS reader runs at a constant 33 dBm and
+ * can see far stock; we drop anything below this floor at the bridge so the
+ * browser isn't fire-hosed. The cashier's slider does the real proximity cut
+ * ABOVE this floor (its range starts here). Tune as needed.
+ */
+const POS_RSSI_FLOOR_DBM = -70;
+
+/**
  * Same-origin SSE bridge from the POS browser to the WMS edge-scan stream.
  *
  * The POS sell screen's RFID modal opens an EventSource on this route. We
@@ -226,13 +234,27 @@ function handleFrame(
   // reader. Frames with no deviceId are also dropped — better to deliver
   // nothing than to leak warehouse aisle / office / transfer scans into
   // the cashier's cart.
-  const p = payload as { deviceId?: unknown; epcs?: unknown };
+  const p = payload as {
+    deviceId?: unknown;
+    epcs?: unknown;
+    epcRssiMap?: unknown;
+  };
   if (typeof p.deviceId !== "string" || p.deviceId !== posReaderId) return;
 
   const epcs = p.epcs;
   if (!Array.isArray(epcs)) return;
+  // Per-EPC RSSI (dBm, negative; closer tag = higher). Lets the cart UI filter
+  // by proximity now that the POS reader is pinned at 33 dBm. Drop far-field
+  // noise below POS_RSSI_FLOOR_DBM here; the slider does the fine cut above it.
+  const rssiMap =
+    p.epcRssiMap && typeof p.epcRssiMap === "object"
+      ? (p.epcRssiMap as Record<string, number>)
+      : {};
   for (const e of epcs) {
     if (typeof e !== "string" || !e) continue;
-    send(`event: epc\ndata: ${JSON.stringify({ epc: e })}\n\n`);
+    const raw = rssiMap[e.toUpperCase()];
+    const rssi = typeof raw === "number" ? raw : null;
+    if (rssi !== null && rssi < POS_RSSI_FLOOR_DBM) continue;
+    send(`event: epc\ndata: ${JSON.stringify({ epc: e, rssi })}\n\n`);
   }
 }

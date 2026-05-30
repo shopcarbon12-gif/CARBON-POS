@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AntennaPowerSlider } from "@/components/pos/AntennaPowerSlider";
+import { RssiFilterSlider, RSSI_DEFAULT } from "@/components/pos/RssiFilterSlider";
 
 /**
  * Bulk EPC status-update modal on the Inventory tab. Mirrors the cart
@@ -66,6 +66,13 @@ export function UpdateStatusModal({
     | null
   >(null);
   const [confirmingRisky, setConfirmingRisky] = useState(false);
+  // RSSI proximity threshold (negative dBm) — slider sets it; weaker reads are
+  // filtered out. Ref mirror so the long-lived EventSource reads the latest.
+  const [rssiThreshold, setRssiThreshold] = useState<number>(RSSI_DEFAULT);
+  const rssiThresholdRef = useRef<number>(RSSI_DEFAULT);
+  useEffect(() => {
+    rssiThresholdRef.current = rssiThreshold;
+  }, [rssiThreshold]);
   const seenRef = useRef<Set<string>>(new Set());
 
   // SSE → batched lookup. Same shape as RFIDScanModal but using the
@@ -123,9 +130,17 @@ export function UpdateStatusModal({
 
     es.addEventListener("epc", (e: MessageEvent) => {
       try {
-        const payload = JSON.parse(e.data) as { epc?: string };
+        const payload = JSON.parse(e.data) as {
+          epc?: string;
+          rssi?: number | null;
+        };
         const epc = payload.epc?.toUpperCase();
-        if (!epc || seenRef.current.has(epc)) return;
+        if (!epc) return;
+        // Proximity filter (reader is constant 33 dBm) — drop far tags before
+        // dedup. Drag the slider to "far" to scan a wide area.
+        const rssi = typeof payload.rssi === "number" ? payload.rssi : null;
+        if (rssi !== null && rssi < rssiThresholdRef.current) return;
+        if (seenRef.current.has(epc)) return;
         seenRef.current.add(epc);
         buffer.push(epc);
         if (!flushTimer) flushTimer = setTimeout(flush, 200);
@@ -236,7 +251,7 @@ export function UpdateStatusModal({
         </p>
 
         <div className="mb-3">
-          <AntennaPowerSlider />
+          <RssiFilterSlider value={rssiThreshold} onChange={setRssiThreshold} />
         </div>
 
         <div className="mb-3 flex items-center gap-3">
