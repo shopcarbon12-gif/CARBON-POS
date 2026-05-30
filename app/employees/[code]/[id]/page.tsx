@@ -10,10 +10,11 @@ export default async function EmployeeDetailPage({
   params: Promise<{ code: string; id: string }>;
 }) {
   const { code, id } = await params;
-  await pageGuard(code, {
+  const cashier = await pageGuard(code, {
     tab: "employees",
     from: `/employees/${code}/${id}`,
   }, { requireRole: ["manager", "admin"] });
+  const isSuperAdmin = cashier.role === "admin";
   const eid = Number(id);
   if (!Number.isFinite(eid)) notFound();
   const pool = getPool();
@@ -60,6 +61,8 @@ export default async function EmployeeDetailPage({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
         <section className="lg:col-span-2">
           <EmployeeEditor
+            code={code}
+            isSuperAdmin={isSuperAdmin}
             initial={{
               id: employee.id,
               first_name: employee.first_name ?? "",

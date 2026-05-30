@@ -175,3 +175,89 @@ export async function PATCH(
 
   return NextResponse.json({ employee });
 }
+
+/**
+ * DELETE /api/pos/employees/:id — permanently remove an employee.
+ *
+ * SUPER ADMIN ONLY (legacy role 'admin' = Super Admin). Refuses when the
+ * employee has any sales / refund / attribution history, since pos_sales
+ * references pos_employees with no cascade and deleting would orphan financial
+ * records — those should be archived instead. For a clean employee it removes
+ * the pos_employees row (+ clock) and the underlying users identity when that
+ * row has no other references.
+ */
+export async function DELETE(
+  _req: Request,
+  ctx: { params: Promise<{ id: string }> },
+) {
+  const cashier = await currentCashier();
+  if (!cashier) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (cashier.role !== "admin") {
+    return NextResponse.json(
+      { error: "forbidden", message: "Only a Super Admin can delete employees." },
+      { status: 403 },
+    );
+  }
+  const { id } = await ctx.params;
+  const eid = Number(id);
+  if (!Number.isFinite(eid)) {
+    return NextResponse.json({ error: "bad_id" }, { status: 400 });
+  }
+  const pool = getPool();
+  const cur = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM pos_employees WHERE id = $1`,
+    [eid],
+  );
+  if (cur.rows.length === 0) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
+  // Don't let an admin delete their own active login out from under themselves.
+  if (cur.rows[0].user_id === cashier.user_id) {
+    return NextResponse.json(
+      { error: "self", message: "You can't delete the account you're signed in as." },
+      { status: 400 },
+    );
+  }
+  const userId = cur.rows[0].user_id;
+
+  // Block when there's transactional history (financial integrity).
+  const refs = await pool.query<{ n: number }>(
+    `SELECT (
+       (SELECT count(*) FROM pos_sales
+          WHERE cashier_id = $1 OR attributed_employee_id = $1 OR voided_by = $1)
+     + (SELECT count(*) FROM pos_refunds WHERE refunded_by = $1)
+     + (SELECT count(*) FROM pos_sale_lines WHERE attributed_employee_id = $1)
+     )::int AS n`,
+    [eid],
+  );
+  if ((refs.rows[0]?.n ?? 0) > 0) {
+    return NextResponse.json(
+      {
+        error: "has_history",
+        message:
+          "This employee has sales/transaction history and can't be permanently deleted. Archive them instead.",
+      },
+      { status: 409 },
+    );
+  }
+
+  let userDeleted = false;
+  await withTransaction(async (client) => {
+    await client.query(`DELETE FROM pos_employee_clock WHERE employee_id = $1`, [eid]);
+    await client.query(`DELETE FROM pos_employees WHERE id = $1`, [eid]);
+    // Remove the underlying identity too; keep it if other tables still
+    // reference it (savepoint so that doesn't abort the employee delete).
+    try {
+      await client.query("SAVEPOINT u");
+      await client.query(`DELETE FROM users WHERE id = $1::uuid`, [userId]);
+      await client.query("RELEASE SAVEPOINT u");
+      userDeleted = true;
+    } catch {
+      await client.query("ROLLBACK TO SAVEPOINT u");
+    }
+  });
+
+  return NextResponse.json({ ok: true, user_deleted: userDeleted });
+}

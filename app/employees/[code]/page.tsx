@@ -15,6 +15,7 @@ export default async function EmployeesPage({
     tab: "settings",
     from: `/employees/${code}`,
   }, { requireRole: ["manager", "admin"] });
+  const isSuperAdmin = cashier.role === "admin";
   const pool = getPool();
   const r = await pool.query(
     `SELECT pe.id, pe.role, pe.is_active, pe.created_at,
@@ -91,6 +92,7 @@ export default async function EmployeesPage({
                       code={code}
                       id={e.id}
                       isActive={e.is_active}
+                      isSuperAdmin={isSuperAdmin}
                     />
                   </td>
                 </tr>

@@ -14,10 +14,12 @@ export function EmployeeRowActions({
   code,
   id,
   isActive,
+  isSuperAdmin,
 }: {
   code: string;
   id: number;
   isActive: boolean;
+  isSuperAdmin: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -35,6 +37,24 @@ export function EmployeeRowActions({
     setBusy(false);
     if (res.ok) router.refresh();
     else alert("Couldn't update the employee. Try again.");
+  }
+
+  async function del() {
+    if (
+      !confirm(
+        "Permanently delete this employee from the database? This cannot be undone.",
+      )
+    )
+      return;
+    setBusy(true);
+    const res = await fetch(`/api/pos/employees/${id}`, { method: "DELETE" });
+    setBusy(false);
+    if (res.ok) {
+      router.refresh();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      alert(d.message ?? "Couldn't delete the employee.");
+    }
   }
 
   return (
@@ -62,6 +82,16 @@ export function EmployeeRowActions({
           className="text-carbon-blue underline disabled:opacity-50"
         >
           Unarchive
+        </button>
+      )}
+      {isSuperAdmin && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={del}
+          className="text-[var(--color-pos-danger)] font-semibold underline disabled:opacity-50"
+        >
+          Delete
         </button>
       )}
     </div>

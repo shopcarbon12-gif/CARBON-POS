@@ -16,7 +16,15 @@ type Initial = {
 
 type PosRole = { id: number; name: string };
 
-export function EmployeeEditor({ initial }: { initial: Initial }) {
+export function EmployeeEditor({
+  initial,
+  code,
+  isSuperAdmin,
+}: {
+  initial: Initial;
+  code: string;
+  isSuperAdmin: boolean;
+}) {
   const router = useRouter();
   const [firstName, setFirstName] = useState(initial.first_name);
   const [lastName, setLastName] = useState(initial.last_name);
@@ -197,6 +205,43 @@ export function EmployeeEditor({ initial }: { initial: Initial }) {
           Set new PIN
         </button>
       </div>
+
+      {/* Permanent delete — Super Admin only. */}
+      {isSuperAdmin && (
+        <div className="border-t border-[var(--color-pos-border)] pt-4">
+          <button
+            disabled={busy}
+            onClick={async () => {
+              if (
+                !confirm(
+                  "Permanently delete this employee from the database? This cannot be undone.",
+                )
+              )
+                return;
+              setBusy(true);
+              setError(null);
+              const res = await fetch(`/api/pos/employees/${initial.id}`, {
+                method: "DELETE",
+              });
+              setBusy(false);
+              if (res.ok) {
+                router.push(`/employees/${code}`);
+                router.refresh();
+              } else {
+                const d = await res.json().catch(() => ({}));
+                setError(d.message ?? "Couldn't delete the employee.");
+              }
+            }}
+            className="carbon-btn-secondary tap w-full font-semibold text-[var(--color-pos-danger)]"
+          >
+            Delete employee permanently
+          </button>
+          <p className="text-xs text-carbon-text-muted mt-2">
+            Super Admin only. Blocked if the employee has sales history — archive
+            instead.
+          </p>
+        </div>
+      )}
 
       {error && <p className="text-[var(--color-pos-danger)]">{error}</p>}
       {done && <p className="text-carbon-success">Saved ✓</p>}
