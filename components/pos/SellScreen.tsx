@@ -268,11 +268,14 @@ export function SellScreen({
   // navigation to other tabs.
   useEffect(() => {
     void startReader();
-    // Heartbeat keeps the server-side grace-pause cancelled while the
-    // sell screen is mounted. If another tab fires /reader/stop, the
-    // 30 s timer arrives, checks heartbeats, sees one within the
-    // window, and skips the pause. Cross-tab safety net.
+    // Heartbeat refreshes monitor_armed_at so the agent keeps the reader
+    // armed (self-healing) while a cashier is ACTIVELY here. Gated on the same
+    // 10-min idle window as the idle-stop watchdog: once the cashier has been
+    // idle 10 min, we stop heartbeating, so monitor_armed_at goes stale (~30 s)
+    // and the reader disarms — a forgotten/parked tab can't keep it armed
+    // forever (esp. important outside store hours).
     const heartbeat = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > 10 * 60 * 1000) return;
       void fetch("/api/pos/hardware/reader/keepalive", {
         method: "POST",
         credentials: "same-origin",
