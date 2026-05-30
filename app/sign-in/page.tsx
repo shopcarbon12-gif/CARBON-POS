@@ -5,16 +5,14 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Loc = { id: string; code: string; name: string };
+type Mode = "password" | "location" | "switch";
 
 /**
- * Two-step POS sign-in.
- *   Step 1: location email + password. We ping
- *           POST /api/auth/locations-for-email which returns every location
- *           that accepts the credentials.
- *   Step 2: 4-digit PIN keypad. If multiple locations matched the email, the
- *           keypad starts disabled and the user picks a location first.
- *
- * On success we land at /dashboard/<lcode>.
+ * POS sign-in with three modes:
+ *   password  (default) — employee email + their POS password → pick location.
+ *   switch    (?mode=switch) — "Change employee": PIN-only re-auth at the
+ *             terminal's current location (requires an existing session).
+ *   location  (fallback link) — the legacy location email + password + PIN.
  */
 export default function SignInPage() {
   return (
@@ -34,23 +32,112 @@ function SignInInner() {
   const router = useRouter();
   const params = useSearchParams();
   const fromParam = params.get("from") ?? null;
+  const initialMode: Mode = params.get("mode") === "switch" ? "switch" : "password";
 
-  const [stage, setStage] = useState<"creds" | "pin">("creds");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [locations, setLocations] = useState<Loc[]>([]);
-  const [locationId, setLocationId] = useState<string>("");
-  const [pin, setPin] = useState("");
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // password / location shared creds
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [locations, setLocations] = useState<Loc[]>([]);
+  const [locationId, setLocationId] = useState<string>("");
+  const [step, setStep] = useState<"creds" | "pick" | "pin">("creds");
+
+  // pin (location fallback + switch)
+  const [pin, setPin] = useState("");
+  // switch: the terminal's current location code, for post-switch redirect
+  const [switchLcode, setSwitchLcode] = useState<string | null>(null);
+
   const pinRef = useRef(pin);
   pinRef.current = pin;
-  const locIdRef = useRef(locationId);
-  locIdRef.current = locationId;
 
-  /** Step 1 — verify location credentials. */
-  const submitCreds = useCallback(
+  // In switch mode, learn the current location (proves a session exists).
+  useEffect(() => {
+    if (mode !== "switch") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/pos/auth/me");
+        if (!res.ok) {
+          // No active session → can't switch; fall back to password login.
+          if (!cancelled) {
+            setMode("password");
+            setStep("creds");
+          }
+          return;
+        }
+        const d = (await res.json()) as { location_code?: string };
+        if (!cancelled) setSwitchLcode(d.location_code ?? null);
+      } catch {
+        if (!cancelled) setMode("password");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
+  /** password mode — step 1: verify email + POS password, get locations. */
+  const submitPasswordCreds = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError(null);
+      setBusy(true);
+      try {
+        const res = await fetch("/api/pos/auth/locations-for-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), password }),
+        });
+        if (!res.ok) {
+          setError("Email or password didn't match.");
+          return;
+        }
+        const data = (await res.json()) as { locations: Loc[] };
+        const list = data.locations ?? [];
+        if (list.length === 0) {
+          setError("No location is assigned to this login.");
+          return;
+        }
+        if (list.length === 1) {
+          await finishPassword(list[0]);
+          return;
+        }
+        setLocations(list);
+        setLocationId("");
+        setStep("pick");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [email, password],
+  );
+
+  const finishPassword = useCallback(
+    async (loc: Loc) => {
+      setBusy(true);
+      setError(null);
+      const res = await signIn("password", {
+        email: email.trim(),
+        password,
+        locationId: loc.id,
+        redirect: false,
+      });
+      setBusy(false);
+      if (!res || res.error) {
+        setError("Couldn't sign in. Check your password and try again.");
+        return;
+      }
+      router.replace(`/dashboard/${loc.code}`);
+    },
+    [email, password, router],
+  );
+
+  /** location fallback — step 1: legacy location credentials. */
+  const submitLocationCreds = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       setError(null);
@@ -72,11 +159,9 @@ function SignInInner() {
           return;
         }
         setLocations(list);
-        // Auto-select if only one location matched, otherwise the user
-        // must pick before the PIN keypad enables.
         setLocationId(list.length === 1 ? list[0].id : "");
         setPin("");
-        setStage("pin");
+        setStep("pin");
       } finally {
         setBusy(false);
       }
@@ -84,10 +169,13 @@ function SignInInner() {
     [email, password],
   );
 
-  /** Step 2 — submit PIN once 4 digits are entered. */
-  const submitPin = useCallback(
+  /** location fallback — step 2: PIN. */
+  const submitLocationPin = useCallback(
     async (value: string, locId: string) => {
-      if (!locId) return;
+      if (!locId) {
+        setError("Pick a location first.");
+        return;
+      }
       setBusy(true);
       setError(null);
       const chosen = locations.find((l) => l.id === locId);
@@ -104,72 +192,86 @@ function SignInInner() {
         setPin("");
         return;
       }
-      const target = chosen
-        ? `/dashboard/${chosen.code}`
-        : (fromParam ?? "/");
-      router.replace(target);
+      router.replace(chosen ? `/dashboard/${chosen.code}` : (fromParam ?? "/"));
     },
     [email, password, locations, fromParam, router],
   );
 
+  /** switch mode — PIN-only employee change at the current location. */
+  const submitSwitchPin = useCallback(
+    async (value: string) => {
+      setBusy(true);
+      setError(null);
+      const prep = await fetch("/api/pos/auth/switch-prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: value }),
+      });
+      if (!prep.ok) {
+        setBusy(false);
+        const d = await prep.json().catch(() => ({}));
+        setError(d.message ?? "That PIN didn't match an employee here.");
+        setPin("");
+        return;
+      }
+      const pj = (await prep.json()) as { lcode?: string };
+      const res = await signIn("switch", { redirect: false });
+      setBusy(false);
+      if (!res || res.error) {
+        setError("Couldn't switch employee. Try again.");
+        setPin("");
+        return;
+      }
+      router.replace(`/dashboard/${pj.lcode ?? switchLcode ?? ""}`);
+    },
+    [router, switchLcode],
+  );
+
+  // Keypad helpers (shared by location PIN + switch).
+  const isPinScreen = mode === "switch" || (mode === "location" && step === "pin");
   const tapDigit = useCallback((d: string) => {
     setPin((prev) => (prev + d).slice(0, 4));
   }, []);
-  const tapBackspace = useCallback(() => {
-    setPin((prev) => prev.slice(0, -1));
-  }, []);
-  const tapEnter = useCallback(() => {
-    const v = pinRef.current;
-    const lid = locIdRef.current;
-    if (!lid) {
-      setError("Pick a location first.");
-      return;
-    }
-    if (v.length !== 4) {
-      setError("Enter all 4 digits, then press Enter.");
-      return;
-    }
-    void submitPin(v, lid);
-  }, [submitPin]);
+  const tapBackspace = useCallback(() => setPin((p) => p.slice(0, -1)), []);
+  const submitPin = useCallback(
+    (value: string) => {
+      if (value.length !== 4) {
+        setError("Enter all 4 digits.");
+        return;
+      }
+      if (mode === "switch") void submitSwitchPin(value);
+      else void submitLocationPin(value, locationId);
+    },
+    [mode, locationId, submitSwitchPin, submitLocationPin],
+  );
 
-  // Hardware keyboard support on the PIN screen.
   useEffect(() => {
-    if (stage !== "pin") return;
+    if (!isPinScreen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (busy) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (busy || e.metaKey || e.ctrlKey || e.altKey) return;
       if (/^[0-9]$/.test(e.key)) {
         e.preventDefault();
         tapDigit(e.key);
-        return;
-      }
-      if (e.key === "Backspace") {
+      } else if (e.key === "Backspace") {
         e.preventDefault();
         tapBackspace();
-        return;
-      }
-      if (e.key === "Enter") {
+      } else if (e.key === "Enter") {
         e.preventDefault();
-        tapEnter();
-        return;
-      }
-      if (e.key === "Escape") {
+        submitPin(pinRef.current);
+      } else if (e.key === "Escape") {
         e.preventDefault();
         setPin("");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stage, busy, tapDigit, tapBackspace, tapEnter]);
+  }, [isPinScreen, busy, tapDigit, tapBackspace, submitPin]);
 
-  const keypadDisabled = busy || !locationId;
-  const [showPassword, setShowPassword] = useState(false);
+  const keypadDisabled =
+    busy || (mode === "location" && step === "pin" && !locationId);
 
   return (
     <main className="min-h-screen grid lg:grid-cols-2 bg-carbon-bg">
-      {/* Brand panel — dark hex-pattern background image with the
-          CarbonPOS wordmark, tagline, and copyright. Hidden on small
-          screens; the round-logo badge above the card stands in. */}
       <aside
         className="hidden lg:flex flex-col justify-center p-12 text-white relative overflow-hidden"
         style={{
@@ -180,11 +282,7 @@ function SignInInner() {
           backgroundRepeat: "no-repeat",
         }}
       >
-        {/* Slight darken overlay to keep text legible. */}
-        <div
-          className="absolute inset-0 bg-black/30 pointer-events-none"
-          aria-hidden
-        />
+        <div className="absolute inset-0 bg-black/30 pointer-events-none" aria-hidden />
         <div className="relative z-10">
           <h1 className="carbon-wordmark text-[5.25rem] font-black tracking-tight leading-[1.0] text-white">
             CarbonPOS.
@@ -195,11 +293,7 @@ function SignInInner() {
           >
             Sell sharp. Move fast.
           </h2>
-          <div
-            className="mt-6 h-[3px] w-16"
-            style={{ background: "#7B9CE8" }}
-            aria-hidden
-          />
+          <div className="mt-6 h-[3px] w-16" style={{ background: "#7B9CE8" }} aria-hidden />
           <p className="mt-6 text-2xl opacity-90 max-w-xl leading-snug">
             The modern POS built for speed,
             <br />
@@ -213,238 +307,381 @@ function SignInInner() {
 
       <section className="relative flex items-center justify-center p-6">
         <div className="relative w-full max-w-md">
-        {/* Round logo badge — sits centered above the card, overlapping
-            its top edge per the reference. White circle, subtle border,
-            soft shadow, hex logo in the middle. */}
-        <div
-          className="absolute left-1/2 -top-10 -translate-x-1/2 w-20 h-20 rounded-full bg-white border border-carbon-border-soft shadow-md flex items-center justify-center z-10"
-          aria-hidden
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo.jpg"
-            alt="Carbon"
-            className="w-12 h-12 object-cover rounded-full"
-          />
-        </div>
+          <div
+            className="absolute left-1/2 -top-10 -translate-x-1/2 w-20 h-20 rounded-full bg-white border border-carbon-border-soft shadow-md flex items-center justify-center z-10"
+            aria-hidden
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.jpg" alt="Carbon" className="w-12 h-12 object-cover rounded-full" />
+          </div>
 
-        <div className="carbon-card w-full p-6 sm:p-10 pt-12 sm:pt-14">
-          {stage === "creds" ? (
-            <>
-              <h1 className="text-2xl font-bold tracking-tight text-center mb-1">
-                Location sign in
-              </h1>
-              <p className="text-carbon-text-muted text-sm text-center mb-8">
-                Enter the credentials your admin set for this location.
-              </p>
-              <form onSubmit={submitCreds} className="flex flex-col gap-4">
-                <div>
-                  <label className="block text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted mb-2">
-                    Email
-                  </label>
-                  <div className="relative">
-                    <span
-                      className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-carbon-text-muted text-[18px] pointer-events-none"
-                      aria-hidden
-                    >
-                      mail
-                    </span>
-                    <input
-                      type="email"
-                      required
-                      autoFocus
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="name@yourstore.com"
-                      className="carbon-input tap w-full !pl-12"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted mb-2">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <span
-                      className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-carbon-text-muted text-[18px] pointer-events-none"
-                      aria-hidden
-                    >
-                      lock
-                    </span>
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter your password"
-                      className="carbon-input tap w-full !pl-12 !pr-12"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      tabIndex={-1}
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-carbon-text-muted hover:text-carbon-text"
-                    >
-                      <span className="material-symbols-outlined text-[20px]" aria-hidden>
-                        {showPassword ? "visibility_off" : "visibility"}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="carbon-btn-primary tap-lg w-full text-base mt-2 inline-flex items-center justify-center gap-2"
-                >
-                  {busy ? (
-                    "Signing in…"
-                  ) : (
-                    <>
-                      Continue
-                      <span
-                        className="material-symbols-outlined text-[20px]"
-                        aria-hidden
-                      >
-                        arrow_forward
-                      </span>
-                    </>
-                  )}
-                </button>
-              </form>
-
-              {/* Secure footer — divider with centered "Secure" label, then
-                  the encrypted-data line. Mirrors the reference. */}
-              <div className="mt-8 flex items-center gap-3" aria-hidden>
-                <span className="flex-1 h-px bg-carbon-border-soft" />
-                <span className="text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted">
-                  Secure
-                </span>
-                <span className="flex-1 h-px bg-carbon-border-soft" />
-              </div>
-              <p className="mt-3 text-xs text-carbon-text-muted flex items-center justify-center gap-1.5">
-                <span className="material-symbols-outlined text-[14px]" aria-hidden>
-                  lock
-                </span>
-                Your data is encrypted and secure
-              </p>
-            </>
-          ) : (
-            <>
-              <h1 className="text-2xl font-bold tracking-tight mb-1">
-                Cashier PIN
-              </h1>
-              <p className="text-carbon-text-muted text-sm mb-6">
-                {locations.length > 1
-                  ? "Pick a location, then tap your 4-digit PIN."
-                  : `Signing in to ${locations[0]?.code} · ${locations[0]?.name}.`}
-              </p>
-
-              {locations.length > 1 ? (
-                <div className="mb-6">
-                  <label className="block text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted mb-2">
-                    Location
-                  </label>
-                  <select
-                    value={locationId}
-                    onChange={(e) => setLocationId(e.target.value)}
-                    className="carbon-input tap w-full"
-                  >
-                    <option value="">— Choose a location —</option>
-                    {locations.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.code} · {l.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
-
-              <div className="flex gap-3 justify-center mb-6">
-                {[0, 1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className={`pin-dot w-4 h-4 border-2 ${
-                      i < pin.length
-                        ? "bg-carbon-blue border-carbon-blue"
-                        : "border-carbon-border"
-                    }`}
+          <div className="carbon-card w-full p-6 sm:p-10 pt-12 sm:pt-14">
+            {/* ---- PASSWORD MODE: creds ---- */}
+            {mode === "password" && step === "creds" && (
+              <>
+                <h1 className="text-2xl font-bold tracking-tight text-center mb-1">
+                  Sign in
+                </h1>
+                <p className="text-carbon-text-muted text-sm text-center mb-8">
+                  Use your email and POS password.
+                </p>
+                <form onSubmit={submitPasswordCreds} className="flex flex-col gap-4">
+                  <CredField
+                    icon="mail"
+                    label="Email"
+                    type="email"
+                    value={email}
+                    onChange={setEmail}
+                    placeholder="name@yourstore.com"
+                    autoFocus
                   />
-                ))}
-              </div>
-              <div
-                className={`grid grid-cols-3 gap-3 ${
-                  keypadDisabled ? "opacity-50 pointer-events-none" : ""
-                }`}
-                aria-disabled={keypadDisabled}
-              >
-                {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+                  <PasswordField
+                    value={password}
+                    onChange={setPassword}
+                    show={showPassword}
+                    onToggle={() => setShowPassword((v) => !v)}
+                  />
                   <button
-                    key={d}
-                    type="button"
-                    disabled={keypadDisabled}
-                    className="tap-lg carbon-btn-secondary text-2xl font-semibold"
-                    onClick={() => tapDigit(d)}
+                    type="submit"
+                    disabled={busy}
+                    className="carbon-btn-primary tap-lg w-full text-base mt-2 inline-flex items-center justify-center gap-2"
                   >
-                    {d}
+                    {busy ? "Signing in…" : "Sign in"}
                   </button>
-                ))}
+                </form>
                 <button
-                  type="button"
-                  disabled={keypadDisabled}
-                  className="tap-lg carbon-btn-ghost text-carbon-text-muted text-sm font-semibold uppercase tracking-wider"
-                  onClick={() => setPin("")}
+                  className="w-full mt-6 text-xs uppercase tracking-wider font-bold text-carbon-text-muted hover:text-carbon-text"
+                  onClick={() => {
+                    setMode("location");
+                    setStep("creds");
+                    setError(null);
+                    setPassword("");
+                  }}
                 >
-                  Clear
+                  Use location login instead
                 </button>
-                <button
-                  type="button"
-                  disabled={keypadDisabled}
-                  className="tap-lg carbon-btn-secondary text-2xl font-semibold"
-                  onClick={() => tapDigit("0")}
-                >
-                  0
-                </button>
-                <button
-                  type="button"
-                  disabled={keypadDisabled || pin.length !== 4}
-                  className="tap-lg carbon-btn-primary text-sm font-bold uppercase tracking-wider"
-                  onClick={tapEnter}
-                >
-                  {busy ? "…" : "Enter"}
-                </button>
-              </div>
-              {keypadDisabled && !busy ? (
-                <p className="text-[11px] text-carbon-text-muted text-center mt-3 uppercase tracking-wider">
-                  Pick a location to enable the keypad.
-                </p>
-              ) : (
-                <p className="text-[11px] text-carbon-text-muted text-center mt-3 uppercase tracking-wider">
-                  You can also type your PIN on the keyboard.
-                </p>
-              )}
+              </>
+            )}
 
-              <button
-                className="w-full mt-6 text-xs uppercase tracking-wider font-bold text-carbon-blue hover:underline"
-                onClick={() => {
-                  setStage("creds");
-                  setPin("");
-                  setError(null);
-                }}
-              >
-                ← Use a different email
-              </button>
-            </>
-          )}
+            {/* ---- PASSWORD MODE: pick location ---- */}
+            {mode === "password" && step === "pick" && (
+              <>
+                <h1 className="text-2xl font-bold tracking-tight mb-1">Choose location</h1>
+                <p className="text-carbon-text-muted text-sm mb-6">
+                  Your login has access to more than one store.
+                </p>
+                <div className="grid gap-2">
+                  {locations.map((l) => (
+                    <button
+                      key={l.id}
+                      disabled={busy}
+                      onClick={() => finishPassword(l)}
+                      className="carbon-btn-secondary tap-lg w-full text-left px-4 font-semibold"
+                    >
+                      {l.code} · {l.name}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="w-full mt-6 text-xs uppercase tracking-wider font-bold text-carbon-blue hover:underline"
+                  onClick={() => {
+                    setStep("creds");
+                    setError(null);
+                  }}
+                >
+                  ← Back
+                </button>
+              </>
+            )}
 
-          {error && (
-            <p className="mt-6 text-center text-carbon-danger text-sm">
-              {error}
-            </p>
-          )}
-        </div>
+            {/* ---- SWITCH MODE: PIN ---- */}
+            {mode === "switch" && (
+              <>
+                <h1 className="text-2xl font-bold tracking-tight mb-1">Change employee</h1>
+                <p className="text-carbon-text-muted text-sm mb-6">
+                  Enter your 4-digit PIN to take over this register.
+                </p>
+                <PinPad
+                  pin={pin}
+                  disabled={busy}
+                  busy={busy}
+                  onDigit={tapDigit}
+                  onClear={() => setPin("")}
+                  onEnter={() => submitPin(pin)}
+                />
+              </>
+            )}
+
+            {/* ---- LOCATION FALLBACK: creds ---- */}
+            {mode === "location" && step === "creds" && (
+              <>
+                <h1 className="text-2xl font-bold tracking-tight text-center mb-1">
+                  Location sign in
+                </h1>
+                <p className="text-carbon-text-muted text-sm text-center mb-8">
+                  Enter the credentials your admin set for this location.
+                </p>
+                <form onSubmit={submitLocationCreds} className="flex flex-col gap-4">
+                  <CredField
+                    icon="mail"
+                    label="Email"
+                    type="email"
+                    value={email}
+                    onChange={setEmail}
+                    placeholder="name@yourstore.com"
+                    autoFocus
+                  />
+                  <PasswordField
+                    value={password}
+                    onChange={setPassword}
+                    show={showPassword}
+                    onToggle={() => setShowPassword((v) => !v)}
+                  />
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="carbon-btn-primary tap-lg w-full text-base mt-2 inline-flex items-center justify-center gap-2"
+                  >
+                    {busy ? "Signing in…" : "Continue"}
+                  </button>
+                </form>
+                <button
+                  className="w-full mt-6 text-xs uppercase tracking-wider font-bold text-carbon-text-muted hover:text-carbon-text"
+                  onClick={() => {
+                    setMode("password");
+                    setStep("creds");
+                    setError(null);
+                    setPassword("");
+                  }}
+                >
+                  ← Back to password sign in
+                </button>
+              </>
+            )}
+
+            {/* ---- LOCATION FALLBACK: PIN ---- */}
+            {mode === "location" && step === "pin" && (
+              <>
+                <h1 className="text-2xl font-bold tracking-tight mb-1">Cashier PIN</h1>
+                <p className="text-carbon-text-muted text-sm mb-6">
+                  {locations.length > 1
+                    ? "Pick a location, then tap your 4-digit PIN."
+                    : `Signing in to ${locations[0]?.code} · ${locations[0]?.name}.`}
+                </p>
+                {locations.length > 1 && (
+                  <div className="mb-6">
+                    <label className="block text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted mb-2">
+                      Location
+                    </label>
+                    <select
+                      value={locationId}
+                      onChange={(e) => setLocationId(e.target.value)}
+                      className="carbon-input tap w-full"
+                    >
+                      <option value="">— Choose a location —</option>
+                      {locations.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.code} · {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <PinPad
+                  pin={pin}
+                  disabled={keypadDisabled}
+                  busy={busy}
+                  onDigit={tapDigit}
+                  onClear={() => setPin("")}
+                  onEnter={() => submitPin(pin)}
+                />
+                <button
+                  className="w-full mt-6 text-xs uppercase tracking-wider font-bold text-carbon-blue hover:underline"
+                  onClick={() => {
+                    setStep("creds");
+                    setPin("");
+                    setError(null);
+                  }}
+                >
+                  ← Use a different email
+                </button>
+              </>
+            )}
+
+            {error && (
+              <p className="mt-6 text-center text-carbon-danger text-sm">{error}</p>
+            )}
+          </div>
         </div>
       </section>
     </main>
+  );
+}
+
+function CredField({
+  icon,
+  label,
+  type,
+  value,
+  onChange,
+  placeholder,
+  autoFocus,
+}: {
+  icon: string;
+  label: string;
+  type: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted mb-2">
+        {label}
+      </label>
+      <div className="relative">
+        <span
+          className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-carbon-text-muted text-[18px] pointer-events-none"
+          aria-hidden
+        >
+          {icon}
+        </span>
+        <input
+          type={type}
+          required
+          autoFocus={autoFocus}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="carbon-input tap w-full !pl-12"
+        />
+      </div>
+    </div>
+  );
+}
+
+function PasswordField({
+  value,
+  onChange,
+  show,
+  onToggle,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div>
+      <label className="block text-[11px] uppercase tracking-wider font-bold text-carbon-text-muted mb-2">
+        Password
+      </label>
+      <div className="relative">
+        <span
+          className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-carbon-text-muted text-[18px] pointer-events-none"
+          aria-hidden
+        >
+          lock
+        </span>
+        <input
+          type={show ? "text" : "password"}
+          required
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Enter your password"
+          className="carbon-input tap w-full !pl-12 !pr-12"
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          tabIndex={-1}
+          aria-label={show ? "Hide password" : "Show password"}
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-carbon-text-muted hover:text-carbon-text"
+        >
+          <span className="material-symbols-outlined text-[20px]" aria-hidden>
+            {show ? "visibility_off" : "visibility"}
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PinPad({
+  pin,
+  disabled,
+  busy,
+  onDigit,
+  onClear,
+  onEnter,
+}: {
+  pin: string;
+  disabled: boolean;
+  busy: boolean;
+  onDigit: (d: string) => void;
+  onClear: () => void;
+  onEnter: () => void;
+}) {
+  return (
+    <>
+      <div className="flex gap-3 justify-center mb-6">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className={`pin-dot w-4 h-4 border-2 ${
+              i < pin.length
+                ? "bg-carbon-blue border-carbon-blue"
+                : "border-carbon-border"
+            }`}
+          />
+        ))}
+      </div>
+      <div
+        className={`grid grid-cols-3 gap-3 ${
+          disabled ? "opacity-50 pointer-events-none" : ""
+        }`}
+        aria-disabled={disabled}
+      >
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+          <button
+            key={d}
+            type="button"
+            disabled={disabled}
+            className="tap-lg carbon-btn-secondary text-2xl font-semibold"
+            onClick={() => onDigit(d)}
+          >
+            {d}
+          </button>
+        ))}
+        <button
+          type="button"
+          disabled={disabled}
+          className="tap-lg carbon-btn-ghost text-carbon-text-muted text-sm font-semibold uppercase tracking-wider"
+          onClick={onClear}
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          className="tap-lg carbon-btn-secondary text-2xl font-semibold"
+          onClick={() => onDigit("0")}
+        >
+          0
+        </button>
+        <button
+          type="button"
+          disabled={disabled || pin.length !== 4}
+          className="tap-lg carbon-btn-primary text-sm font-bold uppercase tracking-wider"
+          onClick={onEnter}
+        >
+          {busy ? "…" : "Enter"}
+        </button>
+      </div>
+      <p className="text-[11px] text-carbon-text-muted text-center mt-3 uppercase tracking-wider">
+        You can also type your PIN on the keyboard.
+      </p>
+    </>
   );
 }

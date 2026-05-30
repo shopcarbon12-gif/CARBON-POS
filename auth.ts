@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { authConfig } from "./auth.config";
+import { verifySwitchToken, SWITCH_COOKIE } from "@/lib/switch-token";
 
 /**
  * Two-step sign-in:
@@ -150,6 +151,102 @@ export const { handlers, auth, signIn, signOut, unstable_update: update } = Next
         }
 
         return null;
+      },
+    }),
+
+    // Primary login: employee email + their POS password. Resolves the
+    // chosen location (must be one the employee is assigned to) and signs
+    // them in directly — no PIN needed.
+    Credentials({
+      id: "password",
+      name: "Carbon POS password",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+        locationId: { label: "Location", type: "text" },
+      },
+      authorize: async (raw) => {
+        const schema = z.object({
+          email: z.string().email(),
+          password: z.string().min(1),
+          locationId: z.string().uuid(),
+        });
+        const parsed = schema.safeParse(raw);
+        if (!parsed.success) return null;
+        const { email, password, locationId } = parsed.data;
+        const pool = getPool();
+        const emp = await pool.query<{
+          employee_id: number;
+          user_id: string;
+          role: string;
+          pos_password_hash: string | null;
+          user_password_hash: string | null;
+          email: string;
+        }>(
+          `SELECT pe.id AS employee_id, pe.user_id::text, pe.role,
+                  pe.pos_password_hash,
+                  u.password_hash AS user_password_hash,
+                  u.email
+             FROM pos_employees pe
+             JOIN users u ON u.id = pe.user_id
+            WHERE lower(u.email) = lower($1) AND pe.is_active = TRUE
+            LIMIT 1`,
+          [email],
+        );
+        const row = emp.rows[0];
+        if (!row) return null;
+        const hash = row.pos_password_hash || row.user_password_hash;
+        if (!hash || !(await bcrypt.compare(password, hash))) return null;
+        const loc = await pool.query<{ id: string; code: string; tid: string }>(
+          `SELECT l.id::text, l.code, l.tenant_id::text AS tid
+             FROM locations l
+            WHERE l.id = $1::uuid AND l.is_active = TRUE
+              AND ( EXISTS (SELECT 1 FROM user_locations ul
+                             WHERE ul.user_id = $2::uuid AND ul.location_id = l.id)
+                    OR NOT EXISTS (SELECT 1 FROM user_locations ul
+                                    WHERE ul.user_id = $2::uuid) )
+            LIMIT 1`,
+          [locationId, row.user_id],
+        );
+        const lrow = loc.rows[0];
+        if (!lrow) return null;
+        return {
+          id: String(row.user_id),
+          email: row.email,
+          role: row.role,
+          employee_id: row.employee_id,
+          tid: lrow.tid,
+          lid: lrow.id,
+          lcode: lrow.code,
+          flow: "password",
+        };
+      },
+    }),
+
+    // "Change employee" switch: consumes the short-lived, HMAC-signed cookie
+    // minted by /api/pos/auth/switch-prepare (which itself required a valid
+    // session). A PIN can therefore never bypass the password login.
+    Credentials({
+      id: "switch",
+      name: "Carbon POS switch",
+      credentials: {},
+      authorize: async (_raw, req) => {
+        const cookieHeader = req?.headers?.get?.("cookie") ?? "";
+        const re = new RegExp(`(?:^|;\\s*)${SWITCH_COOKIE}=([^;]+)`);
+        const m = cookieHeader.match(re);
+        const token = m ? decodeURIComponent(m[1]) : null;
+        const p = verifySwitchToken(token);
+        if (!p) return null;
+        return {
+          id: p.user_id,
+          email: p.email,
+          role: p.role,
+          employee_id: p.employee_id,
+          tid: p.tid,
+          lid: p.lid,
+          lcode: p.lcode,
+          flow: "pin",
+        };
       },
     }),
   ],

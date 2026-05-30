@@ -269,6 +269,10 @@ export function AdminShell({
               setUserMenuOpen(false);
               router.push(`/locations/${code}`);
             }}
+            onChangeEmployee={() => {
+              setUserMenuOpen(false);
+              router.push("/sign-in?mode=switch");
+            }}
           />
         </div>
       </header>
@@ -293,6 +297,7 @@ function LocationUserMenu({
   onToggle,
   onClose,
   onSwitch,
+  onChangeEmployee,
 }: {
   code: string;
   locName: string;
@@ -303,6 +308,7 @@ function LocationUserMenu({
   onToggle: () => void;
   onClose: () => void;
   onSwitch: () => void;
+  onChangeEmployee: () => void;
 }) {
   // Click-outside / Esc close.
   useEffect(() => {
@@ -422,6 +428,17 @@ function LocationUserMenu({
               </span>
             </div>
           )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={onChangeEmployee}
+            className="w-full text-left px-4 py-3 hover:bg-[var(--carbon-surface-soft)] flex items-center gap-2 border-t border-carbon-border-soft"
+          >
+            <span className="material-symbols-outlined text-[20px] text-carbon-text-muted" aria-hidden>
+              switch_account
+            </span>
+            <span className="text-sm font-medium">Change employee</span>
+          </button>
           <button
             type="button"
             role="menuitem"
