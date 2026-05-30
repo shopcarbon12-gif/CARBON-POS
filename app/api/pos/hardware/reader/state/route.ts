@@ -35,5 +35,6 @@ export async function GET() {
     status_online: info.status_online,
     scan_paused: info.scan_paused,
     agent_active: info.agent_live_scan_active,
+    recovery_state: info.recovery_state, // 'recovering' | 'hard_resetting' | null
   });
 }

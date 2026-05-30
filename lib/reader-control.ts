@@ -26,6 +26,9 @@ export type PosReaderInfo = {
   status_online: boolean;
   scan_paused: boolean;
   agent_live_scan_active: boolean;
+  /** Agent-reported software recovery state ('recovering' | 'hard_resetting' |
+   *  null). Drives the "Reader recovering…" indicator on the sell screen. */
+  recovery_state: string | null;
 };
 
 /**
@@ -41,7 +44,8 @@ export async function posReaderForCurrentSession(
             ag.id::text                             AS agent_id,
             d.status_online                         AS status_online,
             (d.scan_paused_at IS NOT NULL)          AS scan_paused,
-            ag.live_scan_active                     AS agent_live_scan_active
+            ag.live_scan_active                     AS agent_live_scan_active,
+            d.recovery_state                        AS recovery_state
        FROM pos_register_sessions s
        JOIN pos_registers reg ON reg.id = s.register_id
        JOIN cdm_agents ag      ON ag.id = reg.cdm_agent_id
@@ -106,6 +110,44 @@ export function markReaderHeartbeat(userId: string): void {
     clearTimeout(t);
     pendingPauseTimers.delete(userId);
   }
+}
+
+/**
+ * Arm the agent's recovery monitor for this cashier's POS reader by refreshing
+ * `monitor_armed_at` on their open register session. The CDM agent treats a
+ * fresh value (within ~30 s) as "a cashier is present" → it runs aggressive
+ * software recovery on the reader, and cold-starts it outside store hours.
+ * Called on /reader/start and every /reader/keepalive; left to go stale (~30 s
+ * grace) when the cashier leaves — which is what disarms it. This REPLACES the
+ * old scan_paused_at toggling: we never pause the POS reader per-session
+ * anymore (that teardown wedged the chip), the per-reader schedule governs its
+ * open hours.
+ */
+export async function armPosMonitor(userId: string): Promise<void> {
+  await getPool().query(
+    `UPDATE pos_register_sessions
+        SET monitor_armed_at = now()
+      WHERE status = 'open' AND opened_by = $1::uuid`,
+    [userId],
+  );
+}
+
+/**
+ * Set/refresh or clear `scanning_active_at` — fresh while a Scan RFID / Update
+ * Item Status modal is actively open. The agent applies the tighter "no reads
+ * in 30 s → recover" rule only while scanning is active (customer in front of
+ * the cashier).
+ */
+export async function setScanningActive(
+  userId: string,
+  active: boolean,
+): Promise<void> {
+  await getPool().query(
+    `UPDATE pos_register_sessions
+        SET scanning_active_at = ${active ? "now()" : "NULL"}
+      WHERE status = 'open' AND opened_by = $1::uuid`,
+    [userId],
+  );
 }
 
 /** Schedule a pause after the grace window. Latest call wins. */

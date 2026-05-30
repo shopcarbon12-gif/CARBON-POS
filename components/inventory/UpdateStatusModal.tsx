@@ -96,14 +96,23 @@ export function UpdateStatusModal({
       method: "POST",
       credentials: "same-origin",
     }).catch(() => { /* best-effort */ });
-    // Heartbeat keeps the reader alive across tabs. Server-side
-    // /reader/stop defers the actual pause by 30 s and skips it if any
-    // tab has pinged within the window — see reader-control.ts.
+    const scanPing = (active: boolean) =>
+      fetch("/api/pos/hardware/reader/scanning", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ active }),
+      }).catch(() => { /* best-effort */ });
+    void scanPing(true);
+    // Heartbeat keeps the reader armed + scanning-active while the modal is
+    // open. /reader/keepalive refreshes monitor_armed_at; scanPing refreshes
+    // scanning_active_at (the tighter 30 s no-reads recovery rule).
     const heartbeat = setInterval(() => {
       void fetch("/api/pos/hardware/reader/keepalive", {
         method: "POST",
         credentials: "same-origin",
       }).catch(() => { /* best-effort */ });
+      void scanPing(true);
     }, 15_000);
 
     const es = new EventSource("/api/hardware/epcs/stream", { withCredentials: true });
@@ -155,10 +164,10 @@ export function UpdateStatusModal({
       clearInterval(heartbeat);
       es.close();
       if (flushTimer) clearTimeout(flushTimer);
-      // Fire stop on modal close. Server defers the actual pause by 30 s;
-      // if the sell screen (or another modal) is still open in another
-      // tab, its heartbeat cancels the pause before it lands. Otherwise
-      // the reader winds down 30 s after the last surface closes.
+      void scanPing(false);
+      // Modal close: clear scanning-active. We do NOT pause the reader — it
+      // runs on its schedule (always-warm during store hours); monitor_armed_at
+      // goes stale on its own once heartbeats stop.
       void fetch("/api/pos/hardware/reader/stop", {
         method: "POST",
         keepalive: true,

@@ -67,6 +67,26 @@ export function RFIDScanModal({
   useEffect(() => {
     rssiThresholdRef.current = rssiThreshold;
   }, [rssiThreshold]);
+
+  // Tell the CDM agent the cashier is ACTIVELY scanning (customer present) so
+  // it applies the tighter "no reads in 30 s → recover" rule. Heartbeat while
+  // the modal is open; clear on close.
+  useEffect(() => {
+    if (!open) return;
+    const ping = (active: boolean) =>
+      fetch("/api/pos/hardware/reader/scanning", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ active }),
+      }).catch(() => {/* best-effort */});
+    void ping(true);
+    const t = setInterval(() => void ping(true), 15_000);
+    return () => {
+      clearInterval(t);
+      void ping(false);
+    };
+  }, [open]);
   // De-dupe set held in a ref so the trash + Rescan handlers can mutate
   // it (an item removed from the cart should be re-scannable; Rescan
   // clears everything).

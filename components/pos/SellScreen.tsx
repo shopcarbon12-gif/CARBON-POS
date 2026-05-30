@@ -138,10 +138,18 @@ export function SellScreen({
     scan_paused?: boolean;
     status_online?: boolean;
     agent_active?: boolean;
+    recovery_state?: string | null;
     error?: string;
   }): ReaderState => {
     if (r.skipped && r.reason === "no_agent") return "no_reader";
     if (r.error) return "unreachable";
+    // The agent's explicit recovery signal wins — it's actively self-healing
+    // the reader (armed). Shows the amber "Reader recovering…" indicator.
+    if (
+      r.recovery_state === "recovering" ||
+      r.recovery_state === "hard_resetting"
+    )
+      return "recovering";
     if (typeof r.scan_paused !== "boolean") return "unreachable";
     if (r.scan_paused) return "off";
     if (r.status_online === true) return "on";

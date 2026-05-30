@@ -1,32 +1,22 @@
 import { NextResponse } from "next/server";
 import { currentCashier } from "@/lib/session";
-import {
-  posReaderForCurrentSession,
-  scheduleReaderPause,
-} from "@/lib/reader-control";
+import { setScanningActive } from "@/lib/reader-control";
 
 /**
  * POST /api/pos/hardware/reader/stop
  *
- * Pause ONLY the POS-dedicated reader (`is_pos_dedicated=true`), with a
- * 30 s grace window. Any /reader/start OR /reader/keepalive from any tab
- * within the window cancels the pending pause — so two tabs both using
- * the reader survive one of them closing. The pause only actually fires
- * if NO heartbeats arrive for the full window.
- *
- * The 14 sibling warehouse readers under the same agent are not
- * affected. The CDM agent's tenant-wide live_scan_active is left
- * untouched for the same reason.
+ * Leaving a scan surface. We DO NOT pause the reader anymore — the POS reader
+ * runs on its per-reader schedule (always-warm during store hours) and is
+ * never torn down per-session (that teardown wedged the chip under the
+ * reverted f0e536e). We just clear `scanning_active_at`; `monitor_armed_at`
+ * goes stale on its own (~30 s) once heartbeats stop, which disarms recovery
+ * and — outside store hours only — lets the reader cold-stop after the grace.
  */
 export async function POST() {
   const cashier = await currentCashier();
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const info = await posReaderForCurrentSession(cashier.user_id);
-  if (!info) {
-    return NextResponse.json({ ok: true, skipped: true, reason: "no_agent" });
-  }
-  scheduleReaderPause(cashier.user_id, info.reader_id);
-  return NextResponse.json({ ok: true, reader_id: info.reader_id, deferred_ms: 30_000 });
+  await setScanningActive(cashier.user_id, false);
+  return NextResponse.json({ ok: true });
 }

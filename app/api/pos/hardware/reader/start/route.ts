@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentCashier } from "@/lib/session";
 import {
+  armPosMonitor,
   clearPosReaderPause,
   markReaderHeartbeat,
   posReaderForCurrentSession,
@@ -33,10 +34,12 @@ export async function POST() {
     return NextResponse.json({ ok: true, skipped: true, reason: "no_agent" });
   }
   await wakeAgentIfDormant(info.agent_id, cashier.user_id);
+  // Defensive: ensure no stale manual pause is set — the per-reader schedule
+  // governs availability now, not scan_paused_at.
   await clearPosReaderPause(info.reader_id);
-  // Mark a fresh heartbeat — also cancels any pending grace-pause from a
-  // recent stop, so opening a new tab within the 30 s window cleanly
-  // rescues the reader.
+  // Arm the agent's recovery monitor: a cashier is present, so the reader must
+  // self-heal aggressively (and cold-start if outside store hours).
+  await armPosMonitor(cashier.user_id);
   markReaderHeartbeat(cashier.user_id);
   return NextResponse.json({
     ok: true,
