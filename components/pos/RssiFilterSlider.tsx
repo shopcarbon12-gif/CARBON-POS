@@ -19,7 +19,9 @@ import { useEffect, useRef, useState } from "react";
 
 const RSSI_MIN = -90; // left: show everything (above the bridge's hard floor)
 const RSSI_MAX = -20; // right: only the closest tags
-export const RSSI_DEFAULT = -50;
+// Operator-tuned default for the register counter (2026-05-30): shows the item
+// at the register, not the shelf behind it. Closest items read ~-56..-58.
+export const RSSI_DEFAULT = -56;
 const DEBOUNCE_MS = 400; // just a DB write now — no reader respawn cost
 
 export function RssiFilterSlider({
