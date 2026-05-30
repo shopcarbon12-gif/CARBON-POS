@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney } from "@/lib/utils";
 import { RssiFilterSlider, RSSI_DEFAULT } from "./RssiFilterSlider";
 
@@ -16,6 +16,10 @@ export type RfidResolvedItem = {
   /** Matrices.is_manual_only carried through from items/by-epc. */
   is_manual_only?: boolean;
 };
+
+/** A resolved item plus its strongest observed RSSI, so the proximity slider
+ *  can filter the DISPLAYED list live (no Rescan needed). null = no RSSI. */
+type ScannedItem = RfidResolvedItem & { rssi: number | null };
 
 /**
  * Connects to the POS-side SSE bridge at /api/hardware/epcs/stream (which
@@ -51,7 +55,11 @@ export function RFIDScanModal({
    *  scannable again only when removed from the cart upstream. */
   cartEpcs: string[];
 }) {
-  const [scanned, setScanned] = useState<RfidResolvedItem[]>([]);
+  const [scanned, setScanned] = useState<ScannedItem[]>([]);
+  // Strongest RSSI seen per EPC (updated on every read). The displayed list is
+  // filtered by the slider against this, so dragging the slider hides/shows
+  // rows in real time.
+  const epcRssiRef = useRef<Map<string, number>>(new Map());
   const [unknownCount, setUnknownCount] = useState(0);
   const [filteredCount, setFilteredCount] = useState(0);
   const [blocked, setBlocked] = useState<Array<{ epc: string; status: string }>>(
@@ -63,10 +71,27 @@ export function RFIDScanModal({
   // the long-lived EventSource handler reads the latest value without being
   // re-created on every slider drag.
   const [rssiThreshold, setRssiThreshold] = useState<number>(RSSI_DEFAULT);
-  const rssiThresholdRef = useRef<number>(RSSI_DEFAULT);
+  // Keep each row's RSSI in sync with the strongest seen (a tag brought closer
+  // gets a higher RSSI), so the live proximity filter reacts as items move —
+  // batched every 400ms to avoid a re-render per read.
   useEffect(() => {
-    rssiThresholdRef.current = rssiThreshold;
-  }, [rssiThreshold]);
+    if (!open) return;
+    const t = setInterval(() => {
+      setScanned((prev) => {
+        let changed = false;
+        const next = prev.map((it) => {
+          const r = epcRssiRef.current.get(it.epc);
+          if (r != null && r !== it.rssi) {
+            changed = true;
+            return { ...it, rssi: r };
+          }
+          return it;
+        });
+        return changed ? next : prev;
+      });
+    }, 400);
+    return () => clearInterval(t);
+  }, [open]);
 
   // Tell the CDM agent the cashier is ACTIVELY scanning (customer present) so
   // it applies the tighter "no reads in 30 s → recover" rule. Heartbeat while
@@ -96,6 +121,15 @@ export function RFIDScanModal({
   // cart" fires. Toggle membership by clicking a row.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectionMode = selected.size > 0;
+  // Live proximity filter: show rows whose strongest RSSI is at/above the
+  // slider threshold (closer = higher). Recomputes instantly as the slider
+  // moves or as a tag's RSSI changes — no Rescan needed. Rows with no RSSI
+  // are always shown (can't judge proximity).
+  const visible = useMemo(
+    () =>
+      scanned.filter((it) => it.rssi == null || it.rssi >= rssiThreshold),
+    [scanned, rssiThreshold],
+  );
 
   const toggleSelect = (epc: string) => {
     setSelected((prev) => {
@@ -126,6 +160,7 @@ export function RFIDScanModal({
     setFilteredCount(0);
     setBlocked([]);
     setSelected(new Set());
+    epcRssiRef.current.clear();
     // Reset the dedup set, but DO NOT lose the cart-EPC seed — those
     // tags are already in the sale and must never come back into the
     // scan list. Open used to set this, Rescan used to wipe it; now
@@ -146,6 +181,7 @@ export function RFIDScanModal({
       setStreamErr(null);
       setSelected(new Set());
       seenRef.current.clear();
+      epcRssiRef.current.clear();
       return;
     }
     // Seed the de-dup set with EPCs already in the cart — they won't
@@ -181,7 +217,10 @@ export function RFIDScanModal({
       } = await res.json();
       setScanned((prev) => {
         const have = new Set(prev.map((p) => p.epc));
-        return [...prev, ...data.items.filter((i) => !have.has(i.epc))];
+        const fresh: ScannedItem[] = data.items
+          .filter((i) => !have.has(i.epc))
+          .map((i) => ({ ...i, rssi: epcRssiRef.current.get(i.epc) ?? null }));
+        return [...prev, ...fresh];
       });
       setUnknownCount((c) => c + (data.unknown_count ?? 0));
       setFilteredCount((c) => c + (data.dropped_count ?? 0));
@@ -204,12 +243,15 @@ export function RFIDScanModal({
         // the by-epc lookup both speak the same case.
         const epc = payload.epc?.toUpperCase();
         if (!epc) return;
-        // Proximity filter: the reader runs at a constant 33 dBm, so drop tags
-        // weaker (farther) than the cashier's threshold BEFORE dedup — a tag
-        // that's far now can still surface once it's brought close to the
-        // register. Reads with no RSSI fall through (shown).
+        // Track the STRONGEST RSSI seen for this tag (closer = higher). The
+        // proximity slider filters the DISPLAYED list against this live, so we
+        // no longer drop reads here by threshold — we keep them all (above the
+        // bridge's hard noise floor) and let the slider hide/show rows.
         const rssi = typeof payload.rssi === "number" ? payload.rssi : null;
-        if (rssi !== null && rssi < rssiThresholdRef.current) return;
+        if (rssi !== null) {
+          const prev = epcRssiRef.current.get(epc);
+          if (prev === undefined || rssi > prev) epcRssiRef.current.set(epc, rssi);
+        }
         if (seenRef.current.has(epc)) return;
         seenRef.current.add(epc);
         buffer.push(epc);
@@ -261,13 +303,15 @@ export function RFIDScanModal({
           </p>
         )}
         <div className="flex-1 overflow-auto rounded-xl border border-[var(--color-pos-border)]">
-          {scanned.length === 0 ? (
+          {visible.length === 0 ? (
             <div className="p-6 text-center text-[var(--color-pos-muted)]">
-              Waiting for tags…
+              {scanned.length === 0
+                ? "Waiting for tags…"
+                : "No tags within range — drag the slider toward “far” to show more."}
             </div>
           ) : (
             <ul>
-              {scanned.map((it) => {
+              {visible.map((it) => {
                 const price = it.retail_price ? formatMoney(Number(it.retail_price)) : null;
                 const meta = [it.sku, it.color, it.size, price].filter(Boolean);
                 const isSelected = selected.has(it.epc);
@@ -349,8 +393,8 @@ export function RFIDScanModal({
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-3">
           <p className="text-sm text-[var(--color-pos-muted)]">
             {selectionMode
-              ? `${selected.size} of ${scanned.length} selected`
-              : `${scanned.length} ready to add`}
+              ? `${selected.size} of ${visible.length} selected`
+              : `${visible.length} ready to add`}
           </p>
           <div className="flex gap-2 w-full sm:w-auto">
             <button
@@ -374,17 +418,17 @@ export function RFIDScanModal({
             <button
               onClick={() => {
                 const toAdd = selectionMode
-                  ? scanned.filter((it) => selected.has(it.epc))
-                  : scanned;
+                  ? visible.filter((it) => selected.has(it.epc))
+                  : visible;
                 onAdd(toAdd);
                 onClose();
               }}
               disabled={
-                scanned.length === 0 || (selectionMode && selected.size === 0)
+                visible.length === 0 || (selectionMode && selected.size === 0)
               }
               className="tap rounded-xl bg-[var(--color-pos-accent)] text-white px-3 sm:px-5 font-semibold disabled:opacity-50 flex-1 sm:flex-none whitespace-nowrap"
             >
-              Add {selectionMode ? selected.size : scanned.length} to cart
+              Add {selectionMode ? selected.size : visible.length} to cart
             </button>
           </div>
         </div>
