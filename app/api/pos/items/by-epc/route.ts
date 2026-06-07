@@ -64,6 +64,7 @@ export async function POST(req: Request) {
     size: string | null;
     retail_price: string | null;
     is_manual_only: boolean | null;
+    image_url: string | null;
     label_name: string | null;
     is_sellable: boolean | null;
     is_visible_to_scanner: boolean | null;
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
             cs.size,
             cs.retail_price,
             COALESCE(m.is_manual_only, FALSE) AS is_manual_only,
+            cs.shopify_image_url              AS image_url,
             sl.name                        AS label_name,
             sl.is_sellable,
             sl.is_visible_to_scanner,
@@ -114,6 +116,7 @@ export async function POST(req: Request) {
     size: string | null;
     retail_price: string | null;
     is_manual_only: boolean;
+    image_url: string | null;
   };
   const usable: UsableItem[] = [];
   const blocked: Array<{ epc: string; status: string }> = [];
@@ -220,6 +223,7 @@ export async function POST(req: Request) {
         size: r.size,
         retail_price: r.retail_price,
         is_manual_only: r.is_manual_only === true,
+        image_url: r.image_url ?? null,
       });
       continue;
     }

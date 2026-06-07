@@ -233,6 +233,9 @@ export type CartLine = {
   /** UPC barcode. Shown alongside SKU in the cart row subtitle. */
   upc?: string | null;
   description: string;
+  /** Variant's color-specific Shopify image (cdn.shopify.com), or null.
+   *  Rendered as the cart-line thumbnail on product rows. */
+  image_url?: string | null;
   quantity: number;
   unit_price: number;
   discount_amount: number;

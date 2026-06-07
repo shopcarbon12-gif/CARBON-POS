@@ -129,15 +129,26 @@ export function CartPanel({
                 className="flex items-center justify-between px-3 sm:px-4 py-2 gap-2 sm:gap-0 hover:bg-[var(--carbon-surface-soft)] transition-colors cursor-pointer select-none"
               >
                 {/* Thumbnail — hidden on mobile to give the description room.
-                    Row vertical padding stays py-2 so each row aligns. */}
+                    Row vertical padding stays py-2 so each row aligns. Shows
+                    the variant's color picture (Shopify CDN URL) when synced,
+                    else the checkroom placeholder. */}
                 {line.line_type === "product" ? (
                   <div
-                    className="w-20 h-20 shrink-0 mr-4 hidden md:flex items-center justify-center bg-[var(--carbon-surface-soft)] border border-[var(--carbon-border-soft)]"
+                    className="w-20 h-20 shrink-0 mr-4 hidden md:flex items-center justify-center bg-[var(--carbon-surface-soft)] border border-[var(--carbon-border-soft)] overflow-hidden"
                     aria-hidden
                   >
-                    <span className="material-symbols-outlined text-[40px] text-[var(--carbon-muted)]">
-                      checkroom
-                    </span>
+                    {line.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={line.image_url}
+                        alt={line.description}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <span className="material-symbols-outlined text-[40px] text-[var(--carbon-muted)]">
+                        checkroom
+                      </span>
+                    )}
                   </div>
                 ) : null}
                 {/* Mode badge — sits to the LEFT of the description so

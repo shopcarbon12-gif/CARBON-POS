@@ -34,6 +34,7 @@ export async function GET(req: Request) {
             cs.size,
             cs.retail_price::text,
             COALESCE(m.is_manual_only, FALSE)  AS is_manual_only,
+            cs.shopify_image_url               AS image_url,
             COALESCE(stk.n, 0)::int            AS stock_count
        FROM custom_skus cs
        JOIN matrices m ON m.id = cs.matrix_id

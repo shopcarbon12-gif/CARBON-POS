@@ -15,6 +15,8 @@ export type RfidResolvedItem = {
   retail_price: string | null;
   /** Matrices.is_manual_only carried through from items/by-epc. */
   is_manual_only?: boolean;
+  /** Variant's color-specific Shopify image (cdn.shopify.com), or null. */
+  image_url?: string | null;
 };
 
 /** A resolved item plus its strongest observed RSSI, so the proximity slider

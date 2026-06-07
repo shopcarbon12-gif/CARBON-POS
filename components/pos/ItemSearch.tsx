@@ -18,6 +18,8 @@ export type SearchResultItem = {
   is_manual_only?: boolean;
   /** Units in stock at the active location (0 = out of stock). */
   stock_count?: number;
+  /** Variant's color-specific Shopify image (cdn.shopify.com), or null. */
+  image_url?: string | null;
 };
 
 /**

@@ -991,6 +991,7 @@ export function SellScreen({
           description: [item.item_name, item.color, item.size]
             .filter(Boolean)
             .join(" · "),
+          image_url: item.image_url ?? null,
           quantity: 1,
           unit_price: price,
           discount_amount: 0,
@@ -1039,6 +1040,7 @@ export function SellScreen({
           description: [it.item_name, it.color, it.size]
             .filter(Boolean)
             .join(" · "),
+          image_url: it.image_url ?? null,
           quantity: 1,
           unit_price: Number(it.retail_price ?? 0),
           discount_amount: 0,

@@ -99,6 +99,7 @@ export async function GET(req: Request) {
       retail_price: string | null;
       stock_count: string;
       is_manual_only: boolean;
+      image_url: string | null;
     }>(
       `SELECT cs.id::text,
               cs.sku,
@@ -109,7 +110,8 @@ export async function GET(req: Request) {
               cs.size,
               cs.retail_price::text,
               COALESCE(c.n, 0)::text              AS stock_count,
-              COALESCE(m.is_manual_only, FALSE)   AS is_manual_only
+              COALESCE(m.is_manual_only, FALSE)   AS is_manual_only,
+              cs.shopify_image_url                AS image_url
          FROM custom_skus cs
          JOIN matrices m ON m.id = cs.matrix_id
          LEFT JOIN LATERAL (
@@ -146,9 +148,10 @@ export async function GET(req: Request) {
       retail_price: r.retail_price,
       stock_count: Number(r.stock_count),
       is_manual_only: r.is_manual_only === true,
-      // Catalog doesn't carry image_url today — Phase-2 hooks the WMS
-      // media bucket. The popup falls back to "Picture not available".
-      image_url: null,
+      // Variant's color-specific Shopify image (cdn.shopify.com), synced by
+      // the WMS catalog. Null when the SKU has no picture yet; the popup
+      // falls back to "Picture not available".
+      image_url: r.image_url ?? null,
     })),
     total: Number(totalR.rows[0]?.n ?? 0),
   });
