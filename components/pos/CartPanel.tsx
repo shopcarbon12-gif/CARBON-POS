@@ -396,8 +396,7 @@ function ExpandedDetails({
           type="button"
           onClick={onPreview}
           title="View product image"
-          className="w-28 self-stretch shrink-0 hidden sm:flex items-center justify-center bg-white border border-[var(--carbon-border-soft)] overflow-hidden hover:border-carbon-blue transition-colors"
-          style={{ minHeight: "9rem" }}
+          className="w-40 aspect-[3/4] shrink-0 hidden sm:flex items-center justify-center bg-white border border-[var(--carbon-border-soft)] overflow-hidden hover:border-carbon-blue transition-colors"
         >
           {line.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
