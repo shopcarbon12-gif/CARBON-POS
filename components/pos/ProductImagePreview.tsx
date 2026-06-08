@@ -38,6 +38,8 @@ export function ProductImagePreview({
   const frameRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
   const last = useRef({ x: 0, y: 0 });
+  const downPos = useRef({ x: 0, y: 0 });
+  const movedRef = useRef(false);
 
   // Keep the pan within bounds so the scaled image always covers the frame.
   const clamp = useCallback((x: number, y: number, s: number) => {
@@ -83,25 +85,66 @@ export function ProductImagePreview({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, zoomBy, reset]);
 
+  // Zoom toward a screen point (used for click-to-zoom). Keeps the clicked
+  // spot under the cursor by adjusting the translate as we scale. Clicking
+  // when already deep cycles back out to fit.
+  const zoomAtPoint = useCallback(
+    (cx: number, cy: number) => {
+      const el = frameRef.current;
+      if (!el) return;
+      setAnimate(true);
+      const s = scale;
+      let sp = s < 2 ? 2.5 : s + 1.5;
+      if (sp > MAX_SCALE) {
+        setScale(1);
+        setTx(0);
+        setTy(0);
+        return;
+      }
+      sp = +sp.toFixed(2);
+      const r = el.getBoundingClientRect();
+      const ox = cx - (r.left + r.width / 2);
+      const oy = cy - (r.top + r.height / 2);
+      const ntx = ox * (1 - sp / s) + tx * (sp / s);
+      const nty = oy * (1 - sp / s) + ty * (sp / s);
+      const c = clamp(ntx, nty, sp);
+      setScale(sp);
+      setTx(c.x);
+      setTy(c.y);
+    },
+    [scale, tx, ty, clamp],
+  );
+
   const onWheel = (e: React.WheelEvent) => {
     e.stopPropagation();
     zoomBy(e.deltaY > 0 ? -0.3 : 0.3);
   };
   const onPointerDown = (e: React.PointerEvent) => {
-    if (scale <= MIN_SCALE) return;
-    draggingRef.current = true;
-    setAnimate(false); // no transition while dragging
-    last.current = { x: e.clientX, y: e.clientY };
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    downPos.current = { x: e.clientX, y: e.clientY };
+    movedRef.current = false;
+    if (scale > MIN_SCALE) {
+      draggingRef.current = true;
+      setAnimate(false); // no transition while dragging
+      last.current = { x: e.clientX, y: e.clientY };
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    }
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!draggingRef.current) return;
+    if (Math.abs(e.clientX - downPos.current.x) > 4 || Math.abs(e.clientY - downPos.current.y) > 4) {
+      movedRef.current = true;
+    }
     const dx = e.clientX - last.current.x;
     const dy = e.clientY - last.current.y;
     last.current = { x: e.clientX, y: e.clientY };
     // Functional updates so several moves per frame can't drift off a stale value.
     setTx((x) => clamp(x + dx, 0, scale).x);
     setTy((y) => clamp(0, y + dy, scale).y);
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    draggingRef.current = false;
+    // A press with (almost) no movement = a click → zoom toward that point.
+    if (!movedRef.current) zoomAtPoint(e.clientX, e.clientY);
   };
   const endDrag = () => {
     draggingRef.current = false;
@@ -145,10 +188,9 @@ export function ProductImagePreview({
           onWheel={imageUrl ? onWheel : undefined}
           onPointerDown={imageUrl ? onPointerDown : undefined}
           onPointerMove={imageUrl ? onPointerMove : undefined}
-          onPointerUp={endDrag}
+          onPointerUp={imageUrl ? onPointerUp : undefined}
           onPointerCancel={endDrag}
           onPointerLeave={endDrag}
-          onDoubleClick={imageUrl ? () => (zoomed ? reset() : zoomTo(2.5)) : undefined}
         >
           {imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -177,7 +219,7 @@ export function ProductImagePreview({
             <div
               className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 px-1.5 py-1 text-white"
               onPointerDown={(e) => e.stopPropagation()}
-              onDoubleClick={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
             >
               <button
                 type="button"
@@ -215,7 +257,7 @@ export function ProductImagePreview({
 
         {imageUrl ? (
           <p className="mt-2 text-center text-[11px] text-carbon-text-muted">
-            Scroll or use +/− to zoom · drag to pan · double-click to toggle
+            Click to zoom in · scroll or +/− to zoom · drag to pan
           </p>
         ) : null}
       </div>
