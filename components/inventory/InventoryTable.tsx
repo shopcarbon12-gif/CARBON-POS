@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Radio } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 import { UpdateStatusModal } from "./UpdateStatusModal";
+import { ProductImagePreview } from "../pos/ProductImagePreview";
 
 type SortKey =
   | "item_name"
@@ -247,7 +248,9 @@ export function InventoryTable({
                         />
                       )}
                     </td>
-                    <td className="px-3 py-3">
+                    {/* py-1 (not py-3) so the taller 3:4 thumbnail fills the
+                        row height without making the row taller. */}
+                    <td className="px-3 py-1">
                       <button
                         type="button"
                         onClick={() => setPicked(row)}
@@ -256,7 +259,7 @@ export function InventoryTable({
                             ? "View product image"
                             : "No image attached — tap to confirm"
                         }
-                        className="w-12 h-12 bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center hover:border-carbon-blue transition-colors overflow-hidden"
+                        className="w-12 h-16 bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center hover:border-carbon-blue transition-colors overflow-hidden"
                       >
                         {row.image_url ? (
                           // Plain <img> so we don't pin Next/Image config to
@@ -338,7 +341,18 @@ export function InventoryTable({
       </div>
 
       {picked ? (
-        <ImagePopup row={picked} onClose={() => setPicked(null)} />
+        <ProductImagePreview
+          imageUrl={picked.image_url}
+          title={picked.item_name}
+          subtitle={[
+            picked.sku,
+            picked.upc ? `UPC ${picked.upc}` : null,
+            [picked.color, picked.size].filter(Boolean).join(" ") || null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          onClose={() => setPicked(null)}
+        />
       ) : null}
 
       <UpdateStatusModal
@@ -433,66 +447,3 @@ function Pager({
   );
 }
 
-function ImagePopup({ row, onClose }: { row: Row; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <div
-      className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white max-w-2xl w-full p-6 shadow-xl border border-carbon-border-soft"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="min-w-0">
-            <h2 className="text-xl font-bold text-carbon-text truncate">
-              {row.item_name}
-            </h2>
-            <p className="text-xs text-carbon-text-muted font-mono mt-0.5">
-              {row.sku}
-              {row.upc ? ` · UPC ${row.upc}` : ""}
-              {row.color || row.size
-                ? ` · ${[row.color, row.size].filter(Boolean).join(" ")}`
-                : ""}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-carbon-text-muted hover:text-carbon-text text-2xl leading-none px-2 shrink-0"
-          >
-            ×
-          </button>
-        </div>
-        <div className="aspect-square w-full bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center overflow-hidden">
-          {row.image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={row.image_url}
-              alt={row.item_name}
-              className="w-full h-full object-contain"
-            />
-          ) : (
-            <div className="flex flex-col items-center gap-3 text-carbon-text-muted">
-              <span className="material-symbols-outlined text-7xl opacity-50">
-                hide_image
-              </span>
-              <p className="text-base font-semibold">Picture not available</p>
-              <p className="text-xs">
-                No image is attached to this product in the catalog.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}

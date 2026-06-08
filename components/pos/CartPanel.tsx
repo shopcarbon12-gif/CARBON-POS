@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Trash2, Minus, Plus, Barcode, Radio, ChevronDown } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 import type { CartLine, AttributionEmployee } from "@/types/pos";
+import { ProductImagePreview } from "./ProductImagePreview";
 
 /**
  * Left-side cart per the carbon_sales_interface_active_cart_light reference.
@@ -46,6 +47,9 @@ export function CartPanel({
   // row toggles; tapping interactive children (qty, price, trash, employee)
   // is suppressed via stopPropagation so they don't accidentally toggle.
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Cart line whose picture is open in the full preview (same popup as
+  // product management). Null = closed.
+  const [previewLine, setPreviewLine] = useState<CartLine | null>(null);
   const headerLabel = saleNumberPreview
     ? `Cart \\ Sale ${saleNumberPreview}`
     : "Cart";
@@ -133,23 +137,28 @@ export function CartPanel({
                     the variant's color picture (Shopify CDN URL) when synced,
                     else the checkroom placeholder. */}
                 {line.line_type === "product" ? (
-                  <div
-                    className="w-20 h-20 shrink-0 mr-4 hidden md:flex items-center justify-center bg-[var(--carbon-surface-soft)] border border-[var(--carbon-border-soft)] overflow-hidden"
-                    aria-hidden
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewLine(line);
+                    }}
+                    title="View product image"
+                    className="w-16 aspect-[3/4] shrink-0 mr-4 hidden md:flex items-center justify-center bg-[var(--carbon-surface-soft)] border border-[var(--carbon-border-soft)] overflow-hidden hover:border-carbon-blue transition-colors"
                   >
                     {line.image_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={line.image_url}
                         alt={line.description}
-                        className="w-full h-full object-contain"
+                        className="w-full h-full object-cover"
                       />
                     ) : (
                       <span className="material-symbols-outlined text-[40px] text-[var(--carbon-muted)]">
                         checkroom
                       </span>
                     )}
-                  </div>
+                  </button>
                 ) : null}
                 {/* Mode badge — sits to the LEFT of the description so
                     every row aligns to a fixed-width 64×22 pill.
@@ -277,6 +286,7 @@ export function CartPanel({
                   employees={employees}
                   saleAttributedEmployeeId={saleAttributedEmployeeId}
                   onChangeLineEmployee={onChangeLineEmployee}
+                  onPreview={() => setPreviewLine(line)}
                 />
               ) : null}
               </li>
@@ -284,6 +294,20 @@ export function CartPanel({
           })}
         </ul>
       </div>
+
+      {previewLine ? (
+        <ProductImagePreview
+          imageUrl={previewLine.image_url ?? null}
+          title={previewLine.description}
+          subtitle={[
+            previewLine.sku,
+            previewLine.upc ? `UPC ${previewLine.upc}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          onClose={() => setPreviewLine(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -325,11 +349,13 @@ function ExpandedDetails({
   employees,
   saleAttributedEmployeeId,
   onChangeLineEmployee,
+  onPreview,
 }: {
   line: CartLine;
   employees: AttributionEmployee[];
   saleAttributedEmployeeId: number;
   onChangeLineEmployee: (cartId: string, employeeId: number) => void;
+  onPreview?: () => void;
 }) {
   const lineSubtotal = line.unit_price * line.quantity;
   const lineTotal = lineSubtotal - line.discount_amount;
@@ -360,10 +386,34 @@ function ExpandedDetails({
   ] as Array<DetailRow | null>).filter((r): r is DetailRow => r !== null);
   return (
     <div
-      className="px-3 sm:px-4 pb-3 pt-1 bg-[var(--carbon-surface-soft)] border-t border-[var(--carbon-border-soft)]"
+      className="px-3 sm:px-4 pb-3 pt-1 bg-[var(--carbon-surface-soft)] border-t border-[var(--carbon-border-soft)] flex items-start gap-4"
       onClick={(e) => e.stopPropagation()}
     >
-      <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-xs sm:text-sm">
+      {/* Picture on the LEFT, sized to the detail block; item info to its
+          right (matches the product-management / reference layout). */}
+      {line.line_type === "product" ? (
+        <button
+          type="button"
+          onClick={onPreview}
+          title="View product image"
+          className="w-28 self-stretch shrink-0 hidden sm:flex items-center justify-center bg-white border border-[var(--carbon-border-soft)] overflow-hidden hover:border-carbon-blue transition-colors"
+          style={{ minHeight: "9rem" }}
+        >
+          {line.image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={line.image_url}
+              alt={line.description}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="material-symbols-outlined text-[48px] text-[var(--carbon-muted)]">
+              checkroom
+            </span>
+          )}
+        </button>
+      ) : null}
+      <dl className="flex-1 grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-xs sm:text-sm self-start">
         {rows.map((r) => (
           <div key={r.k} className="contents">
             <dt className="text-carbon-text-muted">{r.k}</dt>
