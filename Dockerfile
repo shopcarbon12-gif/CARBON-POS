@@ -62,8 +62,8 @@ RUN addgroup --system --gid 1001 nodejs \
   && cp /usr/share/zoneinfo/America/New_York /etc/localtime \
   && echo "America/New_York" > /etc/timezone
 COPY --link --from=builder /app/public ./public
-COPY --link --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --link --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --link --from=builder --chown=1001:1001 /app/.next/standalone ./
+COPY --link --from=builder --chown=1001:1001 /app/.next/static ./.next/static
 # pg subtree is not in the server-action trace; copy the full tree from
 # deps so docker-migrate.mjs (which runs outside Next) can require('pg').
 COPY --link --from=deps /app/node_modules/pg /app/node_modules/pg
