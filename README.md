@@ -5,7 +5,7 @@ Point of Sale for **Carbon Jeans Company** — a companion app to
 host and share a single Postgres database.
 
 - **Public URL (production):** https://pos.shopcarbon.com
-- **Coolify app:** `Carbon-pos` at http://178.156.136.112:8000/
+- **Coolify app:** `Carbon-pos` at http://152.53.210.171:8000/
   *(separate from the existing `carbon-wms` app on the same Coolify instance)*
 - **Stack:** Next.js 16.2.1 · React 19 · TypeScript · Tailwind v4 · raw `pg` ·
   NextAuth v5 · Stripe Terminal · `node-thermal-printer` · Resend
@@ -140,7 +140,7 @@ total is never trusted.
 ## Coolify deployment
 
 1. **App name:** `Carbon-pos` (separate from the `carbon-wms` app — both
-   live on the same Coolify host at `178.156.136.112:8000`).
+   live on the same Coolify host at `152.53.210.171:8000`).
 2. **Build:** Nixpacks auto-detects Next.js. No Dockerfile required.
 3. **Public domain:** add `pos.shopcarbon.com` in the Coolify UI; auto SSL
    via Let's Encrypt.
