@@ -903,7 +903,8 @@ export function SellScreen({
     redeemIncrement: number;
     minRedeemPoints: number;
     maxPctOfOrder: number;
-  }>({ redeemPointsPerDollar: 10, redeemIncrement: 100, minRedeemPoints: 100, maxPctOfOrder: 50 });
+    maxDollarsPerOrder: number;
+  }>({ redeemPointsPerDollar: 10, redeemIncrement: 100, minRedeemPoints: 100, maxPctOfOrder: 50, maxDollarsPerOrder: 30 });
   const [showRedeem, setShowRedeem] = useState(false);
 
   useEffect(() => {
@@ -1395,6 +1396,7 @@ export function SellScreen({
               redeemIncrement={redeemSettings.redeemIncrement}
               minRedeemPoints={redeemSettings.minRedeemPoints}
               maxPctOfOrder={redeemSettings.maxPctOfOrder}
+              maxDollarsPerOrder={redeemSettings.maxDollarsPerOrder ?? 30}
               onConfirm={applyRedemption}
               onClose={() => setShowRedeem(false)}
             />

@@ -38,6 +38,7 @@ export async function GET(req: Request) {
         redeemIncrement: 100,
         minRedeemPoints: 100,
         maxPctOfOrder: 50,
+        maxDollarsPerOrder: 30,
       },
     });
   }
@@ -52,6 +53,7 @@ export async function GET(req: Request) {
       redeemIncrement: 100,
       minRedeemPoints: 100,
       maxPctOfOrder: 50,
+      maxDollarsPerOrder: 30,
     },
   });
 }

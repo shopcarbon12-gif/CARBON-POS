@@ -23,6 +23,7 @@ export function RedeemPointsModal({
   redeemIncrement,
   minRedeemPoints,
   maxPctOfOrder,
+  maxDollarsPerOrder,
   onConfirm,
   onClose,
 }: {
@@ -34,6 +35,7 @@ export function RedeemPointsModal({
   redeemIncrement: number;          // 100 pts
   minRedeemPoints: number;          // 100
   maxPctOfOrder: number;            // 50 = 50%
+  maxDollarsPerOrder: number;       // 30 = at most $30 off per purchase
   onConfirm: (points: number, dollarsOff: number) => void;
   onClose: () => void;
 }) {
@@ -45,12 +47,15 @@ export function RedeemPointsModal({
     const maxBySubtotal = Math.floor(
       (subtotal * maxPctOfOrder / 100) * redeemPointsPerDollar / redeemIncrement,
     ) * redeemIncrement;
-    const cap = Math.min(maxByBalance, maxBySubtotal);
+    const maxByDollars = Math.floor(
+      maxDollarsPerOrder * redeemPointsPerDollar / redeemIncrement,
+    ) * redeemIncrement;
+    const cap = Math.min(maxByBalance, maxBySubtotal, maxByDollars);
     for (let p = redeemIncrement; p <= cap; p += redeemIncrement) {
       tiers.push({ points: p, dollars: p / redeemPointsPerDollar });
     }
     return tiers;
-  }, [balance, subtotal, redeemPointsPerDollar, redeemIncrement, maxPctOfOrder]);
+  }, [balance, subtotal, redeemPointsPerDollar, redeemIncrement, maxPctOfOrder, maxDollarsPerOrder]);
 
   useEffect(() => {
     if (open && pickedPoints === 0 && tiers[0]) setPickedPoints(tiers[0].points);
