@@ -30,6 +30,7 @@ const closeSchema = z.object({
  *                 + sum(cash adds)      (cash *in* during shift)
  *                 - sum(cash drops)
  *                 - sum(cash payouts)   (payouts are cash leaving — subtract)
+ *                 - sum(cash refunds paid out of this session's drawer)
  *   cash_over_short = closing_cash_counted - expected_cash
  *
  * Wrapped in a transaction so the math and the status flip happen together.
@@ -90,12 +91,20 @@ export async function POST(
         [sessionId],
       );
 
+      const refundRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0) AS cash_refunds
+           FROM pos_refunds
+          WHERE register_session_id = $1 AND method = 'cash'`,
+        [sessionId],
+      );
+
       const opening = Number(session.opening_cash);
       const cashTaken = Number(cashRes.rows[0].cash_taken);
       const drops = Number(dropRes.rows[0].drops);
       const payouts = Number(dropRes.rows[0].payouts);
       const adds = Number(dropRes.rows[0].adds);
-      const expected = opening + cashTaken + adds - drops - payouts;
+      const cashRefunds = Number(refundRes.rows[0].cash_refunds);
+      const expected = opening + cashTaken + adds - drops - payouts - cashRefunds;
       const counted = parsed.data.closing_cash_counted;
       const overShort = Number((counted - expected).toFixed(2));
 

@@ -62,7 +62,7 @@ export default async function CloseRegisterPage({
   }
 
   // Per-method totals during this session window.
-  const [paymentsR, movementsR] = await Promise.all([
+  const [paymentsR, movementsR, refundsR] = await Promise.all([
     pool.query<{ method: string; total: string }>(
       `SELECT p.method, COALESCE(SUM(p.amount), 0)::text AS total
          FROM pos_payments p
@@ -81,6 +81,12 @@ export default async function CloseRegisterPage({
         WHERE register_session_id = $1::int`,
       [session.session_id],
     ),
+    pool.query<{ cash_refunds: string }>(
+      `SELECT COALESCE(SUM(amount), 0)::text AS cash_refunds
+         FROM pos_refunds
+        WHERE register_session_id = $1::int AND method = 'cash'`,
+      [session.session_id],
+    ),
   ]);
 
   const paymentBy = new Map<string, number>();
@@ -91,9 +97,11 @@ export default async function CloseRegisterPage({
 
   const opening = Number(session.opening_cash);
   const cashPayments = paymentBy.get("cash") ?? 0;
-  // Drops and payouts both remove cash from the drawer; adds put cash in.
+  const cashRefunds = Number(refundsR.rows[0]?.cash_refunds ?? 0);
+  // Drops, payouts and cash refunds all remove cash from the drawer;
+  // adds put cash in. Must match /api/pos/sessions/:id/close.
   const cashStartAdds = opening + adds;
-  const cashWithdraws = drops + payouts;
+  const cashWithdraws = drops + payouts + cashRefunds;
   const cashExpected = cashStartAdds + cashPayments - cashWithdraws;
 
   const cardPayments = paymentBy.get("card") ?? 0;

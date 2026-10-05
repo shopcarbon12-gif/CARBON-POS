@@ -63,10 +63,26 @@ export async function POST(req: Request) {
 
   try {
     const refund = await withTransaction(async (client) => {
+      // Tie the refund to the register it's paid out of: the refunding
+      // cashier's own open session at this store, else any open register
+      // here (e.g. a manager refunding from the cashier's drawer). Cash
+      // refunds are then subtracted from that session's expected cash.
+      const sessRes = await client.query<{ id: number }>(
+        `SELECT s.id
+           FROM pos_register_sessions s
+           JOIN pos_registers r  ON r.id = s.register_id
+           JOIN pos_locations pl ON pl.id = r.pos_location_id
+          WHERE s.status = 'open'
+            AND pl.wms_location_id = $2::uuid
+          ORDER BY (s.opened_by = $1::uuid) DESC, s.opened_at DESC
+          LIMIT 1`,
+        [cashier.user_id, cashier.lid],
+      );
       const ins = await client.query(
         `INSERT INTO pos_refunds
-           (original_sale_id, amount, reason, method, stripe_refund_id, refunded_by)
-         VALUES ($1,$2,$3,$4,$5,$6)
+           (original_sale_id, amount, reason, method, stripe_refund_id,
+            refunded_by, register_session_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING *`,
         [
           sale_id,
@@ -75,6 +91,7 @@ export async function POST(req: Request) {
           method,
           stripeRefundId,
           cashier.employee_id,
+          sessRes.rows[0]?.id ?? null,
         ],
       );
 

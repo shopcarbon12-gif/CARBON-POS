@@ -74,7 +74,7 @@ export async function loadRegisterReport(
         AND s.created_at >= $2::timestamptz
         AND s.created_at < COALESCE($3::timestamptz, now())`;
 
-  const [salesR, itemsR, payR, refundR, moveR, empR] = await Promise.all([
+  const [salesR, itemsR, payR, refundR, cashRefundR, moveR, empR] = await Promise.all([
     pool.query(
       `SELECT COUNT(*) FILTER (WHERE s.status IN ('completed','refunded'))     AS sales_count,
               COUNT(*) FILTER (WHERE s.status = 'voided')                      AS voided_count,
@@ -108,17 +108,26 @@ export async function loadRegisterReport(
         GROUP BY p.method`,
       win,
     ),
-    // Refunds have no register link — count the ones issued at this
-    // store during the shift.
+    // Refunds paid out of this session's drawer. Refunds from before
+    // migration 016 have no session link — fall back to the ones issued
+    // at this store during the shift.
     pool.query(
       `SELECT rf.method, COUNT(*) AS cnt, COALESCE(SUM(rf.amount), 0) AS amount
          FROM pos_refunds rf
          JOIN pos_sales s ON s.id = rf.original_sale_id
-        WHERE s.pos_location_id = $1
-          AND rf.created_at >= $2::timestamptz
-          AND rf.created_at < COALESCE($3::timestamptz, now())
+        WHERE rf.register_session_id = $4
+           OR (rf.register_session_id IS NULL
+               AND s.pos_location_id = $1
+               AND rf.created_at >= $2::timestamptz
+               AND rf.created_at < COALESCE($3::timestamptz, now()))
         GROUP BY rf.method`,
-      [s.pos_location_id, s.opened_at, s.closed_at],
+      [s.pos_location_id, s.opened_at, s.closed_at, s.id],
+    ),
+    pool.query(
+      `SELECT COALESCE(SUM(amount), 0) AS amount
+         FROM pos_refunds
+        WHERE register_session_id = $1 AND method = 'cash'`,
+      [s.id],
     ),
     pool.query(
       `SELECT m.type, m.amount, m.reason, m.created_at,
@@ -168,6 +177,8 @@ export async function loadRegisterReport(
   const adds = sumMove("add");
   const drops = sumMove("drop");
   const payouts = sumMove("payout");
+  // Only refunds tied to this session came out of this drawer.
+  const cashRefunds = n(cashRefundR.rows[0]?.amount);
   const refundRows = refundR.rows.map((r) => ({
     method: r.method as string,
     label: REFUND_LABEL[r.method] ?? r.method,
@@ -235,8 +246,9 @@ export async function loadRegisterReport(
         drops,
         payouts,
         // Same formula as /api/pos/sessions/:id/close.
-        expected: Math.round((opening + cashSales + adds - drops - payouts) * 100) / 100,
-        cash_refunds: refundRows.find((r) => r.method === "cash")?.amount ?? 0,
+        expected:
+          Math.round((opening + cashSales + adds - drops - payouts - cashRefunds) * 100) / 100,
+        cash_refunds: cashRefunds,
       },
       movements,
       by_employee: empR.rows.map((r) => ({

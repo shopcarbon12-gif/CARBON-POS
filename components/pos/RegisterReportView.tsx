@@ -165,6 +165,7 @@ function EodBody({ report }: { report: RegisterReport }) {
         <KV k="+ Cash added" v={formatMoney(e.cash.adds)} />
         <KV k="− Drops" v={neg(e.cash.drops)} />
         <KV k="− Payouts" v={neg(e.cash.payouts)} />
+        <KV k="− Cash refunds" v={neg(e.cash.cash_refunds)} />
         <TotalRow
           k="EXPECTED CASH"
           v={formatMoney(s.expected_cash ?? e.cash.expected)}
@@ -177,9 +178,6 @@ function EodBody({ report }: { report: RegisterReport }) {
               v={signed(s.cash_over_short ?? 0)}
             />
           </>
-        )}
-        {e.cash.cash_refunds > 0 && (
-          <KV k="Cash refunds issued" v={formatMoney(e.cash.cash_refunds)} />
         )}
       </Section>
 
