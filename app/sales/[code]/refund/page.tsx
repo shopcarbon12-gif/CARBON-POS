@@ -90,12 +90,19 @@ export default function RefundPage() {
         amount: Number(refundAmount.toFixed(2)),
         reason,
         method,
+        line_ids: picked.lines.filter((l) => pickedLineIds[l.id]).map((l) => l.id),
       }),
     });
     setBusy(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.message ?? "Couldn't refund. Try again.");
+      return;
+    }
+    const data = (await res.json().catch(() => ({}))) as { refund?: { id: number } };
+    if (data.refund?.id) {
+      // Refund receipt screen — print merchant + customer copies.
+      router.replace(`/sales/${code}/refund/receipt?refund=${data.refund.id}`);
       return;
     }
     setDone({ amount: refundAmount });

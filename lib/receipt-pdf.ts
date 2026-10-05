@@ -218,7 +218,7 @@ export async function loadReceiptData(
 }
 
 /** "Visa •••• 4242" from the Stripe charge, or null if unavailable. */
-async function cardDetails(intentId: string | null): Promise<string | null> {
+export async function cardDetails(intentId: string | null): Promise<string | null> {
   if (!intentId) return null;
   try {
     const pi = await Promise.race([

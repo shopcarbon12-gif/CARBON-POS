@@ -11,6 +11,8 @@ const schema = z.object({
   amount: z.number().positive(),
   reason: z.string().max(500).optional(),
   method: z.enum(["original_card", "cash", "store_credit"]),
+  /** pos_sale_lines ids being returned — printed on the refund receipt. */
+  line_ids: z.array(z.number().int().positive()).max(200).optional(),
 });
 
 /**
@@ -46,7 +48,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const { sale_id, reason, method } = parsed.data;
+  const { sale_id, reason, method, line_ids } = parsed.data;
   let amount = parsed.data.amount;
 
   // Set inside the transaction once Stripe succeeds, so the db_failed
@@ -118,8 +120,10 @@ export async function POST(req: Request) {
         // the Sales Tax report (refunds are whole-amount, not per line).
         `INSERT INTO pos_refunds
            (original_sale_id, amount, reason, method, stripe_refund_id,
-            refunded_by, register_session_id, tax_amount)
+            refunded_by, register_session_id, line_ids, tax_amount)
          VALUES ($1,$2,$3,$4,$5,$6,$7,
+                 ARRAY(SELECT id FROM pos_sale_lines
+                        WHERE sale_id = $1 AND id = ANY($8::int[]) ORDER BY id),
                  (SELECT CASE WHEN s.total_amount > 0
                               THEN ROUND($2::numeric * s.tax_amount / s.total_amount, 2)
                               ELSE 0 END
@@ -133,6 +137,7 @@ export async function POST(req: Request) {
           stripeRefundId,
           cashier.employee_id,
           sessRes.rows[0]?.id ?? null,
+          line_ids ?? [],
         ],
       );
 

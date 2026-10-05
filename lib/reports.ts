@@ -806,7 +806,7 @@ const refunds: ReportDef = {
     const p = params(c);
     const [rf, vd] = await Promise.all([
       pool.query(
-        `SELECT rf.created_at AS at, s.id AS sale_id, s.sale_number, rf.amount,
+        `SELECT rf.id AS refund_id, rf.created_at AS at, s.id AS sale_id, s.sale_number, rf.amount,
                 rf.method, rf.reason, ${userName("u")} AS by_name
            FROM pos_refunds rf
            JOIN pos_sales s           ON s.id = rf.original_sale_id
@@ -831,12 +831,16 @@ const refunds: ReportDef = {
       ...rf.rows.map((x) => ({
         when: iso(x.at),
         type: "Refund",
+        refund: `R${String(x.refund_id).padStart(6, "0")}`,
         sale: x.sale_number,
         method: REFUND_LABEL[x.method] ?? x.method,
         reason: x.reason ?? "",
         by: x.by_name ?? "",
         amount: n(x.amount),
-        _links: { sale: saleLink(c, x.sale_id) ?? "" },
+        _links: {
+          sale: saleLink(c, x.sale_id) ?? "",
+          refund: `/sales/${c.code}/refund/receipt?refund=${x.refund_id}&back=${encodeURIComponent(`/reports/${c.code}/refunds`)}`,
+        },
       })),
       ...vd.rows.map((x) => ({
         when: iso(x.at),
@@ -864,7 +868,8 @@ const refunds: ReportDef = {
           columns: [
             { key: "when", header: "When", kind: "datetime" },
             { key: "type", header: "Type" },
-            { key: "sale", header: "Receipt #" },
+            { key: "refund", header: "Refund receipt" },
+            { key: "sale", header: "Original sale" },
             { key: "method", header: "Refunded to" },
             { key: "reason", header: "Reason" },
             { key: "by", header: "By" },
