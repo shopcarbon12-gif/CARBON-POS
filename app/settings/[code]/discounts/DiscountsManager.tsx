@@ -141,15 +141,16 @@ function NewRule() {
       <Input label="Name *" name="name" required />
       <Select label="Type" name="type" defaultValue="percent">
         <option value="percent">Percent off</option>
-        <option value="fixed">Fixed dollar off</option>
+        <option value="fixed">Dollars off per item</option>
       </Select>
       <Input label="Value *" name="value" type="number" step="0.01" required />
       <Select label="Applies to" name="applies_to" defaultValue="all">
         <option value="all">All sales</option>
         <option value="sku_id">A specific SKU</option>
+        <option value="customer_type">Customers with a tag</option>
       </Select>
       <Input
-        label="Filter (e.g. 'vip' or sku UUID)"
+        label="Filter (customer tag e.g. 'vip', or SKU id)"
         name="applies_to_value"
       />
       <Input label="Start date" name="start_date" type="date" />

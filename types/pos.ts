@@ -247,6 +247,18 @@ export type CartLine = {
    *  on /api/pos/payment/capture so every persisted line has an
    *  attribution. */
   attributed_employee_id: number | null;
+  /** Catalog price when the item was added — baseline for the manager-
+   *  approval check when a Set Price / discount marks it down. */
+  list_price?: number | null;
+  /** Where discount_amount came from: an automatic promotion or staff. */
+  discount_source?: "promo" | "manual" | null;
+  /** pos_discount_rules.id / name of the promotion applied to this line. */
+  promo_rule_id?: number | null;
+  promo_name?: string | null;
+  /** Signed manager approval for a markdown over the threshold. */
+  discount_approval?: string | null;
+  /** Approving manager's name, shown on the cart row. */
+  discount_approved_by?: string | null;
 };
 
 /** Active sales associates eligible to receive sale/line credit. Returned

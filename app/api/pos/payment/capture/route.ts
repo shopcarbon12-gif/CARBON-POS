@@ -5,6 +5,9 @@ import { withTransaction, getPool } from "@/lib/db";
 import { queueLoyaltyCall } from "@/lib/loyalty-client";
 import { currentCashier } from "@/lib/session";
 import { moveStoreCredit, StoreCreditError } from "@/lib/store-credit-ledger";
+import { markdownFraction, needsManagerApproval } from "@/lib/discount-policy";
+import { verifyApproval } from "@/lib/approval-token";
+import { evaluatePromotions } from "@/lib/promotions";
 import { formatSaleNumber } from "@/lib/utils";
 
 const lineSchema = z.object({
@@ -24,6 +27,11 @@ const lineSchema = z.object({
    *  Defaults server-side to the cashier when omitted, so cart payloads
    *  saved before the attribution feature still capture cleanly. */
   attributed_employee_id: z.number().int().positive().nullable().optional(),
+  /** pos_discount_rules.id when the discount came from an automatic promotion. */
+  promo_rule_id: z.number().int().positive().nullable().optional(),
+  /** Signed manager approval (POST /api/pos/auth/manager-approve) for a
+   *  markdown over the policy threshold. */
+  discount_approval: z.string().max(2000).nullable().optional(),
 });
 
 const cardPayment = z.object({
@@ -116,6 +124,58 @@ export async function POST(req: Request) {
     );
   }
   const data = parsed.data;
+
+  // Discount policy (lib/discount-policy): a markdown beyond the
+  // threshold of the line's CATALOG value — % / $ off, a sale-wide share
+  // or a Set Price — needs a valid manager approval unless an active
+  // promotion covers it. Checked before any card is captured.
+  const lineApprover: Array<number | null> = data.lines.map(() => null);
+  const linePromo: Array<number | null> = data.lines.map(() => null);
+  {
+    const skuIds = [...new Set(data.lines.map((l) => l.sku_id).filter((x): x is string => !!x))];
+    const catalog = new Map<string, number>();
+    if (skuIds.length) {
+      const cr = await getPool().query<{ id: string; retail_price: string | null }>(
+        `SELECT id::text, retail_price FROM custom_skus WHERE id = ANY($1::uuid[])`,
+        [skuIds],
+      );
+      for (const r of cr.rows) {
+        if (r.retail_price != null && Number(r.retail_price) > 0) {
+          catalog.set(r.id, Number(r.retail_price));
+        }
+      }
+    }
+    const promos = data.lines.some((l) => l.promo_rule_id)
+      ? await evaluatePromotions(cashier.lid, data.customer_id ?? null, data.lines)
+      : data.lines.map(() => null);
+    for (let i = 0; i < data.lines.length; i++) {
+      const l = data.lines[i];
+      if (l.line_type === "loyalty_redemption") continue;
+      const list = Math.max(l.unit_price, (l.sku_id && catalog.get(l.sku_id)) || 0);
+      const promo = promos[i];
+      const promoAllowance =
+        l.promo_rule_id && promo && promo.rule_id === l.promo_rule_id ? promo.discount : 0;
+      if (promoAllowance > 0) linePromo[i] = l.promo_rule_id ?? null;
+      const frac = markdownFraction({
+        list_price: list,
+        unit_price: l.unit_price,
+        quantity: l.quantity,
+        discount_amount: Math.max(0, l.discount_amount - promoAllowance),
+      });
+      if (!needsManagerApproval(frac)) continue;
+      const approval = verifyApproval(l.discount_approval, cashier.lid);
+      if (!approval) {
+        return NextResponse.json(
+          {
+            error: "manager_approval_required",
+            message: `"${l.description}" is marked down ${Math.round(frac * 100)}% — that needs a manager's PIN. Go back to the cart and re-apply the discount.`,
+          },
+          { status: 403 },
+        );
+      }
+      lineApprover[i] = approval.eid;
+    }
+  }
 
   // Store credit is drawn from the attached customer's balance. Check it
   // before any card is captured so a short balance never charges a card
@@ -267,7 +327,7 @@ export async function POST(req: Request) {
       );
       const sale = saleRow.rows[0];
 
-      for (const l of data.lines) {
+      for (const [li, l] of data.lines.entries()) {
         const lineSubtotal = l.unit_price * l.quantity;
         const lineTaxBase = Math.max(0, lineSubtotal - l.discount_amount);
         const lineTax = round(lineTaxBase * l.tax_rate);
@@ -276,8 +336,8 @@ export async function POST(req: Request) {
           `INSERT INTO pos_sale_lines
              (sale_id, sku_id, epc, description, quantity, unit_price,
               discount_amount, tax_rate, tax_amount, line_total, line_type,
-              attributed_employee_id, epcs)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+              attributed_employee_id, epcs, discount_approved_by, promo_rule_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
           [
             sale.id,
             l.sku_id,
@@ -294,6 +354,8 @@ export async function POST(req: Request) {
             // Every tag on the row (RFID rows can hold several) so a
             // refund of this line restocks all of them.
             lineEpcs(l),
+            lineApprover[li],
+            linePromo[li],
           ],
         );
       }

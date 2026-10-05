@@ -104,7 +104,13 @@ export function CartPanel({
               : [];
             const discountSuffix =
               line.line_type === "product" && line.discount_amount > 0
-                ? `−${formatMoney(line.discount_amount)} off`
+                ? `−${formatMoney(line.discount_amount)} off${
+                    line.discount_source === "promo" && line.promo_name
+                      ? ` (${line.promo_name})`
+                      : line.discount_approved_by
+                        ? ` · approved by ${line.discount_approved_by}`
+                        : ""
+                  }`
                 : null;
             const subtitle = [
               ...idParts,
@@ -381,6 +387,12 @@ function ExpandedDetails({
     { k: "Quantity", v: String(line.quantity) },
     line.discount_amount > 0
       ? { k: "Discount", v: `−${formatMoney(line.discount_amount)}` }
+      : null,
+    line.discount_source === "promo" && line.promo_name
+      ? { k: "Promotion", v: line.promo_name }
+      : null,
+    line.discount_approved_by
+      ? { k: "Approved by", v: line.discount_approved_by }
       : null,
     { k: "Line total", v: formatMoney(lineTotal) },
   ] as Array<DetailRow | null>).filter((r): r is DetailRow => r !== null);

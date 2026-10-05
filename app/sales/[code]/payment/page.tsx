@@ -133,6 +133,8 @@ function PaymentInner() {
           tax_rate: l.tax_rate,
           line_type: l.line_type,
           attributed_employee_id: l.attributed_employee_id ?? null,
+          promo_rule_id: l.discount_source === "promo" ? (l.promo_rule_id ?? null) : null,
+          discount_approval: l.discount_approval ?? null,
         })),
         payments,
       }),

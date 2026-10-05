@@ -8,6 +8,7 @@ import { TotalPanel, type PickedCustomer } from "./TotalPanel";
 import { RedeemPointsModal } from "./RedeemPointsModal";
 import { RFIDScanModal, type RfidResolvedItem } from "./RFIDScanModal";
 import { calculateTotals } from "@/lib/tax";
+import { markdownFraction, needsManagerApproval } from "@/lib/discount-policy";
 import { capitalizeName } from "@/lib/utils";
 import type { CartLine, AttributionEmployee } from "@/types/pos";
 
@@ -998,6 +999,7 @@ export function SellScreen({
           image_url: item.image_url ?? null,
           quantity: 1,
           unit_price: price,
+          list_price: price,
           discount_amount: 0,
           tax_rate: taxRate,
           line_type: "product",
@@ -1047,6 +1049,7 @@ export function SellScreen({
           image_url: it.image_url ?? null,
           quantity: 1,
           unit_price: Number(it.retail_price ?? 0),
+          list_price: Number(it.retail_price ?? 0),
           discount_amount: 0,
           tax_rate: taxRate,
           line_type: "product",
@@ -1105,15 +1108,26 @@ export function SellScreen({
     setLines((prev) => prev.filter((l) => l.cart_id !== cartId));
   }
 
-  function applyLineDiscount(cartId: string, value: number, isPercent: boolean) {
+  /** Staff discount on one line. Replaces any automatic promotion on it;
+   *  `approval` is the manager sign-off when the markdown needs one. */
+  function applyLineDiscount(
+    cartId: string,
+    value: number,
+    isPercent: boolean,
+    approval?: Approval | null,
+  ) {
     setLines((prev) =>
       prev.map((l) => {
         if (l.cart_id !== cartId) return l;
         const subtotal = l.unit_price * l.quantity;
         const discount = isPercent
-          ? Math.min(subtotal, subtotal * (value / 100))
+          ? Math.min(subtotal, subtotal * (Math.min(100, value) / 100))
           : Math.min(subtotal, value);
-        return { ...l, discount_amount: Math.max(0, discount) };
+        return {
+          ...l,
+          discount_amount: Math.max(0, discount),
+          ...manualDiscountMeta(approval),
+        };
       }),
     );
   }
@@ -1121,33 +1135,104 @@ export function SellScreen({
   /** Manual price override from the line editor's "Set Price" tab.
    *  Replaces unit_price and clears any previously-applied discount on
    *  that line (the cashier is restating the price from scratch — any
-   *  prior % or $ off no longer makes sense against the new base). */
-  function setLinePrice(cartId: string, newPrice: number) {
+   *  prior % or $ off no longer makes sense against the new base). The
+   *  catalog price stays in list_price for the approval check. */
+  function setLinePrice(cartId: string, newPrice: number, approval?: Approval | null) {
     setLines((prev) =>
       prev.map((l) =>
         l.cart_id === cartId
-          ? { ...l, unit_price: Math.max(0, newPrice), discount_amount: 0 }
+          ? {
+              ...l,
+              list_price: l.list_price ?? l.unit_price,
+              unit_price: Math.max(0, newPrice),
+              discount_amount: 0,
+              ...manualDiscountMeta(approval),
+            }
           : l,
       ),
     );
   }
 
-  function applySaleDiscount(value: number, isPercent: boolean) {
-    setLines((prev) => {
-      const subtotal = prev.reduce(
-        (s, l) => s + l.unit_price * l.quantity,
-        0,
-      );
-      if (subtotal <= 0) return prev;
-      const total = isPercent
-        ? subtotal * (value / 100)
-        : Math.min(subtotal, value);
-      return prev.map((l) => {
-        const lineSubtotal = l.unit_price * l.quantity;
-        const share = subtotal > 0 ? lineSubtotal / subtotal : 0;
-        return { ...l, discount_amount: Math.max(0, total * share) };
+  /** Sale-wide discount, split across item lines by value. The loyalty
+   *  redemption line keeps its own reward (it used to be wiped). */
+  function applySaleDiscount(value: number, isPercent: boolean, approval?: Approval | null) {
+    setLines((prev) => splitSaleDiscount(prev, value, isPercent, approval));
+  }
+
+  // Automatic promotions (Settings → Discounts). Re-evaluated whenever the
+  // items, prices, quantities or customer change; staff discounts on a
+  // line always win over a promotion.
+  const promoKey = JSON.stringify([
+    customer?.id ?? null,
+    lines.map((l) => [l.cart_id, l.sku_id, l.unit_price, l.quantity, l.line_type, l.discount_source === "manual"]),
+  ]);
+  useEffect(() => {
+    if (!hydrated) return;
+    // Lines from carts saved before promotions existed carry a discount
+    // with no source — treat those as staff discounts.
+    const isManual = (l: CartLine) =>
+      l.discount_source === "manual" || (l.discount_source == null && l.discount_amount > 0);
+    const candidates = lines.filter((l) => l.line_type === "product" && !isManual(l));
+    if (candidates.length === 0) return;
+    const t = setTimeout(async () => {
+      const r = await fetch("/api/pos/promotions/evaluate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          customer_id: customer?.id ?? null,
+          lines: candidates.map((l) => ({
+            sku_id: l.sku_id,
+            unit_price: l.unit_price,
+            quantity: l.quantity,
+            line_type: l.line_type,
+          })),
+        }),
+      }).catch(() => null);
+      if (!r?.ok) return;
+      const { promos } = (await r.json()) as {
+        promos: Array<{ rule_id: number; name: string; discount: number } | null>;
+      };
+      const byCart = new Map(candidates.map((l, i) => [l.cart_id, promos[i] ?? null]));
+      setLines((prev) => {
+        let changed = false;
+        const next = prev.map((l) => {
+          if (!byCart.has(l.cart_id) || isManual(l)) return l;
+          const p = byCart.get(l.cart_id);
+          if (p) {
+            if (l.discount_source === "promo" && l.promo_rule_id === p.rule_id && Math.abs(l.discount_amount - p.discount) < 0.005) return l;
+            changed = true;
+            return { ...l, discount_amount: p.discount, discount_source: "promo" as const, promo_rule_id: p.rule_id, promo_name: p.name };
+          }
+          if (l.discount_source === "promo") {
+            changed = true;
+            return { ...l, discount_amount: 0, discount_source: null, promo_rule_id: null, promo_name: null };
+          }
+          return l;
+        });
+        return changed ? next : prev;
       });
-    });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promoKey, hydrated]);
+
+  /** Largest markdown fraction the discount would create (for the PIN check). */
+  function previewMarkdown(target: string | "sale", payload: DiscountModalPayload): number {
+    if (target === "sale") {
+      if (payload.kind === "set-price") return 0;
+      const after = splitSaleDiscount(lines, payload.value, payload.kind === "percent", null);
+      return Math.max(0, ...after.filter((l) => l.line_type !== "loyalty_redemption").map(markdownFraction));
+    }
+    const l = lines.find((x) => x.cart_id === target);
+    if (!l) return 0;
+    const subtotal = l.unit_price * l.quantity;
+    if (payload.kind === "set-price") {
+      return markdownFraction({ ...l, list_price: l.list_price ?? l.unit_price, unit_price: payload.value, discount_amount: 0 });
+    }
+    const d = payload.kind === "percent"
+      ? Math.min(subtotal, subtotal * (Math.min(100, payload.value) / 100))
+      : Math.min(subtotal, payload.value);
+    return markdownFraction({ ...l, discount_amount: d });
   }
 
   function startCheckout(method: "card" | "cash" | "other") {
@@ -1445,14 +1530,15 @@ export function SellScreen({
               ? undefined
               : lines.find((l) => l.cart_id === discountFor)?.unit_price
           }
+          previewMarkdown={(payload) => previewMarkdown(discountFor, payload)}
           onCancel={() => setDiscountFor(null)}
-          onApply={(payload) => {
+          onApply={(payload, approval) => {
             if (payload.kind === "set-price") {
-              if (discountFor !== "sale") setLinePrice(discountFor, payload.value);
+              if (discountFor !== "sale") setLinePrice(discountFor, payload.value, approval);
             } else if (discountFor === "sale") {
-              applySaleDiscount(payload.value, payload.kind === "percent");
+              applySaleDiscount(payload.value, payload.kind === "percent", approval);
             } else {
-              applyLineDiscount(discountFor, payload.value, payload.kind === "percent");
+              applyLineDiscount(discountFor, payload.value, payload.kind === "percent", approval);
             }
             setDiscountFor(null);
           }}
@@ -1624,9 +1710,48 @@ type DiscountModalPayload =
   | { kind: "fixed"; value: number }
   | { kind: "set-price"; value: number };
 
+
+type Approval = { token: string; approver: string };
+
+function manualDiscountMeta(approval?: Approval | null) {
+  return {
+    discount_source: "manual" as const,
+    promo_rule_id: null,
+    promo_name: null,
+    discount_approval: approval?.token ?? null,
+    discount_approved_by: approval?.approver ?? null,
+  };
+}
+
+/** Spread a sale-wide discount over the item lines by value. */
+function splitSaleDiscount(
+  lines: CartLine[],
+  value: number,
+  isPercent: boolean,
+  approval: Approval | null | undefined,
+): CartLine[] {
+  const items = lines.filter((l) => l.line_type !== "loyalty_redemption");
+  const subtotal = items.reduce((s, l) => s + l.unit_price * l.quantity, 0);
+  if (subtotal <= 0) return lines;
+  const total = isPercent
+    ? subtotal * (Math.min(100, value) / 100)
+    : Math.min(subtotal, value);
+  return lines.map((l) => {
+    if (l.line_type === "loyalty_redemption") return l;
+    const lineSubtotal = l.unit_price * l.quantity;
+    const share = lineSubtotal / subtotal;
+    return {
+      ...l,
+      discount_amount: Math.max(0, Math.round(total * share * 100) / 100),
+      ...manualDiscountMeta(approval),
+    };
+  });
+}
+
 function DiscountModal({
   target,
   currentPrice,
+  previewMarkdown,
   onCancel,
   onApply,
 }: {
@@ -1635,9 +1760,47 @@ function DiscountModal({
    *  when the cashier switches to the "Set Price" tab. Omitted for the
    *  sale-wide modal (which doesn't expose Set Price). */
   currentPrice?: number;
+  /** Markdown fraction this discount would create (0..1). */
+  previewMarkdown: (payload: DiscountModalPayload) => number;
   onCancel: () => void;
-  onApply: (payload: DiscountModalPayload) => void;
+  onApply: (payload: DiscountModalPayload, approval: Approval | null) => void;
 }) {
+  // Manager approval step for markdowns over the policy threshold.
+  const [pinFor, setPinFor] = useState<DiscountModalPayload | null>(null);
+  const [pin, setPin] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  async function requestApproval(payload: DiscountModalPayload, withPin?: string) {
+    setPinBusy(true);
+    setPinError(null);
+    const r = await fetch("/api/pos/auth/manager-approve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(withPin ? { pin: withPin } : {}),
+    }).catch(() => null);
+    setPinBusy(false);
+    if (r?.ok) {
+      const d = (await r.json()) as Approval;
+      onApply(payload, d);
+      return;
+    }
+    const d = (await r?.json().catch(() => ({}))) as { error?: string; message?: string };
+    if (!withPin && d?.error === "pin_required") {
+      setPinFor(payload);
+      return;
+    }
+    setPinError(d?.message ?? "Couldn't verify the PIN.");
+    setPin("");
+  }
+
+  function submit(payload: DiscountModalPayload) {
+    if (needsManagerApproval(previewMarkdown(payload))) {
+      void requestApproval(payload);
+    } else {
+      onApply(payload, null);
+    }
+  }
   const isLine = target !== "sale";
   const [mode, setMode] = useState<"percent" | "fixed" | "set-price">(
     "percent",
@@ -1708,10 +1871,33 @@ function DiscountModal({
         placeholder={placeholder}
         className="tap-lg w-full border border-[var(--color-pos-border)] px-3 text-3xl font-semibold mt-3"
       />
-      {mode === "percent" && Number(value) > 20 && (
-        <p className="text-xs text-amber-700 mt-2">
-          Discounts over 20% need a manager PIN. (Phase 2 enforces this.)
-        </p>
+      {Number(value) > 0 &&
+        needsManagerApproval(previewMarkdown({ kind: mode, value: Number(value) })) && (
+          <p className="text-xs text-amber-700 mt-2">
+            {Math.round(previewMarkdown({ kind: mode, value: Number(value) }) * 100)}% off —
+            over 20% needs a manager&apos;s PIN.
+          </p>
+        )}
+      {pinFor && (
+        <div className="mt-3 border border-amber-400 bg-amber-50 p-3">
+          <p className="text-sm font-semibold mb-2">Manager PIN to approve</p>
+          <input
+            autoFocus
+            type="password"
+            inputMode="numeric"
+            maxLength={4}
+            value={pin}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D/g, "").slice(0, 4);
+              setPin(v);
+              if (v.length === 4) void requestApproval(pinFor, v);
+            }}
+            placeholder="••••"
+            className="tap-lg w-full border border-[var(--color-pos-border)] px-3 text-3xl tracking-[0.5em] text-center"
+          />
+          {pinBusy && <p className="text-xs mt-1">Checking…</p>}
+          {pinError && <p className="text-xs text-[var(--color-pos-danger)] mt-1">{pinError}</p>}
+        </div>
       )}
       {mode === "set-price" && (
         <p className="text-xs text-carbon-text-muted mt-2 leading-snug">
@@ -1733,8 +1919,9 @@ function DiscountModal({
             // Discounts must be > 0 (zero discount is a no-op); a set
             // price of 0 is legitimate (promo giveaway).
             if (mode !== "set-price" && n <= 0) return;
-            onApply({ kind: mode, value: n });
+            submit({ kind: mode, value: n });
           }}
+          disabled={pinBusy}
           className="tap carbon-btn-primary flex-1 font-semibold"
         >
           {applyLabel}

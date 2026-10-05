@@ -29,8 +29,11 @@ export default async function DiscountsSettingsPage({
         </Link>
         <h1 className="text-xl font-bold mt-1">Discount rules</h1>
         <p className="text-xs text-[var(--color-pos-muted)] mt-1">
-          Promotions auto-apply at the register. Phase 2 will gate large
-          discounts behind a manager PIN automatically.
+          Active promotions apply automatically at the register (best one
+          per item; a staff discount on an item replaces it). Rules marked
+          &quot;Needs manager PIN&quot; are never automatic — enter them as a
+          discount and a manager approves. Any discount over 20% of the
+          price needs a manager&apos;s PIN.
         </p>
       </header>
       <section className="p-6">
