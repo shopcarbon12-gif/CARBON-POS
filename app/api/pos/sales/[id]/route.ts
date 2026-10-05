@@ -66,6 +66,10 @@ export async function GET(
       [saleId],
     ),
   ]);
+  const refundedTotal = await pool.query<{ total: string }>(
+    `SELECT COALESCE(SUM(amount),0) AS total FROM pos_refunds WHERE original_sale_id = $1`,
+    [saleId],
+  );
   const sale = saleRes.rows[0];
   if (!sale) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -89,6 +93,7 @@ export async function GET(
     lines: linesRes.rows,
     payments: paymentsRes.rows,
     returned_line_ids: returnedRes.rows.map((r) => Number(r.id)),
+    refunded_total: Number(refundedTotal.rows[0]?.total ?? 0),
     loyalty: {
       is_member: isMember,
       points: earn.points,

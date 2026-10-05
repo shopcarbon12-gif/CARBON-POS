@@ -73,6 +73,7 @@ const METHOD: Record<string, string> = {
   store_credit: "Store Credit",
   account: "Credit Account",
   gift_card: "Gift Card",
+  exchange_credit: "Exchange credit",
 };
 
 /** Load everything the PDF needs for one sale at the cashier's store. */

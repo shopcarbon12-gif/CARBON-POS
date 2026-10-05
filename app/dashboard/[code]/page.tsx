@@ -601,6 +601,7 @@ function ActivityRow({
     original_card: "to card",
     cash: "cash",
     store_credit: "store credit",
+    exchange: "exchange",
   };
   const verb = isRefund
     ? `Refund (${REFUND_TO[row.status] ?? row.status}) for`

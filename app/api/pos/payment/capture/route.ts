@@ -8,6 +8,12 @@ import { moveStoreCredit, StoreCreditError } from "@/lib/store-credit-ledger";
 import { markdownFraction, needsManagerApproval } from "@/lib/discount-policy";
 import { verifyApproval } from "@/lib/approval-token";
 import { evaluatePromotions } from "@/lib/promotions";
+import {
+  ExchangeError,
+  quoteExchange,
+  recordExchangeReturn,
+  type ExchangeQuote,
+} from "@/lib/exchange";
 import { formatSaleNumber } from "@/lib/utils";
 
 const lineSchema = z.object({
@@ -90,8 +96,17 @@ const schema = z.object({
         accountPayment,
         giftCardPayment,
       ]),
-    )
-    .min(1),
+    ),
+  /** Exchange: items coming back from an earlier sale pay for this one. */
+  exchange: z
+    .object({
+      sale_id: z.number().int().positive(),
+      line_ids: z.array(z.number().int().positive()).min(1).max(200),
+      /** How to give back the difference when the returned items are
+       *  worth more than the new ones. */
+      payout_method: z.enum(["cash", "store_credit"]).optional(),
+    })
+    .optional(),
 });
 
 /**
@@ -124,6 +139,30 @@ export async function POST(req: Request) {
     );
   }
   const data = parsed.data;
+  if (data.payments.length === 0 && !data.exchange) {
+    return NextResponse.json(
+      { error: "invalid_request", message: "No payment was provided." },
+      { status: 400 },
+    );
+  }
+
+  // Exchange credit — priced before any card is touched; re-checked under
+  // a lock inside the transaction.
+  let exchangeQuote: ExchangeQuote | null = null;
+  if (data.exchange) {
+    try {
+      exchangeQuote = await quoteExchange(getPool(), {
+        saleId: data.exchange.sale_id,
+        lineIds: data.exchange.line_ids,
+        lid: cashier.lid,
+      });
+    } catch (err) {
+      if (err instanceof ExchangeError) {
+        return NextResponse.json({ error: "exchange_invalid", message: err.message }, { status: 422 });
+      }
+      throw err;
+    }
+  }
 
   // Discount policy (lib/discount-policy): a markdown beyond the
   // threshold of the line's CATALOG value — % / $ off, a sale-wide share
@@ -254,8 +293,31 @@ export async function POST(req: Request) {
   discount = round(discount);
   tax = round(tax);
   const total = round(subtotal - discount + tax);
+  // With an exchange, the returned items' credit covers part (or all) of
+  // the sale; tenders pay the rest. Extra credit is given back.
+  const exchangeCredit = exchangeQuote?.credit ?? 0;
+  const creditApplied = round(Math.min(exchangeCredit, total));
+  const exchangeOverage = round(Math.max(0, exchangeCredit - total));
+  const due = round(total - creditApplied);
   const paid = round(data.payments.reduce((s, p) => s + p.amount, 0));
-  if (Math.abs(paid - total) > 0.01) {
+  if (exchangeOverage > 0) {
+    const payout = data.exchange?.payout_method;
+    const payoutCustomer = exchangeQuote?.customerId ?? data.customer_id ?? null;
+    if (!payout || (payout === "store_credit" && !payoutCustomer)) {
+      await refundAll(capturedIntents);
+      return NextResponse.json(
+        {
+          error: "exchange_payout_required",
+          message:
+            payout === "store_credit"
+              ? "Store credit needs a customer on the sale."
+              : "Choose how to give back the difference (cash or store credit).",
+        },
+        { status: 400 },
+      );
+    }
+  }
+  if (Math.abs(paid - due) > 0.01) {
     await refundAll(capturedIntents);
     return NextResponse.json(
       {
@@ -360,6 +422,15 @@ export async function POST(req: Request) {
         );
       }
 
+      if (creditApplied > 0) {
+        await client.query(
+          `INSERT INTO pos_payments
+             (sale_id, method, amount, reference, status, processed_at)
+           VALUES ($1, 'exchange_credit', $2, $3, 'completed', now())`,
+          [sale.id, creditApplied, `Exchange from ${exchangeQuote!.saleNumber}`],
+        );
+      }
+
       for (const p of data.payments) {
         let cashGiven: number | null = null;
         let changeGiven: number | null = null;
@@ -403,6 +474,20 @@ export async function POST(req: Request) {
             reference,
           ],
         );
+      }
+
+      if (exchangeQuote && data.exchange) {
+        await recordExchangeReturn(client, {
+          quote: exchangeQuote,
+          lid: cashier.lid,
+          newSale: { id: sale.id, number: sale.sale_number },
+          creditApplied,
+          overage: exchangeOverage,
+          payout: data.exchange.payout_method ?? null,
+          customerId: exchangeQuote.customerId ?? data.customer_id ?? null,
+          cashier,
+          registerId: data.register_id,
+        });
       }
 
       if (storeCreditUsed > 0 && data.customer_id) {
@@ -535,6 +620,12 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("[capture] db transaction failed", err);
     await refundAll(capturedIntents);
+    if (err instanceof ExchangeError) {
+      return NextResponse.json(
+        { error: "exchange_invalid", message: `${err.message} The card was not charged.` },
+        { status: 422 },
+      );
+    }
     if (err instanceof StoreCreditError) {
       return NextResponse.json(
         { error: "insufficient_store_credit", message: `${err.message} The card was not charged.` },

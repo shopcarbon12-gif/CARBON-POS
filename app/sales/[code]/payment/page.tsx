@@ -18,6 +18,13 @@ type CartPayload = {
    *  Forwarded to /api/pos/payment/capture so the persisted sale row
    *  records who got commission credit. */
   attributedEmployeeId?: number | null;
+  /** Exchange in progress — returned items' credit pays part of this sale. */
+  exchange?: {
+    sale_id: number;
+    sale_number: string;
+    line_ids: number[];
+    credit: number;
+  } | null;
 };
 
 type Method = "card" | "cash" | "other";
@@ -103,10 +110,14 @@ function PaymentInner() {
     );
   }
 
-  const total = cart.totals.total;
+  // With an exchange, tenders cover only what the credit doesn't.
+  const exchange = cart.exchange ?? null;
+  const saleTotal = cart.totals.total;
+  const total = round2(Math.max(0, saleTotal - (exchange?.credit ?? 0)));
+  const giveBack = round2(Math.max(0, (exchange?.credit ?? 0) - saleTotal));
   const cashAmount = round2(Number(cashGiven || 0));
 
-  async function finishSale(payments: Tender[]) {
+  async function finishSale(payments: Tender[], payout?: "cash" | "store_credit") {
     if (!cart) return;
     if (!registerId) {
       setError("Your register isn't open. Go to the Register screen first.");
@@ -137,6 +148,9 @@ function PaymentInner() {
           discount_approval: l.discount_approval ?? null,
         })),
         payments,
+        exchange: exchange
+          ? { sale_id: exchange.sale_id, line_ids: exchange.line_ids, payout_method: payout }
+          : undefined,
       }),
     });
     setSaving(false);
@@ -149,10 +163,79 @@ function PaymentInner() {
     // Clear the persisted SellScreen cart so the next sale starts empty.
     try {
       window.localStorage.removeItem(`pos:cart:${code}`);
+      window.localStorage.removeItem(`pos:exchange:${code}`);
     } catch {
       /* ignore */
     }
     router.replace(`/sales/${code}/receipt?sale=${data.sale.id}`);
+  }
+
+  // Exchange fully covered by the returned items: nothing to charge —
+  // complete it, giving back any difference as cash or store credit.
+  if (exchange && total === 0) {
+    return (
+      <main className="min-h-screen p-4 sm:p-6 max-w-xl mx-auto">
+        <button
+          onClick={() => router.back()}
+          className="tap text-[var(--color-pos-muted)] underline px-3 mb-4"
+        >
+          ← Back to cart
+        </button>
+        <div className="carbon-card p-6">
+          <h1 className="text-2xl font-bold">Complete exchange</h1>
+          <p className="text-sm text-carbon-text-muted mt-1">
+            Returning items from sale #{exchange.sale_number}.
+          </p>
+          <div className="mt-4 space-y-1 text-base">
+            <div className="flex justify-between">
+              <span>New items</span>
+              <span className="tabular-nums">{formatMoney(saleTotal)}</span>
+            </div>
+            <div className="flex justify-between text-emerald-700 font-semibold">
+              <span>Exchange credit</span>
+              <span className="tabular-nums">−{formatMoney(exchange.credit)}</span>
+            </div>
+            <div className="flex justify-between font-bold text-xl border-t border-carbon-border-soft pt-2">
+              <span>{giveBack > 0 ? "Give back to customer" : "Nothing to pay"}</span>
+              <span className="tabular-nums">{formatMoney(giveBack)}</span>
+            </div>
+          </div>
+          {giveBack > 0 ? (
+            <div className="grid grid-cols-2 gap-3 mt-6">
+              <button
+                disabled={saving}
+                onClick={() => finishSale([], "cash")}
+                className="carbon-btn-primary tap-lg font-bold disabled:opacity-50"
+              >
+                {formatMoney(giveBack)} in cash
+              </button>
+              <button
+                disabled={saving || !cart.customerId}
+                onClick={() => finishSale([], "store_credit")}
+                className="carbon-btn-secondary tap-lg font-bold disabled:opacity-50"
+                title={cart.customerId ? "" : "Attach the customer to use store credit"}
+              >
+                {formatMoney(giveBack)} to store credit
+              </button>
+            </div>
+          ) : (
+            <button
+              disabled={saving}
+              onClick={() => finishSale([])}
+              className="carbon-btn-primary tap-lg w-full font-bold mt-6 disabled:opacity-50"
+            >
+              {saving ? "Completing…" : "Complete exchange"}
+            </button>
+          )}
+          {!cart.customerId && giveBack > 0 && (
+            <p className="text-xs text-carbon-text-muted mt-2">
+              Store credit needs a customer on the sale.
+            </p>
+          )}
+          {error && <p className="mt-4 text-[var(--color-pos-danger)]">{error}</p>}
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -167,6 +250,11 @@ function PaymentInner() {
         <div className="text-right">
           <p className="text-[var(--color-pos-muted)] text-sm">Amount due</p>
           <p className="total-display text-3xl">{formatMoney(total)}</p>
+          {exchange && (
+            <p className="text-xs text-emerald-700 font-semibold">
+              {formatMoney(saleTotal)} − {formatMoney(exchange.credit)} exchange credit
+            </p>
+          )}
         </div>
       </header>
 

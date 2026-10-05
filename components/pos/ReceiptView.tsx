@@ -400,6 +400,7 @@ function humanMethod(m: string): string {
       store_credit: "Store credit",
       account: "Account",
       gift_card: "Gift card",
+      exchange_credit: "Exchange credit",
     }[m] ?? m
   );
 }

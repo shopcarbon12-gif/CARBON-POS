@@ -6,6 +6,7 @@ import { withTransaction } from "@/lib/db";
 import { queueLoyaltyCall } from "@/lib/loyalty-client";
 import { currentCashier } from "@/lib/session";
 import { moveStoreCredit } from "@/lib/store-credit-ledger";
+import { alreadyReturnedLines, restockReturnedLines } from "@/lib/returns";
 
 const schema = z.object({
   sale_id: z.number().int().positive(),
@@ -105,13 +106,7 @@ export async function POST(req: Request) {
       // A line can only be returned once — reject lines already on an
       // earlier refund of this sale (before any money moves).
       if (line_ids && line_ids.length) {
-        const dup = await client.query<{ id: number }>(
-          `SELECT DISTINCT unnest(line_ids) AS id
-             FROM pos_refunds
-            WHERE original_sale_id = $1 AND line_ids IS NOT NULL`,
-          [sale_id],
-        );
-        const already = new Set(dup.rows.map((r) => Number(r.id)));
+        const already = await alreadyReturnedLines(client, sale_id);
         if (line_ids.some((id) => already.has(id))) {
           throw new RefundRejected(
             422,
@@ -206,55 +201,15 @@ export async function POST(req: Request) {
         );
       }
 
-      // Restock exactly the returned pieces: every tag on the lines this
-      // refund covers (partial refunds included). Refunds without line
-      // detail (older screens) restock the whole sale once it's fully
-      // refunded. Flip only tags still 'sold' and log one STATUS_CHANGE
-      // per flipped EPC, mirroring capture.
-      const returnedLines: number[] = ins.rows[0].line_ids ?? [];
-      const epcRes =
-        returnedLines.length > 0
-          ? await client.query(
-              `SELECT DISTINCT unnest(COALESCE(epcs, ARRAY[epc])) AS epc
-                 FROM pos_sale_lines
-                WHERE sale_id = $1 AND id = ANY($2::int[])`,
-              [sale_id, returnedLines],
-            )
-          : fullyRefunded
-            ? await client.query(
-                `SELECT DISTINCT unnest(COALESCE(epcs, ARRAY[epc])) AS epc
-                   FROM pos_sale_lines
-                  WHERE sale_id = $1`,
-                [sale_id],
-              )
-            : { rows: [] as Array<{ epc: string | null }> };
-      const epcs = epcRes.rows.map((r) => r.epc).filter((e): e is string => !!e);
-      if (epcs.length > 0) {
-        const flipped = await client.query<{ epc: string; old_status: string }>(
-          `WITH prev AS (
-             SELECT epc, status AS old_status
-               FROM items
-              WHERE epc = ANY($1::text[])
-           )
-           UPDATE items i
-              SET status = 'in-stock'
-             FROM prev p
-            WHERE i.epc = p.epc
-              AND i.status = 'sold'
-           RETURNING i.epc, p.old_status`,
-          [epcs],
-        );
-        for (const r of flipped.rows) {
-          await client.query(
-            `INSERT INTO inventory_audit_logs
-               (tenant_id, log_type, entity_type, entity_reference,
-                old_value, new_value, reason, user_id, user_uuid)
-             VALUES ($1::uuid, 'STATUS_CHANGE', 'EPC', $2, $3, 'in-stock',
-                     'pos_refund', NULL, $4::uuid)`,
-            [cashier.tid, r.epc, r.old_status, cashier.user_id],
-          );
-        }
-      }
+      // Restock exactly the returned pieces (lib/returns).
+      await restockReturnedLines(client, {
+        saleId: sale_id,
+        lineIds: ins.rows[0].line_ids ?? [],
+        fullyRefunded,
+        tenantId: cashier.tid,
+        userId: cashier.user_id,
+        reason: "pos_refund",
+      });
 
       // Loyalty hook — queue the points reversal in pos_loyalty_outbox so
       // it commits atomically with the refund row. Rewards pro-rates the

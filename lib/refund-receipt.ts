@@ -75,7 +75,9 @@ export async function loadRefundReceipt(
           ? card ?? "Original card"
           : rf.method === "cash"
             ? "Cash"
-            : "Store credit",
+            : rf.method === "exchange"
+              ? "Exchange credit (new sale)"
+              : "Store credit",
       reason: rf.reason,
       at: new Date(rf.created_at).toISOString(),
       register: rf.register_name,

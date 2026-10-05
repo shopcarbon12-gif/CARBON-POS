@@ -90,12 +90,14 @@ export const PAYMENT_LABEL: Record<string, string> = {
   store_credit: "Store Credit",
   account: "Credit Account",
   gift_card: "Gift Card",
+  exchange_credit: "Exchange credit",
 };
 
 export const REFUND_LABEL: Record<string, string> = {
   original_card: "Back to card",
   cash: "Cash",
   store_credit: "Store credit",
+  exchange: "Exchange",
 };
 
 const params = (c: ReportCtx) => [c.posLocationId, c.tz, c.from, c.to];

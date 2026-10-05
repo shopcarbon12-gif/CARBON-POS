@@ -21,12 +21,14 @@ const PAYMENT_LABEL: Record<string, string> = {
   store_credit: "Store Credit",
   account: "Credit Account",
   gift_card: "Gift Card",
+  exchange_credit: "Exchange credit",
 };
 
 const REFUND_LABEL: Record<string, string> = {
   original_card: "To Card",
   cash: "Cash",
   store_credit: "Store Credit",
+  exchange: "Exchange",
 };
 
 const n = (v: unknown) => Number(v ?? 0) || 0;

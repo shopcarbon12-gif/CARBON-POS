@@ -223,6 +223,7 @@ export default async function SalesPage({
     original_card: "to card",
     cash: "cash",
     store_credit: "store credit",
+    exchange: "exchange",
   };
   const list: ListRow[] = [
     ...rows.rows.map((r) => ({

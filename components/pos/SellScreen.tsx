@@ -54,6 +54,25 @@ export function SellScreen({
   const [employees, setEmployees] = useState<AttributionEmployee[]>([]);
   const [showRfid, setShowRfid] = useState(false);
   const [showMisc, setShowMisc] = useState(false);
+  // Exchange in progress (set by /sales/{code}/exchange): the returned
+  // items' credit reduces what's due on this cart.
+  const [exchange, setExchange] = useState<ExchangeContext | null>(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`pos:exchange:${code}`);
+      if (raw) setExchange(JSON.parse(raw) as ExchangeContext);
+    } catch {
+      /* no exchange */
+    }
+  }, [code]);
+  function cancelExchange() {
+    try {
+      localStorage.removeItem(`pos:exchange:${code}`);
+    } catch {
+      /* ignore */
+    }
+    setExchange(null);
+  }
   // Hold / park sale.
   const [showHold, setShowHold] = useState(false);
   const [showHeld, setShowHeld] = useState(false);
@@ -1290,6 +1309,7 @@ export function SellScreen({
         customerId: customer?.id ?? null,
         taxRate,
         attributedEmployeeId: saleAttributedEmployeeId,
+        exchange,
       }),
     );
     router.push(`/sales/${code}/payment?method=${method}&cart=${cart}`);
@@ -1297,6 +1317,30 @@ export function SellScreen({
 
   return (
     <div className="flex-1 overflow-y-auto p-3 sm:p-6 flex flex-col space-y-4 sm:space-y-6">
+      {exchange && (
+        <div className="border-2 border-emerald-600 bg-emerald-50 p-3 sm:p-4 flex flex-wrap items-center gap-3">
+          <span className="material-symbols-outlined text-emerald-700" aria-hidden>
+            swap_horiz
+          </span>
+          <div className="flex-1 min-w-[220px]">
+            <p className="font-bold text-emerald-800">
+              Exchange for sale #{exchange.sale_number} — credit{" "}
+              {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(exchange.credit)}
+            </p>
+            <p className="text-sm text-emerald-900">
+              Returning: {exchange.items.join(", ")}. Add the new items below — the
+              customer pays only the difference.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={cancelExchange}
+            className="tap border border-emerald-700 text-emerald-800 px-3 font-semibold bg-white"
+          >
+            Cancel exchange
+          </button>
+        </div>
+      )}
       {/* "Hello, Elior" — appears when a customer is attached and we have
           at least one item in cart. Sits above the cart per design. */}
       {customer && lines.length > 0 && (
@@ -1311,6 +1355,7 @@ export function SellScreen({
           column TotalPanel (mode="all"), so this slot is hidden. */}
       <div className="lg:hidden">
         <TotalPanel
+          exchangeCredit={exchange?.credit ?? 0}
           mode="customer-only"
           totals={totals}
           customer={customer}
@@ -1449,6 +1494,7 @@ export function SellScreen({
           {/* Mobile: summary-only (customer already shown above the cart). */}
           <div className="lg:hidden">
             <TotalPanel
+          exchangeCredit={exchange?.credit ?? 0}
               mode="summary-only"
               totals={totals}
               customer={customer}
@@ -1493,6 +1539,7 @@ export function SellScreen({
           {/* Desktop: full panel — customer + totals + payment buttons. */}
           <div className="hidden lg:block">
             <TotalPanel
+          exchangeCredit={exchange?.credit ?? 0}
               mode="all"
               totals={totals}
               customer={customer}
@@ -1934,6 +1981,14 @@ function HeldSalesModal({
     </BasicModal>
   );
 }
+
+export type ExchangeContext = {
+  sale_id: number;
+  sale_number: string;
+  line_ids: number[];
+  credit: number;
+  items: string[];
+};
 
 type Approval = { token: string; approver: string };
 
