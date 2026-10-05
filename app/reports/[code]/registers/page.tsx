@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { formatMoney } from "@/lib/utils";
+import { storeToday } from "@/lib/reports";
 import { ReportShell } from "@/components/admin/ReportShell";
 
 /**
@@ -22,11 +23,16 @@ export default async function RegisterReportsPage({
     from: `/reports/${code}/registers`,
   }, { requireRole: ["manager", "admin"] });
   const sp = await searchParams;
-  const today = new Date().toISOString().slice(0, 10);
-  const from = sp.from || daysAgo(30);
+  const pool = getPool();
+  const tzR = await pool.query(
+    `SELECT COALESCE(timezone, 'America/New_York') AS tz
+       FROM pos_locations WHERE wms_location_id = $1::uuid LIMIT 1`,
+    [cashier.lid],
+  );
+  const today = storeToday(tzR.rows[0]?.tz ?? "America/New_York");
+  const from = sp.from || daysAgo(today, 30);
   const to = sp.to || today;
 
-  const pool = getPool();
   const r = await pool.query(
     `SELECT s.id, s.status, s.opened_at, s.closed_at,
             s.opening_cash, s.expected_cash, s.closing_cash_counted,
@@ -185,8 +191,8 @@ function fmt(v: string | Date, tz: string): string {
   });
 }
 
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
+function daysAgo(from: string, n: number): string {
+  const d = new Date(`${from}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString().slice(0, 10);
 }

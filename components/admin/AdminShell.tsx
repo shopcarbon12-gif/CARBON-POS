@@ -121,7 +121,7 @@ export function AdminShell({
   return (
     <div className="min-h-screen bg-carbon-bg text-carbon-text flex flex-col">
       {/* Top nav bar */}
-      <header className="carbon-topbar sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-4 px-2 sm:px-4 lg:px-6">
+      <header className="carbon-topbar print:hidden sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-4 px-2 sm:px-4 lg:px-6">
         {/* Brand — on md+ it's a link to dashboard, on <md it's the
             hamburger trigger for the slide-in nav drawer. */}
         <button
