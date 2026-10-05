@@ -14,6 +14,11 @@ export default async function ReportsHomePage({
   }, { requireRole: ["manager", "admin"] });
   const cards: { href: string; title: string; desc: string }[] = [
     {
+      href: `/reports/${code}/registers`,
+      title: "Register Reports",
+      desc: "Every register Open report and End of Day report — view or reprint.",
+    },
+    {
       href: `/reports/${code}/end-of-day`,
       title: "End of Day",
       desc: "Per-register totals + payment method breakdown for one day.",

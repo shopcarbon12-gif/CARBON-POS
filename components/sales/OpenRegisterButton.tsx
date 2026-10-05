@@ -30,8 +30,8 @@ const DENOMS: Array<{ label: string; value: number }> = [
  *   - 1 register at this location → opens the denomination dialog inline
  *   - 2+ registers                → navigates to /sales/{code}/register
  *     (the existing register picker)
- * After opening a session it POSTs to /api/pos/sessions/{id}/print-open
- * so the receipt printer leaves a paper audit trail.
+ * After opening a session it goes to the register report screen, which
+ * prints the Open report (date, time, user, bill counts, total cash).
  */
 export function OpenRegisterButton({ code }: { code: string }) {
   const router = useRouter();
@@ -44,7 +44,7 @@ export function OpenRegisterButton({ code }: { code: string }) {
   // block the initial Sales page render.
   async function ensureRegisters() {
     if (eligible) return eligible;
-    const res = await fetch("/api/pos/registers");
+    const res = await fetch("/api/pos/registers?mine=1");
     if (!res.ok) {
       setError("Couldn't load registers.");
       return [];
@@ -78,7 +78,8 @@ export function OpenRegisterButton({ code }: { code: string }) {
     setShowDialog(true);
   }
 
-  const onlyRegister = eligible && eligible.length === 1 ? eligible[0] : null;
+  // With 2+ eligible registers we open the first one (picker deferred).
+  const onlyRegister = eligible && eligible.length > 0 ? eligible[0] : null;
 
   return (
     <>
@@ -103,9 +104,10 @@ export function OpenRegisterButton({ code }: { code: string }) {
           code={code}
           register={onlyRegister}
           onCancel={() => setShowDialog(false)}
-          onOpened={() => {
+          onOpened={(sessionId) => {
             setShowDialog(false);
-            router.replace(`/sales/${code}/new`);
+            // Report screen prints the Open report, then "Start Selling".
+            router.replace(`/sales/${code}/register/report/${sessionId}?type=open`);
             router.refresh();
           }}
         />
@@ -123,7 +125,7 @@ function OpenRegisterDialog({
   code: string;
   register: Register;
   onCancel: () => void;
-  onOpened: () => void;
+  onOpened: (sessionId: number) => void;
 }) {
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState(false);
@@ -147,6 +149,9 @@ function OpenRegisterDialog({
         body: JSON.stringify({
           register_id: register.id,
           opening_cash: total,
+          opening_denoms: Object.fromEntries(
+            DENOMS.map((d) => [String(d.value), counts[d.value] ?? 0]),
+          ),
         }),
       });
       if (!res.ok) {
@@ -157,12 +162,7 @@ function OpenRegisterDialog({
         return;
       }
       const data = (await res.json()) as { session: { id: number } };
-      // Best-effort print + drawer kick. Both can fail (no printer in
-      // dev, etc) without blocking the cashier.
-      void fetch(`/api/pos/sessions/${data.session.id}/print-open`, {
-        method: "POST",
-      }).catch(() => undefined);
-      onOpened();
+      onOpened(data.session.id);
     } finally {
       setBusy(false);
     }

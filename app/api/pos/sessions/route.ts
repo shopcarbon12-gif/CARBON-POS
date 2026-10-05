@@ -6,6 +6,8 @@ import { currentCashier } from "@/lib/session";
 const openSchema = z.object({
   register_id: z.number().int().positive(),
   opening_cash: z.number().nonnegative(),
+  /** Bills counted, e.g. {"20": 5, "1": 10}. Stored for the Open report. */
+  opening_denoms: z.record(z.string(), z.number().int().nonnegative()).optional(),
 });
 
 /**
@@ -59,10 +61,17 @@ export async function POST(req: Request) {
   try {
     const result = await pool.query(
       `INSERT INTO pos_register_sessions
-         (register_id, opened_by, opening_cash)
-       VALUES ($1, $2, $3)
+         (register_id, opened_by, opening_cash, opening_denoms)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [parsed.data.register_id, cashier.user_id, parsed.data.opening_cash],
+      [
+        parsed.data.register_id,
+        cashier.user_id,
+        parsed.data.opening_cash,
+        parsed.data.opening_denoms
+          ? JSON.stringify(parsed.data.opening_denoms)
+          : null,
+      ],
     );
     return NextResponse.json({ session: result.rows[0] });
   } catch (err: unknown) {

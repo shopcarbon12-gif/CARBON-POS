@@ -107,6 +107,11 @@ export function CloseRegisterClient({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           closing_cash_counted: Math.round(cashCounted * 100) / 100,
+          closing_denoms: Object.fromEntries(
+            DENOMS.map((d) => [String(d.value), counts[d.value] ?? 0]),
+          ),
+          closing_counts: summaryRows,
+          note: notes.trim() ? notes.trim() : null,
         }),
       });
       if (!res.ok) {
@@ -114,21 +119,9 @@ export function CloseRegisterClient({
         setError(j.message ?? "Couldn't close the register.");
         return;
       }
-      // Best-effort EOD print — never blocks the close itself.
-      void fetch(`/api/pos/sessions/${sessionId}/print-eod`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          rows: summaryRows.map((r) => ({
-            label: r.label,
-            calculated: r.calculated,
-            counted: r.counted,
-            over_short: r.over_short,
-          })),
-          note: notes.trim() ? notes.trim() : null,
-        }),
-      }).catch(() => undefined);
-      router.replace(`/sales/${code}`);
+      // Report screen prints the End of Day report; it's also saved
+      // under Reports → Register Reports.
+      router.replace(`/sales/${code}/register/report/${sessionId}?type=eod`);
       router.refresh();
     } finally {
       setBusy(false);
@@ -210,7 +203,7 @@ export function CloseRegisterClient({
                     />
                   ) : (
                     <span className="block text-right tabular-nums text-carbon-text font-semibold">
-                      {formatMoney(0)}
+                      {formatMoney(r.remaining)}
                     </span>
                   )}
                 </td>
@@ -406,7 +399,7 @@ function SummaryView({
       </div>
       <p className="text-xs text-carbon-text-muted mt-3">
         Saving locks this session and prints the End-of-Day report on the
-        receipt printer.
+        receipt printer. The report is saved under Reports → Register Reports.
       </p>
     </>
   );

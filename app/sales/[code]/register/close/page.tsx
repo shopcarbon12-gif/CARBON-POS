@@ -97,6 +97,8 @@ export default async function CloseRegisterPage({
   const cashExpected = cashStartAdds + cashPayments - cashWithdraws;
 
   const cardPayments = paymentBy.get("card") ?? 0;
+  const accountPayments = paymentBy.get("account") ?? 0;
+  const giftCardPayments = paymentBy.get("gift_card") ?? 0;
 
   const rows = [
     {
@@ -130,18 +132,18 @@ export default async function CloseRegisterPage({
       key: "credit_account",
       label: "Credit Account",
       startAdds: 0,
-      payments: 0,
+      payments: accountPayments,
       withdraws: 0,
-      remaining: 0,
+      remaining: accountPayments,
       kind: "readonly" as const,
     },
     {
       key: "gift_card",
       label: "Gift Card",
       startAdds: 0,
-      payments: 0,
+      payments: giftCardPayments,
       withdraws: 0,
-      remaining: 0,
+      remaining: giftCardPayments,
       kind: "readonly" as const,
     },
   ];

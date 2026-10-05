@@ -5,6 +5,20 @@ import { currentCashier } from "@/lib/session";
 
 const closeSchema = z.object({
   closing_cash_counted: z.number().nonnegative(),
+  // Saved for the End-of-Day report (Reports tab can reprint it later).
+  closing_denoms: z.record(z.string(), z.number().int().nonnegative()).optional(),
+  closing_counts: z
+    .array(
+      z.object({
+        key: z.string(),
+        label: z.string(),
+        calculated: z.number(),
+        counted: z.number(),
+        over_short: z.number(),
+      }),
+    )
+    .optional(),
+  note: z.string().max(2000).nullable().optional(),
 });
 
 /**
@@ -45,10 +59,13 @@ export async function POST(
   try {
     const closed = await withTransaction(async (client) => {
       const sessionRes = await client.query(
-        `SELECT * FROM pos_register_sessions
-          WHERE id = $1 AND status = 'open'
-          FOR UPDATE`,
-        [sessionId],
+        `SELECT s.* FROM pos_register_sessions s
+           JOIN pos_registers r  ON r.id = s.register_id
+           JOIN pos_locations pl ON pl.id = r.pos_location_id
+          WHERE s.id = $1 AND s.status = 'open'
+            AND pl.wms_location_id = $2::uuid
+          FOR UPDATE OF s`,
+        [sessionId, cashier.lid],
       );
       const session = sessionRes.rows[0];
       if (!session) throw new Error("session_not_open");
@@ -89,10 +106,26 @@ export async function POST(
                 closed_at = now(),
                 closing_cash_counted = $2,
                 expected_cash = $3,
-                cash_over_short = $4
+                cash_over_short = $4,
+                closing_denoms = $6,
+                closing_counts = $7,
+                close_note = $8
           WHERE id = $5
           RETURNING *`,
-        [cashier.user_id, counted, expected.toFixed(2), overShort, sessionId],
+        [
+          cashier.user_id,
+          counted,
+          expected.toFixed(2),
+          overShort,
+          sessionId,
+          parsed.data.closing_denoms
+            ? JSON.stringify(parsed.data.closing_denoms)
+            : null,
+          parsed.data.closing_counts
+            ? JSON.stringify(parsed.data.closing_counts)
+            : null,
+          parsed.data.note?.trim() || null,
+        ],
       );
       return updateRes.rows[0];
     });
