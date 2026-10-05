@@ -539,24 +539,13 @@ type CashMovementSlip = {
   done_by_name: string;
   location_name: string;
   register_name: string;
+  timezone?: string | null;
   printer_host?: string | null;
   printer_port?: number | string | null;
 };
 
-/**
- * Print a small audit slip for a cash drop / payout / add. Receipt-paper
- * sized — header + four lines + cut. The intent is to leave a paper trail
- * the manager can staple to the till count at end of day.
- */
-export async function printCashMovementSlip(
-  slip: CashMovementSlip,
-): Promise<{ ok: true } | { skipped: true }> {
-  const printer = await connectPrinter({
-    host: slip.printer_host,
-    port: slip.printer_port,
-  });
-  if (!printer) return { skipped: true };
-
+/** Lay out the cash drop / payout / add slip on a printer instance. */
+function layoutCashMovementSlip(printer: Printer, slip: CashMovementSlip) {
   const verb =
     slip.type === "add"
       ? "CASH ADDED TO DRAWER"
@@ -586,13 +575,47 @@ export async function printCashMovementSlip(
     ]);
   }
   printer.println(`By:    ${slip.done_by_name}`);
-  printer.println(`When:  ${new Date(slip.done_at).toLocaleString()}`);
+  printer.println(
+    `When:  ${new Date(slip.done_at).toLocaleString("en-US", {
+      timeZone: slip.timezone || "America/New_York",
+    })}`,
+  );
   printer.drawLine();
 
   printer.alignCenter();
   printer.println("Keep with the till count.");
   printer.cut();
+}
 
+/**
+ * Raw ESC/POS bytes for the cash movement slip, without connecting to a
+ * printer — handed to the store print agent queue.
+ */
+export function buildCashMovementSlip(slip: CashMovementSlip): Buffer {
+  const printer = new Printer({
+    type: PrinterTypes.EPSON,
+    interface: "tcp://127.0.0.1:9100", // never opened — buffer only
+    width: 48,
+  });
+  layoutCashMovementSlip(printer, slip);
+  return printer.getBuffer();
+}
+
+/**
+ * Print a small audit slip for a cash drop / payout / add directly over
+ * TCP (only works when the server can reach the printer). Receipt-paper
+ * sized — header + four lines + cut. The intent is to leave a paper trail
+ * the manager can staple to the till count at end of day.
+ */
+export async function printCashMovementSlip(
+  slip: CashMovementSlip,
+): Promise<{ ok: true } | { skipped: true }> {
+  const printer = await connectPrinter({
+    host: slip.printer_host,
+    port: slip.printer_port,
+  });
+  if (!printer) return { skipped: true };
+  layoutCashMovementSlip(printer, slip);
   await printer.execute();
   return { ok: true };
 }

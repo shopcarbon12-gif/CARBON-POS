@@ -114,10 +114,16 @@ export async function POST(req: Request) {
         [cashier.user_id, cashier.lid],
       );
       const ins = await client.query(
+        // tax_amount: the refunded share of the sale's tax, recorded for
+        // the Sales Tax report (refunds are whole-amount, not per line).
         `INSERT INTO pos_refunds
            (original_sale_id, amount, reason, method, stripe_refund_id,
-            refunded_by, register_session_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+            refunded_by, register_session_id, tax_amount)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,
+                 (SELECT CASE WHEN s.total_amount > 0
+                              THEN ROUND($2::numeric * s.tax_amount / s.total_amount, 2)
+                              ELSE 0 END
+                    FROM pos_sales s WHERE s.id = $1))
          RETURNING *`,
         [
           sale_id,

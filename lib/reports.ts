@@ -314,13 +314,11 @@ const salesTax: ReportDef = {
           GROUP BY day`,
         p,
       ),
-      // Refunds don't store tax; give back the sale's tax share pro rata.
+      // Tax given back is recorded on each refund (migration 018).
       pool.query(
         `SELECT (rf.created_at AT TIME ZONE $2)::date::text AS day,
                 COALESCE(SUM(rf.amount),0) AS amount,
-                COALESCE(SUM(CASE WHEN s.total_amount > 0
-                                  THEN rf.amount * s.tax_amount / s.total_amount
-                                  ELSE 0 END),0) AS tax
+                COALESCE(SUM(rf.tax_amount),0) AS tax
            FROM pos_refunds rf JOIN pos_sales s ON s.id = rf.original_sale_id
           WHERE s.pos_location_id = $1 AND ${inRange("rf.created_at")}
           GROUP BY day`,
@@ -380,7 +378,7 @@ const salesTax: ReportDef = {
           empty: "No sales in this range.",
         },
       ],
-      note: "Tax refunded is the refunded share of each sale's tax (refund ÷ sale total × sale tax).",
+      note: "Tax refunded is recorded on each refund: the refunded share of that sale's tax.",
     };
   },
 };
