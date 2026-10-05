@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatMoney } from "@/lib/utils";
+import { DEFAULT_RETURN_POLICY } from "@/lib/return-policy";
 
 type PosLocationRow = {
   id: number;
@@ -73,6 +74,8 @@ function LocationCard({ loc }: { loc: PosLocationRow }) {
       is_active: fd.get("is_active") === "on",
       printer_host: ns(fd.get("printer_host")),
       printer_port: Number(fd.get("printer_port") || 9100),
+      return_policy: ns(fd.get("return_policy")),
+      receipt_footer: ns(fd.get("receipt_footer")),
     };
     const res = await fetch(`/api/pos/locations/${loc.id}`, {
       method: "PATCH",
@@ -171,6 +174,35 @@ function LocationCard({ loc }: { loc: PosLocationRow }) {
           max="65535"
           defaultValue={String(loc.printer_port ?? 9100)}
         />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+        <label className="text-sm font-medium">
+          <span className="block mb-1">Return policy</span>
+          <textarea
+            name="return_policy"
+            rows={5}
+            defaultValue={loc.return_policy ?? DEFAULT_RETURN_POLICY}
+            className="rounded-lg border border-[var(--color-pos-border)] px-3 py-2 w-full"
+          />
+          <span className="block text-xs text-[var(--color-pos-muted)] mt-1">
+            Printed on every receipt and the emailed PDF. First line is the
+            bold headline.
+          </span>
+        </label>
+        <label className="text-sm font-medium">
+          <span className="block mb-1">Receipt footer</span>
+          <textarea
+            name="receipt_footer"
+            rows={5}
+            defaultValue={loc.receipt_footer ?? ""}
+            placeholder="Thank You!"
+            className="rounded-lg border border-[var(--color-pos-border)] px-3 py-2 w-full"
+          />
+          <span className="block text-xs text-[var(--color-pos-muted)] mt-1">
+            Optional closing line, e.g. a thank-you or your Instagram. Empty =
+            &quot;Thank You!&quot;.
+          </span>
+        </label>
       </div>
       <PrintAgentBox loc={loc} />
       {error && <p className="text-[var(--color-pos-danger)] mt-2">{error}</p>}

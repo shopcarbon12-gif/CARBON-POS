@@ -12,6 +12,7 @@ import { getPool } from "@/lib/db";
 import { computeEarn } from "@/lib/loyalty-earn";
 import { renderBarcodePng } from "@/lib/barcode-node";
 import { stripe } from "@/lib/stripe-terminal";
+import { returnPolicyOf } from "@/lib/return-policy";
 
 /**
  * Customer-facing PDF receipt (attached to the receipt email, also
@@ -56,6 +57,7 @@ export type ReceiptData = {
     discount: number;
     amount: number;
     loyalty: boolean;
+    taxed: boolean;
   }>;
   payments: Array<{ label: string; amount: number; extra: string | null }>;
   refunded: number;
@@ -141,6 +143,7 @@ export async function loadReceiptData(
       discount,
       amount: Math.round((price * qty - discount) * 100) / 100,
       loyalty,
+      taxed: n(l.tax_amount) > 0,
     };
   });
 
@@ -194,7 +197,7 @@ export async function loadReceiptData(
       address: [s.address_line1, s.address_line2, cityLine].filter(Boolean),
       phone: s.phone ?? null,
       timezone: s.timezone,
-      return_policy: s.return_policy ?? null,
+      return_policy: returnPolicyOf(s.return_policy),
       footer: s.receipt_footer ?? null,
     },
     register: s.register_name,
@@ -430,9 +433,12 @@ export async function renderReceiptPdf(d: ReceiptData): Promise<Uint8Array> {
   };
   total("Subtotal", money(d.sale.subtotal));
   if (d.sale.discount > 0) total("Discounts", `-${money(d.sale.discount)}`);
+  const taxBase = d.lines.filter((l) => l.taxed).reduce((a, l) => a + l.amount, 0);
   const pct =
     d.sale.tax_rate && d.sale.tax_rate > 0
-      ? ` (${(d.sale.tax_rate * 100).toFixed(2).replace(/\.?0+$/, "")}%)`
+      ? ` (${(d.sale.tax_rate * 100).toFixed(2).replace(/\.?0+$/, "")}%${
+          taxBase > 0 ? ` on ${money(taxBase)}` : ""
+        })`
       : "";
   total(`Sales tax${pct}`, money(d.sale.tax));
   y += 4;
@@ -482,18 +488,36 @@ export async function renderReceiptPdf(d: ReceiptData): Promise<Uint8Array> {
     y -= 6;
   }
 
-  /* ---- policy + footer ---- */
-  const policy = [d.store.return_policy, d.store.footer].filter(Boolean).join("\n\n");
-  if (policy) {
-    y -= 16;
-    const pl = wrap(policy, font, 8.5, PAGE_W - 2 * M);
-    ensure(20 + pl.length * 11);
-    text("RETURNS & POLICY", M, y, { f: bold, size: 7.5, color: MUTED });
-    y -= 13;
-    for (const line of pl) {
-      text(line, M, y, { size: 8.5, color: MUTED });
-      y -= 11;
+  /* ---- return policy (headline + body) + footer ---- */
+  if (d.store.return_policy) {
+    const [head, ...rest] = d.store.return_policy.split("\n");
+    const body = wrap(rest.join(" "), font, 9, PAGE_W - 2 * M - 24);
+    const foot = d.store.footer ? wrap(d.store.footer, font, 9, PAGE_W - 2 * M - 24) : [];
+    const boxH = 34 + body.length * 12 + (foot.length ? 8 + foot.length * 12 : 0);
+    y -= 18;
+    ensure(boxH + 10);
+    page.drawRectangle({
+      x: M,
+      y: y - boxH + 14,
+      width: PAGE_W - 2 * M,
+      height: boxH,
+      borderColor: INK,
+      borderWidth: 1,
+    });
+    text(head, PAGE_W / 2, y - 4, { f: bold, size: 11, align: "center" });
+    y -= 20;
+    for (const line of body) {
+      text(line, PAGE_W / 2, y, { size: 9, color: MUTED, align: "center" });
+      y -= 12;
     }
+    if (foot.length) {
+      y -= 8;
+      for (const line of foot) {
+        text(line, PAGE_W / 2, y, { size: 9, align: "center" });
+        y -= 12;
+      }
+    }
+    y -= 4;
   }
 
   y -= 22;

@@ -1,9 +1,10 @@
 import path from "node:path";
 import { printer as Printer, types as PrinterTypes } from "node-thermal-printer";
 import sharp from "sharp";
-import { formatMoney, formatEmployeeShort } from "@/lib/utils";
+import { formatMoney, formatEmployeeShort, taxableBase } from "@/lib/utils";
 import { ean13Display } from "@/lib/barcode";
 import { renderBarcodePng } from "@/lib/barcode-node";
+import { returnPolicyOf } from "@/lib/return-policy";
 
 /**
  * 80mm thermal printers are typically 384 dots wide at 8 dots/mm. We aim
@@ -93,6 +94,9 @@ type LineRow = {
   description: string;
   quantity: number;
   line_total: string;
+  unit_price?: string | number | null;
+  discount_amount?: string | number | null;
+  tax_amount?: string | number | null;
 };
 
 type PaymentRow = {
@@ -356,10 +360,7 @@ async function printSaleCopy(
   }
   const taxRate = sale.tax_rate != null ? Number(sale.tax_rate) : null;
   const taxAmount = Number(sale.tax_amount);
-  const taxBase =
-    taxRate && taxRate > 0
-      ? Math.round((taxAmount / taxRate) * 100) / 100
-      : null;
+  const taxBase = taxableBase(lines, taxAmount, taxRate);
   const taxLabel =
     taxRate && taxBase != null
       ? `Tax (${formatMoney(taxBase)} @ ${(taxRate * 100).toFixed(2)}%)`
@@ -437,9 +438,13 @@ async function printSaleCopy(
   // Policy + thanks.
   printer.newLine();
   printer.alignCenter();
+  const [policyHead, ...policyRest] = returnPolicyOf(sale.return_policy)
+    .replace(/—/g, "-")
+    .split("\n");
   printer.bold(true);
-  printer.println(sale.return_policy ?? "NO REFUNDS - EXCHANGE ONLY");
+  printer.println(policyHead);
   printer.bold(false);
+  for (const line of policyRest) printer.println(line);
   if (sale.receipt_footer) {
     printer.println(sale.receipt_footer);
   } else if (customerName) {

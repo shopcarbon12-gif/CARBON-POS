@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
-import { formatMoney, formatEmployeeShort } from "@/lib/utils";
+import { formatMoney, formatEmployeeShort, taxableBase } from "@/lib/utils";
 import { ean13Display } from "@/lib/barcode";
 import { renderBarcodeSvg } from "@/lib/barcode-browser";
+import { returnPolicyOf } from "@/lib/return-policy";
 
 type SaleHeader = {
   sale_number: string;
@@ -38,6 +39,9 @@ type LineRow = {
   description: string;
   quantity: number;
   line_total: string;
+  unit_price?: string | number | null;
+  discount_amount?: string | number | null;
+  tax_amount?: string | number | null;
 };
 
 type PaymentRow = {
@@ -79,13 +83,13 @@ export function ReceiptView({
   variant?: "customer" | "merchant";
 }) {
   const isMerchant = variant === "merchant";
+  const policyLines = returnPolicyOf(sale.return_policy).split("\n");
   const hasCardPayment = payments.some((p) => p.method === "card");
   const cityLine = [sale.city, sale.state, sale.zip].filter(Boolean).join(", ");
   const discount = Number(sale.discount_amount);
   const taxRate = sale.tax_rate != null ? Number(sale.tax_rate) : null;
   const taxAmount = Number(sale.tax_amount);
-  const taxBase =
-    taxRate && taxRate > 0 ? Math.round((taxAmount / taxRate) * 100) / 100 : null;
+  const taxBase = taxableBase(lines, taxAmount, taxRate);
   const customerName = [sale.customer_first_name, sale.customer_last_name]
     .filter(Boolean)
     .join(" ");
@@ -232,25 +236,10 @@ export function ReceiptView({
         )}
 
         <section style={S.policy}>
-          <div style={S.policyMain}>
-            {(sale.return_policy ?? "NO REFUNDS — EXCHANGE ONLY")
-              .split("\n")[0]}
-          </div>
-          {(sale.return_policy ?? "")
-            .split("\n")
-            .slice(1)
-            .map((l, i) => (
-              <div key={i}>{l}</div>
-            ))}
-          {!sale.return_policy && (
-            <>
-              Exchanges accepted within 14 days of purchase.
-              <br />
-              Items must be unworn, unused, with original tags attached,
-              <br />
-              and accompanied by the original receipt.
-            </>
-          )}
+          <div style={S.policyMain}>{policyLines[0]}</div>
+          {policyLines.slice(1).map((l, i) => (
+            <div key={i}>{l}</div>
+          ))}
         </section>
 
         <div style={S.thanks}>

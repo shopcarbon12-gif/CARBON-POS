@@ -73,3 +73,31 @@ export function formatEmployeeShort(
   if (l) return l;
   return (fallback ?? "").trim();
 }
+
+/**
+ * Amount the sales tax was charged on: price × qty − discount for every
+ * line that actually carried tax. Falls back to tax ÷ rate when the line
+ * detail isn't available (rounding makes that one cent-ish off, e.g.
+ * $6.05 ÷ 6.5% = $93.08 for a $93.00 item).
+ */
+export function taxableBase(
+  lines: Array<{
+    quantity: number | string;
+    unit_price?: number | string | null;
+    discount_amount?: number | string | null;
+    tax_amount?: number | string | null;
+  }>,
+  taxAmount: number,
+  taxRate: number | null,
+): number | null {
+  if (lines.length && lines.every((l) => l.unit_price != null && l.tax_amount != null)) {
+    const base = lines
+      .filter((l) => Number(l.tax_amount) > 0)
+      .reduce(
+        (a, l) => a + Number(l.unit_price) * Number(l.quantity) - Number(l.discount_amount ?? 0),
+        0,
+      );
+    return round2(base);
+  }
+  return taxRate && taxRate > 0 ? round2(taxAmount / taxRate) : null;
+}
