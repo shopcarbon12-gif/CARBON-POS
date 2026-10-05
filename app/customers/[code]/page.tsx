@@ -31,9 +31,11 @@ export default async function CustomersPage({
   const r = await pool.query(
     `SELECT id, first_name, last_name, email, email_2, phone, phone_2,
             created_at,
-            (SELECT COUNT(*) FROM pos_sales s
-              WHERE s.customer_id = pos_customers.id
-                AND s.status = 'completed') AS sales_count,
+            -- In-store + online (Shopify) purchases via the shared
+            -- customer_purchases view (owned by Carbon-Rewards).
+            (SELECT COUNT(*) FROM customer_purchases cp
+              WHERE cp.customer_id = pos_customers.id
+                AND cp.status <> 'cancelled') AS sales_count,
             (SELECT COALESCE(SUM(ll.delta_points), 0) FROM loyalty_ledger ll
               WHERE ll.customer_id = pos_customers.id) AS points,
             (SELECT l.name FROM pos_locations pl

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { stripe } from "@/lib/stripe-terminal";
 import { withTransaction } from "@/lib/db";
+import { queueLoyaltyCall } from "@/lib/loyalty-client";
 import { currentCashier } from "@/lib/session";
 
 const schema = z.object({
@@ -19,7 +20,10 @@ const schema = z.object({
  *     create a Stripe refund against its PaymentIntent.
  *   - For 'cash' / 'store_credit': no Stripe call; we just record the row.
  *   - In all cases, write a pos_refunds row and reverse any EPCs on the
- *     sale back to 'in_stock' inside the same transaction.
+ *     sale back to 'in-stock' inside the same transaction.
+ *   - When the sale has a customer, queue /api/v1/refund in the loyalty
+ *     outbox (same transaction) so Carbon-Rewards claws back the earned
+ *     points and returns redeemed ones, pro-rated by refund / sale total.
  *   - For partial refunds, you can call this multiple times — each call
  *     records a separate pos_refunds row but the sale stays in
  *     status='completed' until all the lines are returned. Phase 2 will
@@ -75,7 +79,11 @@ export async function POST(req: Request) {
       );
 
       // Reverse EPCs: any tag captured on the original sale lines flips back
-      // to 'in_stock'. (Phase 2 narrows this to only the returned lines.)
+      // to 'in-stock'. (Phase 2 narrows this to only the returned lines.)
+      // WMS unified the legacy `epcs` table into `items` (see capture) —
+      // the old `UPDATE epcs` hit a non-existent relation and failed every
+      // refund on an RFID sale. Mirror capture: flip only rows still 'sold'
+      // and log one STATUS_CHANGE per flipped EPC.
       const epcRes = await client.query(
         `SELECT epc FROM pos_sale_lines
           WHERE sale_id = $1 AND epc IS NOT NULL`,
@@ -83,17 +91,37 @@ export async function POST(req: Request) {
       );
       const epcs = epcRes.rows.map((r) => r.epc as string);
       if (epcs.length > 0) {
-        await client.query(
-          `UPDATE epcs SET status = 'in_stock', updated_at = now()
-            WHERE epc = ANY($1::text[])`,
+        const flipped = await client.query<{ epc: string; old_status: string }>(
+          `WITH prev AS (
+             SELECT epc, status AS old_status
+               FROM items
+              WHERE epc = ANY($1::text[])
+           )
+           UPDATE items i
+              SET status = 'in-stock'
+             FROM prev p
+            WHERE i.epc = p.epc
+              AND i.status = 'sold'
+           RETURNING i.epc, p.old_status`,
           [epcs],
         );
+        for (const r of flipped.rows) {
+          await client.query(
+            `INSERT INTO inventory_audit_logs
+               (tenant_id, log_type, entity_type, entity_reference,
+                old_value, new_value, reason, user_id, user_uuid)
+             VALUES ($1::uuid, 'STATUS_CHANGE', 'EPC', $2, $3, 'in-stock',
+                     'pos_refund', NULL, $4::uuid)`,
+            [cashier.tid, r.epc, r.old_status, cashier.user_id],
+          );
+        }
       }
 
       // Mark sale refunded if we just refunded the full total.
       const sumRes = await client.query(
         `SELECT COALESCE(SUM(amount), 0) AS refunded,
-                (SELECT total_amount FROM pos_sales WHERE id = $1) AS total
+                (SELECT total_amount FROM pos_sales WHERE id = $1) AS total,
+                (SELECT customer_id FROM pos_sales WHERE id = $1) AS customer_id
            FROM pos_refunds
           WHERE original_sale_id = $1`,
         [sale_id],
@@ -105,6 +133,24 @@ export async function POST(req: Request) {
           `UPDATE pos_sales SET status = 'refunded' WHERE id = $1`,
           [sale_id],
         );
+      }
+
+      // Loyalty hook — queue the points reversal in pos_loyalty_outbox so
+      // it commits atomically with the refund row. Rewards pro-rates the
+      // sale's earn + redemption ledger rows by refund_pct; the key is
+      // per pos_refunds row so stacked partial refunds each apply once.
+      // The zero-padded id goes FIRST: Rewards builds the ledger
+      // source_ref from the key's first 8 chars, so a shared prefix would
+      // make every later partial refund collide and silently no-op.
+      if (sumRes.rows[0].customer_id != null) {
+        const refundPct =
+          total > 0 ? Math.min(1, Math.max(0, amount / total)) : 1;
+        await queueLoyaltyCall(client, "/api/v1/refund", {
+          idempotency_key: `${String(ins.rows[0].id).padStart(8, "0")}-pos-refund`,
+          sale_id,
+          refund_amount: amount,
+          refund_pct: refundPct,
+        });
       }
       return ins.rows[0];
     });

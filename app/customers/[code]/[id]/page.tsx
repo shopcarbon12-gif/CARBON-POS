@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPool } from "@/lib/db";
@@ -28,7 +29,7 @@ export default async function CustomerDetailPage({
   const cid = Number(id);
   if (!Number.isFinite(cid)) notFound();
   const pool = getPool();
-  const [c, sales] = await Promise.all([
+  const [c, purchases] = await Promise.all([
     pool.query(
       `SELECT pc.*, u.email AS created_by_email,
               (SELECT l.name FROM pos_locations pl
@@ -39,16 +40,18 @@ export default async function CustomerDetailPage({
         WHERE pc.id = $1`,
       [cid],
     ),
+    // Combined in-store + online history from the shared
+    // customer_purchases view (owned by Carbon-Rewards). Online rows pull
+    // their line items from shopify_orders for the inline item list.
     pool.query(
-      `SELECT s.id, s.sale_number, s.subtotal, s.discount_amount, s.tax_amount,
-              s.total_amount, s.status, s.completed_at, s.created_at,
-              r.name AS register_name,
-              (SELECT COALESCE(SUM(sl.quantity), 0)
-                 FROM pos_sale_lines sl WHERE sl.sale_id = s.id) AS item_count
-         FROM pos_sales s
-         JOIN pos_registers r ON r.id = s.register_id
-        WHERE s.customer_id = $1
-        ORDER BY s.completed_at DESC NULLS LAST
+      `SELECT cp.channel, cp.ref, cp.number, cp.placed_at, cp.total,
+              cp.status, cp.location_name, cp.item_count,
+              so.line_items
+         FROM customer_purchases cp
+         LEFT JOIN shopify_orders so
+           ON cp.channel = 'online' AND so.order_gid = cp.ref
+        WHERE cp.customer_id = $1
+        ORDER BY cp.placed_at DESC NULLS LAST
         LIMIT 100`,
       [cid],
     ),
@@ -130,81 +133,130 @@ export default async function CustomerDetailPage({
             <h2 className="text-sm font-bold tracking-tight mb-2">
               Purchase history
             </h2>
-            {sales.rows.length === 0 ? (
+            {purchases.rows.length === 0 ? (
               <p className="text-sm text-carbon-text-muted">No purchases yet.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-carbon-surface-soft text-left text-xs uppercase tracking-wider text-carbon-text-muted">
                     <tr>
-                      <th className="px-3 py-2 font-bold">Sale #</th>
+                      <th className="px-3 py-2 font-bold">Channel</th>
+                      <th className="px-3 py-2 font-bold">Number</th>
                       <th className="px-3 py-2 font-bold">Date</th>
-                      <th className="px-3 py-2 font-bold">Register</th>
+                      <th className="px-3 py-2 font-bold">Store</th>
                       <th className="px-3 py-2 font-bold text-right">Items</th>
-                      <th className="px-3 py-2 font-bold text-right">Subtotal</th>
-                      <th className="px-3 py-2 font-bold text-right">Discount</th>
-                      <th className="px-3 py-2 font-bold text-right">Tax</th>
                       <th className="px-3 py-2 font-bold text-right">Total</th>
                       <th className="px-3 py-2 font-bold">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sales.rows.map((s) => (
-                      <tr
-                        key={s.id}
-                        className="border-t border-carbon-border-soft"
-                      >
-                        <td className="px-3 py-2">
-                          <Link
-                            className="hover:underline tabular-nums text-carbon-blue font-medium"
-                            href={`/sales/${code}/${s.id}`}
-                          >
-                            {s.sale_number}
-                          </Link>
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-carbon-text-muted">
-                          {s.completed_at || s.created_at
-                            ? new Date(
-                                s.completed_at ?? s.created_at,
-                              ).toLocaleDateString()
-                            : "—"}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap">
-                          {s.register_name}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {s.item_count}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {formatMoney(s.subtotal)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {Number(s.discount_amount) > 0
-                            ? `−${formatMoney(s.discount_amount)}`
-                            : "—"}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {formatMoney(s.tax_amount)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium">
-                          {formatMoney(s.total_amount)}
-                        </td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={`inline-block px-2 py-0.5 text-xs font-semibold ${
-                              s.status === "completed"
-                                ? "bg-[rgba(22,138,63,0.10)] text-carbon-success"
-                                : s.status === "refunded" ||
-                                    s.status === "voided"
-                                  ? "bg-[rgba(186,26,26,0.08)] text-carbon-danger"
-                                  : "bg-carbon-surface-soft text-carbon-text-muted"
-                            }`}
-                          >
-                            {s.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {purchases.rows.map((p) => {
+                      const online = p.channel === "online";
+                      const lineItems: ShopifyLineItem[] = Array.isArray(p.line_items)
+                        ? p.line_items
+                        : [];
+                      return (
+                        <Fragment key={`${p.channel}:${p.ref}`}>
+                          <tr className="border-t border-carbon-border-soft">
+                            <td className="px-3 py-2">
+                              <span
+                                className={`inline-block px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${
+                                  online
+                                    ? "border border-carbon-blue text-carbon-blue"
+                                    : "bg-carbon-surface-soft text-carbon-text-muted"
+                                }`}
+                              >
+                                {online ? "Online" : "In-store"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {online ? (
+                                <a
+                                  className="hover:underline tabular-nums text-carbon-blue font-medium"
+                                  href={shopifyAdminOrderUrl(p.ref)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {p.number} ↗
+                                </a>
+                              ) : (
+                                <Link
+                                  className="hover:underline tabular-nums text-carbon-blue font-medium"
+                                  href={`/sales/${code}/${p.ref}`}
+                                >
+                                  {p.number}
+                                </Link>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-carbon-text-muted">
+                              {p.placed_at
+                                ? new Date(p.placed_at).toLocaleDateString()
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {p.location_name ?? "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums">
+                              {p.item_count}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums font-medium">
+                              {formatMoney(p.total)}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`inline-block px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${
+                                  p.status === "completed"
+                                    ? "bg-[rgba(22,138,63,0.10)] text-carbon-success"
+                                    : p.status === "refunded" ||
+                                        p.status === "cancelled"
+                                      ? "bg-[rgba(186,26,26,0.08)] text-carbon-danger"
+                                      : "bg-carbon-surface-soft text-carbon-text-muted"
+                                }`}
+                              >
+                                {String(p.status).replace(/_/g, " ")}
+                              </span>
+                            </td>
+                          </tr>
+                          {/* Online orders have no POS sale page — show the
+                              Shopify line items inline (collapsed). */}
+                          {online && lineItems.length > 0 ? (
+                            <tr>
+                              <td />
+                              <td colSpan={6} className="px-3 pb-2">
+                                <details className="text-xs">
+                                  <summary className="cursor-pointer text-carbon-text-muted hover:text-carbon-blue">
+                                    Show {lineItems.length}{" "}
+                                    {lineItems.length === 1 ? "line" : "lines"}
+                                  </summary>
+                                  <ul className="mt-1 space-y-0.5">
+                                    {lineItems.map((li, i) => (
+                                      <li key={i} className="flex gap-3">
+                                        <span className="tabular-nums text-carbon-text-muted">
+                                          {li.quantity}×
+                                        </span>
+                                        <span className="flex-1 min-w-0 break-words">
+                                          {li.title}
+                                          {li.variant_title ? ` · ${li.variant_title}` : ""}
+                                          {li.sku ? (
+                                            <span className="text-carbon-text-muted">
+                                              {" "}
+                                              ({li.sku})
+                                            </span>
+                                          ) : null}
+                                        </span>
+                                        <span className="tabular-nums">
+                                          {formatMoney(li.price)}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </details>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -214,4 +266,18 @@ export default async function CustomerDetailPage({
       </section>
     </AdminShell>
   );
+}
+
+type ShopifyLineItem = {
+  title: string;
+  variant_title: string | null;
+  sku: string | null;
+  quantity: number;
+  price: string | number;
+};
+
+/** Shopify admin link from an order gid (gid://shopify/Order/123). */
+function shopifyAdminOrderUrl(gid: string): string {
+  const numericId = gid.split("/").pop() ?? "";
+  return `https://admin.shopify.com/store/shopcarbon1/orders/${numericId}`;
 }
