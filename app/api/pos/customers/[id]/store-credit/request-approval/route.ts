@@ -116,12 +116,14 @@ export async function POST(
   `;
   const resend = new Resend(apiKey);
   try {
-    await resend.emails.send({
+    // Resend reports a rejected send in `error` instead of throwing.
+    const { error } = await resend.emails.send({
       from: process.env.RECEIPT_FROM_EMAIL || "receipts@shopcarbon.com",
       to: approver,
       subject: `Store-credit approval: ${action} ${amount} — ${customerName}`,
       html,
     });
+    if (error) throw new Error(`${error.name}: ${error.message}`);
   } catch (err) {
     console.error("[store-credit/request-approval] email", err);
     // Roll the pending approval back so a failed send doesn't leave a dangling

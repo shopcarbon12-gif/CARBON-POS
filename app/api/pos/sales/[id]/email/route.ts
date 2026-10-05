@@ -74,12 +74,15 @@ export async function POST(
   `;
   const resend = new Resend(apiKey);
   try {
-    await resend.emails.send({
+    // The Resend SDK reports a rejected send in `error` rather than
+    // throwing — without this check a failed receipt looked "sent".
+    const { error } = await resend.emails.send({
       from: process.env.RECEIPT_FROM_EMAIL || "receipts@shopcarbon.com",
       to: parsed.data.email,
       subject: `Your receipt — ${sale.sale_number}`,
       html,
     });
+    if (error) throw new Error(`${error.name}: ${error.message}`);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[email]", err);
