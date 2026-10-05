@@ -54,6 +54,10 @@ export function SellScreen({
   const [employees, setEmployees] = useState<AttributionEmployee[]>([]);
   const [showRfid, setShowRfid] = useState(false);
   const [showMisc, setShowMisc] = useState(false);
+  // Hold / park sale.
+  const [showHold, setShowHold] = useState(false);
+  const [showHeld, setShowHeld] = useState(false);
+  const [heldCount, setHeldCount] = useState(0);
   const [discountFor, setDiscountFor] = useState<string | "sale" | null>(null);
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -1235,6 +1239,47 @@ export function SellScreen({
     return markdownFraction({ ...l, discount_amount: d });
   }
 
+  async function refreshHeldCount() {
+    const r = await fetch("/api/pos/held-sales").catch(() => null);
+    if (r?.ok) setHeldCount(((await r.json()) as { held: unknown[] }).held.length);
+  }
+  useEffect(() => {
+    void refreshHeldCount();
+  }, []);
+
+  /** Park the current cart server-side and start a fresh one. */
+  async function holdCurrent(label: string | null): Promise<boolean> {
+    if (lines.length === 0) return true;
+    const r = await fetch("/api/pos/held-sales", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label, customer, lines, total: totals.total }),
+    }).catch(() => null);
+    if (!r?.ok) return false;
+    setLines([]);
+    setCustomer(null);
+    void refreshHeldCount();
+    return true;
+  }
+
+  /** Bring a parked cart back (holding the current one first if needed). */
+  async function resumeHeld(id: number): Promise<string | null> {
+    if (lines.length > 0) {
+      const ok = await holdCurrent("Held while resuming another sale");
+      if (!ok) return "Couldn't hold the current cart first.";
+    }
+    const r = await fetch(`/api/pos/held-sales/${id}`, { method: "POST" }).catch(() => null);
+    const d = (await r?.json().catch(() => ({}))) as {
+      cart?: { lines: CartLine[]; customer: PickedCustomer | null };
+      message?: string;
+    };
+    if (!r?.ok || !d.cart) return d?.message ?? "Couldn't resume that sale.";
+    setLines(d.cart.lines);
+    setCustomer(d.cart.customer ?? null);
+    void refreshHeldCount();
+    return null;
+  }
+
   function startCheckout(method: "card" | "cash" | "other") {
     if (lines.length === 0) return;
     const cart = encodeURIComponent(
@@ -1364,14 +1409,23 @@ export function SellScreen({
               Misc Charge
             </button>
             <button
+              onClick={() => setShowHold(true)}
               disabled={lines.length === 0}
               className="flex-1 min-w-[140px] carbon-btn-secondary tap font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2"
-              title="Phase 2"
             >
               <span className="material-symbols-outlined text-[20px]" aria-hidden>
                 pause_circle
               </span>
               Hold Sale
+            </button>
+            <button
+              onClick={() => setShowHeld(true)}
+              className="flex-1 min-w-[140px] carbon-btn-secondary tap font-semibold inline-flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[20px]" aria-hidden>
+                play_circle
+              </span>
+              Held Sales{heldCount > 0 ? ` (${heldCount})` : ""}
             </button>
             <button
               onClick={() => setLines([])}
@@ -1519,6 +1573,31 @@ export function SellScreen({
           onAdd={(desc, amt) => {
             addMiscCharge(desc, amt);
             setShowMisc(false);
+          }}
+        />
+      )}
+      {showHold && (
+        <HoldSaleModal
+          customerName={customer?.name ?? null}
+          onCancel={() => setShowHold(false)}
+          onHold={async (label) => {
+            const ok = await holdCurrent(label);
+            if (ok) setShowHold(false);
+            return ok;
+          }}
+        />
+      )}
+      {showHeld && (
+        <HeldSalesModal
+          cartHasItems={lines.length > 0}
+          onClose={() => {
+            setShowHeld(false);
+            void refreshHeldCount();
+          }}
+          onResume={async (id) => {
+            const err = await resumeHeld(id);
+            if (!err) setShowHeld(false);
+            return err;
           }}
         />
       )}
@@ -1710,6 +1789,151 @@ type DiscountModalPayload =
   | { kind: "fixed"; value: number }
   | { kind: "set-price"; value: number };
 
+
+
+function HoldSaleModal({
+  customerName,
+  onCancel,
+  onHold,
+}: {
+  customerName: string | null;
+  onCancel: () => void;
+  onHold: (label: string | null) => Promise<boolean>;
+}) {
+  const [label, setLabel] = useState(customerName ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <BasicModal title="Hold this sale" onCancel={onCancel}>
+      <p className="text-sm text-carbon-text-muted mt-1">
+        Parks the cart so you can ring up someone else. Resume it any time
+        from Held Sales — on any register at this store.
+      </p>
+      <input
+        autoFocus
+        type="text"
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        placeholder="Name or note (e.g. 'Lady in fitting room 2')"
+        className="tap w-full border border-[var(--color-pos-border)] px-3 mt-3"
+      />
+      {error && <p className="text-sm text-[var(--color-pos-danger)] mt-2">{error}</p>}
+      <div className="mt-5 flex gap-2">
+        <button onClick={onCancel} className="tap border border-[var(--color-pos-border)] flex-1 font-medium">
+          Cancel
+        </button>
+        <button
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            const ok = await onHold(label.trim() || null);
+            setBusy(false);
+            if (!ok) setError("Couldn't hold the sale. Try again.");
+          }}
+          className="tap carbon-btn-primary flex-1 font-semibold disabled:opacity-50"
+        >
+          {busy ? "Holding…" : "Hold Sale"}
+        </button>
+      </div>
+    </BasicModal>
+  );
+}
+
+type HeldRow = {
+  id: number;
+  label: string | null;
+  customer_name: string | null;
+  item_count: number;
+  total: string;
+  created_at: string;
+  held_by: string | null;
+};
+
+function HeldSalesModal({
+  cartHasItems,
+  onClose,
+  onResume,
+}: {
+  cartHasItems: boolean;
+  onClose: () => void;
+  onResume: (id: number) => Promise<string | null>;
+}) {
+  const [rows, setRows] = useState<HeldRow[] | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function load() {
+    const r = await fetch("/api/pos/held-sales").catch(() => null);
+    setRows(r?.ok ? ((await r.json()) as { held: HeldRow[] }).held : []);
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+  const ago = (iso: string) => {
+    const m = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    return m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
+  };
+  return (
+    <BasicModal title="Held sales" onCancel={onClose}>
+      {cartHasItems && (
+        <p className="text-xs text-carbon-text-muted mt-1">
+          Resuming holds your current cart first, so nothing is lost.
+        </p>
+      )}
+      {error && <p className="text-sm text-[var(--color-pos-danger)] mt-2">{error}</p>}
+      {rows === null ? (
+        <p className="text-sm text-carbon-text-muted mt-3">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-carbon-text-muted mt-3">No held sales.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-[var(--color-pos-border)] max-h-[50vh] overflow-y-auto">
+          {rows.map((h) => (
+            <li key={h.id} className="py-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold truncate">
+                  {h.label || h.customer_name || `Held sale #${h.id}`}
+                </p>
+                <p className="text-xs text-carbon-text-muted">
+                  {h.item_count} item{h.item_count === 1 ? "" : "s"} ·{" "}
+                  {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(h.total))}{" "}
+                  · {ago(h.created_at)}
+                  {h.held_by ? ` · by ${h.held_by}` : ""}
+                </p>
+              </div>
+              <button
+                disabled={busy !== null}
+                onClick={async () => {
+                  setBusy(h.id);
+                  setError(null);
+                  const err = await onResume(h.id);
+                  setBusy(null);
+                  if (err) {
+                    setError(err);
+                    void load();
+                  }
+                }}
+                className="tap carbon-btn-primary px-4 font-semibold disabled:opacity-50"
+              >
+                {busy === h.id ? "…" : "Resume"}
+              </button>
+              <button
+                disabled={busy !== null}
+                onClick={async () => {
+                  if (!confirm("Delete this held sale?")) return;
+                  await fetch(`/api/pos/held-sales/${h.id}`, { method: "DELETE" });
+                  void load();
+                }}
+                className="tap border border-red-200 text-carbon-danger px-3 disabled:opacity-50"
+                aria-label="Delete held sale"
+              >
+                <span className="material-symbols-outlined text-[20px]" aria-hidden>delete</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </BasicModal>
+  );
+}
 
 type Approval = { token: string; approver: string };
 
