@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { formatMoney } from "@/lib/utils";
+import { MatrixPicker } from "./MatrixPicker";
 
 export type SearchResultItem = {
   id: string;
@@ -35,6 +36,8 @@ export function ItemSearch({
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // SKU whose color × size grid is open.
+  const [matrixFor, setMatrixFor] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -118,6 +121,7 @@ export function ItemSearch({
                 <th className="text-left  px-4 py-3">Size</th>
                 <th className="text-right px-4 py-3">Price</th>
                 <th className="text-right px-4 py-3">Stock</th>
+                <th className="px-2 py-3" aria-label="Colors and sizes" />
               </tr>
             </thead>
             <tbody className="divide-y divide-carbon-border-soft">
@@ -156,11 +160,40 @@ export function ItemSearch({
                       <span className="text-carbon-text-muted">—</span>
                     )}
                   </td>
+                  <td className="px-2 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMatrixFor(r.id);
+                      }}
+                      title="All colors & sizes"
+                      aria-label="All colors and sizes"
+                      className="tap border border-carbon-border px-2 hover:bg-white inline-flex items-center gap-1 text-xs font-bold"
+                    >
+                      <span className="material-symbols-outlined text-[18px]" aria-hidden>
+                        grid_view
+                      </span>
+                      Sizes
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {matrixFor && (
+        <MatrixPicker
+          skuId={matrixFor}
+          onClose={() => setMatrixFor(null)}
+          onPick={(v) => {
+            onPick(v);
+            setMatrixFor(null);
+            setQ("");
+            setResults([]);
+          }}
+        />
       )}
       {q && !loading && results.length === 0 && (
         <div className="absolute z-10 left-0 right-0 mt-2 carbon-card px-4 py-6 text-center text-carbon-text-muted">
