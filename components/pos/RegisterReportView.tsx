@@ -17,11 +17,9 @@ import {
 export function RegisterReportView({
   report,
   kind,
-  printedAt,
 }: {
   report: RegisterReport;
   kind: "open" | "eod";
-  printedAt?: string;
 }) {
   const s = report.session;
   const tz = s.timezone;
@@ -83,17 +81,6 @@ export function RegisterReportView({
         </Section>
 
         {kind === "open" ? <OpenBody report={report} /> : <EodBody report={report} />}
-
-        <div style={S.sigBlock}>
-          <div style={S.sigLine}>
-            {kind === "open" ? "Counted by" : "Closed by"}
-          </div>
-          <div style={S.sigLine}>Manager</div>
-        </div>
-
-        <div style={S.footer}>
-          Printed {fmtDateTime(printedAt ?? new Date().toISOString(), tz)}
-        </div>
       </main>
     </div>
   );
@@ -420,12 +407,4 @@ const S: Record<string, CSSProperties> = {
   r: { textAlign: "right", fontVariantNumeric: "tabular-nums" },
   muted: { fontSize: 12, margin: 0 },
   small: { fontSize: 11, lineHeight: 1.2 },
-  sigBlock: { marginTop: "8mm" },
-  sigLine: {
-    borderTop: "1px solid #000",
-    marginTop: "9mm",
-    paddingTop: ".5mm",
-    fontSize: 11,
-  },
-  footer: { marginTop: "4mm", textAlign: "center", fontSize: 11 },
 };

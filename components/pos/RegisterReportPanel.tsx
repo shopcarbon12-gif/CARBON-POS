@@ -67,9 +67,10 @@ export function RegisterReportPanel({
       } catch (err) {
         console.error("[register-report] print failed", err);
         setPrintError(
-          `Couldn't reach the printer at ${report.printer_host}. First-time setup: ` +
-            `open https://${report.printer_host}/ in a new tab and accept the ` +
-            `certificate warning, then try again.`,
+          `Couldn't reach the printer at ${report.printer_host}. If Chrome asks to "access other ` +
+          `devices on your local network", click Allow. Otherwise open ` +
+          `https://${report.printer_host}/ in a new tab, accept the certificate warning, ` +
+          `then try again.`,
         );
         setState((s) => ({ ...s, [kind]: "error" }));
       }

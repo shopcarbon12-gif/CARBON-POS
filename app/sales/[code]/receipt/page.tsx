@@ -156,10 +156,11 @@ function ReceiptInner() {
     } catch (err) {
       console.error("[print] rasterize / ePOS-Print POST failed", err);
       setErrorMsg(
-        `Couldn't reach the printer at ${target.host}. First-time setup: ` +
-          `open https://${target.host}/ in a new tab and accept the ` +
-          `certificate warning, then try again.`,
-      );
+        `Couldn't reach the printer at ${target.host}. If Chrome asks to "access other ` +
+          `devices on your local network", click Allow. Otherwise open ` +
+          `https://${target.host}/ in a new tab, accept the certificate warning, ` +
+          `then try again.`,
+        );
       setPrintState("error");
     }
   }
