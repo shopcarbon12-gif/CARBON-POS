@@ -36,7 +36,7 @@ export async function GET(
   ];
   if (result.stats?.length) {
     for (const s of result.stats) {
-      lines.push([s.label, s.kind === "money" ? s.value.toFixed(2) : s.value]);
+      lines.push([s.label, s.kind === "int" ? s.value : s.value.toFixed(2)]);
     }
     lines.push([]);
   }

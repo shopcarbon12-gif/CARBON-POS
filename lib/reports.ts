@@ -13,7 +13,7 @@ import { getPool } from "@/lib/db";
  *     separately on the day they were issued.
  */
 
-export type ColKind = "text" | "int" | "money" | "datetime" | "date" | "pct";
+export type ColKind = "text" | "int" | "money" | "datetime" | "date" | "pct" | "dec";
 
 export type Col = { key: string; header: string; kind?: ColKind };
 
@@ -41,7 +41,7 @@ export type Section = {
   empty?: string;
 };
 
-export type Stat = { label: string; value: number; kind: "int" | "money" };
+export type Stat = { label: string; value: number; kind: "int" | "money" | "dec" };
 
 export type ReportResult = { stats?: Stat[]; sections: Section[]; note?: string };
 
@@ -655,7 +655,8 @@ const discounts: ReportDef = {
         item: x.description,
         qty: loyalty ? null : n(x.quantity),
         price: loyalty ? null : r2(orig),
-        discount: loyalty ? r2(-orig) : n(x.discount_amount),
+        // Loyalty rewards are a $0 line carrying the reward in discount_amount.
+        discount: n(x.discount_amount),
         pct: !loyalty && orig > 0 ? r2((n(x.discount_amount) / orig) * 100) : null,
         _links: { sale: saleLink(c, x.sale_id) ?? "" },
       };
@@ -884,9 +885,88 @@ const refunds: ReportDef = {
 };
 
 /* ------------------------------------------------------------------ */
+/* Employee Hours                                                       */
+/* ------------------------------------------------------------------ */
+
+const hours: ReportDef = {
+  slug: "hours",
+  title: "Employee Hours",
+  description:
+    "Clock-in / clock-out hours per employee for payroll. Open shifts count up to now.",
+  defaultRange: "month",
+  async run(c) {
+    const r = await getPool().query(
+      `SELECT pc.id, pe.id AS employee_id, ${userName("u")} AS name,
+              pc.clock_in, pc.clock_out, r.name AS register,
+              EXTRACT(EPOCH FROM (COALESCE(pc.clock_out, now()) - pc.clock_in)) / 3600 AS hrs
+         FROM pos_employee_clock pc
+         JOIN pos_employees pe ON pe.id = pc.employee_id
+         JOIN users u          ON u.id = pe.user_id
+         LEFT JOIN pos_registers r ON r.id = pc.register_id
+        WHERE (pc.register_id IS NULL OR r.pos_location_id = $1)
+          AND ${inRange("pc.clock_in")}
+        ORDER BY pc.clock_in DESC`,
+      params(c),
+    );
+    const shifts: Row[] = r.rows.map((x) => ({
+      name: x.name,
+      clock_in: iso(x.clock_in),
+      clock_out: x.clock_out ? iso(x.clock_out) : "Still on",
+      register: x.register ?? "",
+      hours: r2(n(x.hrs)),
+      _links: { name: `/employees/${c.code}/${x.employee_id}` },
+    }));
+    const by = new Map<string, Row>();
+    for (const sft of shifts) {
+      const k = String(sft.name);
+      const cur = by.get(k) ?? { name: k, shifts: 0, hours: 0, _links: sft._links };
+      cur.shifts = n(cur.shifts) + 1;
+      cur.hours = r2(n(cur.hours) + n(sft.hours));
+      by.set(k, cur);
+    }
+    const totals = [...by.values()].sort((a, b) => n(b.hours) - n(a.hours));
+    const open = r.rows.filter((x) => !x.clock_out).length;
+    return {
+      stats: [
+        { label: "Total hours", value: r2(totals.reduce((a, x) => a + n(x.hours), 0)), kind: "dec" },
+        { label: "Shifts", value: shifts.length, kind: "int" },
+        { label: "Employees", value: totals.length, kind: "int" },
+        { label: "Still clocked in", value: open, kind: "int" },
+      ],
+      sections: [
+        {
+          title: "Hours by employee",
+          columns: [
+            { key: "name", header: "Employee" },
+            { key: "shifts", header: "Shifts", kind: "int" },
+            { key: "hours", header: "Hours", kind: "dec" },
+          ],
+          rows: totals,
+          totals: sumRows(totals, ["shifts", "hours"], { name: "Total" }),
+          empty: "No shifts in this range.",
+        },
+        {
+          title: "Shifts",
+          columns: [
+            { key: "name", header: "Employee" },
+            { key: "clock_in", header: "Clock in", kind: "datetime" },
+            { key: "clock_out", header: "Clock out", kind: "datetime" },
+            { key: "register", header: "Register" },
+            { key: "hours", header: "Hours", kind: "dec" },
+          ],
+          rows: shifts,
+          empty: "No shifts in this range.",
+        },
+      ],
+      note: "Fix a forgotten clock-out from the employee's page (click their name).",
+    };
+  },
+};
+
+/* ------------------------------------------------------------------ */
 
 export const REPORTS: Record<string, ReportDef> = Object.fromEntries(
-  [endOfDay, salesTax, byProduct, byEmployee, creditByEmployee, discounts, cashDrawer, refunds].map(
+  [endOfDay, salesTax, byProduct, byEmployee, creditByEmployee, discounts, cashDrawer, refunds, hours].map(
     (d) => [d.slug, d],
   ),
 );
@@ -952,6 +1032,8 @@ export function formatCell(v: Cell, kind: ColKind | undefined, tz: string): stri
       return new Intl.NumberFormat("en-US").format(n(v));
     case "pct":
       return `${n(v).toFixed(1)}%`;
+    case "dec":
+      return n(v).toFixed(2);
     case "datetime":
       return typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v)
         ? new Date(v).toLocaleString("en-US", {

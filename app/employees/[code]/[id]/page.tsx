@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { EmployeeEditor } from "./EmployeeEditor";
+import { ClockHistory } from "./ClockHistory";
 
 export default async function EmployeeDetailPage({
   params,
@@ -18,6 +19,12 @@ export default async function EmployeeDetailPage({
   const eid = Number(id);
   if (!Number.isFinite(eid)) notFound();
   const pool = getPool();
+  const tzR = await getPool().query(
+    `SELECT COALESCE(timezone, 'America/New_York') AS tz
+       FROM pos_locations WHERE wms_location_id = $1::uuid LIMIT 1`,
+    [cashier.lid],
+  );
+  const tz: string = tzR.rows[0]?.tz ?? "America/New_York";
   const [emp, clock] = await Promise.all([
     pool.query(
       `SELECT pe.*, u.email, u.first_name, u.last_name,
@@ -77,34 +84,17 @@ export default async function EmployeeDetailPage({
         </section>
         <aside className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-4">
           <h2 className="font-semibold mb-2">Recent clock activity</h2>
-          {clock.rows.length === 0 ? (
-            <p className="text-sm text-[var(--color-pos-muted)]">
-              No clock-in entries yet.
-            </p>
-          ) : (
-            <ul className="text-sm divide-y divide-[var(--color-pos-border)]">
-              {clock.rows.map((c) => {
-                const inAt = new Date(c.clock_in);
-                const outAt = c.clock_out ? new Date(c.clock_out) : null;
-                const minutes = outAt
-                  ? Math.round((outAt.getTime() - inAt.getTime()) / 60000)
-                  : null;
-                return (
-                  <li key={c.id} className="py-2">
-                    <p>
-                      {inAt.toLocaleString()} →{" "}
-                      {outAt ? outAt.toLocaleString() : "still on"}
-                    </p>
-                    {minutes !== null && (
-                      <p className="text-xs text-[var(--color-pos-muted)]">
-                        {(minutes / 60).toFixed(2)} hours
-                      </p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <p className="text-xs text-[var(--color-pos-muted)] mb-2">
+            Full hours by date range: Reports → Employee Hours.
+          </p>
+          <ClockHistory
+            tz={tz}
+            shifts={clock.rows.map((c) => ({
+              id: c.id,
+              clock_in: new Date(c.clock_in).toISOString(),
+              clock_out: c.clock_out ? new Date(c.clock_out).toISOString() : null,
+            }))}
+          />
         </aside>
       </div>
     </main>

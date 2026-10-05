@@ -160,7 +160,7 @@ export default async function ReportPage({
 
 function SectionTable({ sec, tz, wide }: { sec: Section; tz: string; wide: boolean }) {
   const right = (k?: string) =>
-    k === "money" || k === "int" || k === "pct" ? "text-right tabular-nums" : "";
+    k === "money" || k === "int" || k === "pct" || k === "dec" ? "text-right tabular-nums" : "";
   return (
     <div className={wide ? "xl:col-span-2" : ""}>
       {sec.title && <h3 className="font-semibold mb-2">{sec.title}</h3>}

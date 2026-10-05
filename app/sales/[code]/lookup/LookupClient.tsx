@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { formatMoney } from "@/lib/utils";
+import { ProductImagePreview } from "@/components/pos/ProductImagePreview";
 
 type SearchResult = {
   id: string;
@@ -12,6 +13,7 @@ type SearchResult = {
   color: string | null;
   size: string | null;
   retail_price: string | null;
+  image_url?: string | null;
   stock_count?: number;
 };
 
@@ -25,6 +27,7 @@ type SkuDetail = {
   color: string | null;
   size: string | null;
   retail_price: string | null;
+  image_url?: string | null;
 };
 
 type LocationLine = {
@@ -51,8 +54,8 @@ type Detail = {
  * in-transit, and a per-location breakdown of where else this SKU is on
  * hand (so the staff can offer "we have one at Florida Mall").
  *
- * Image column is a placeholder hexagon for now — Phase 2 wires the WMS
- * media bucket once images live in the catalog.
+ * Photos are the Shopify CDN images WMS syncs onto each SKU (falling back
+ * to the product's featured image); click the detail photo to zoom.
  */
 export function LookupClient({
   locationId,
@@ -64,6 +67,7 @@ export function LookupClient({
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [picked, setPicked] = useState<Detail | null>(null);
+  const [zoom, setZoom] = useState(false);
   const [busy, setBusy] = useState(false);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -180,12 +184,7 @@ export function LookupClient({
                     }`}
                   >
                     <div className="flex items-start gap-4">
-                      {/* Image placeholder */}
-                      <div className="w-16 h-16 bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center shrink-0">
-                        <span className="material-symbols-outlined text-carbon-text-muted text-2xl">
-                          checkroom
-                        </span>
-                      </div>
+                      <Thumb url={r.image_url ?? null} className="w-16 h-16 text-2xl" />
                       <div className="flex-1 min-w-0">
                         <div className="text-lg font-bold text-carbon-text leading-snug">
                           {r.item_name}
@@ -235,12 +234,23 @@ export function LookupClient({
       {picked ? (
         <div className="mt-6 carbon-card p-6">
           <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6">
-            {/* Image column (placeholder until WMS media is wired). */}
-            <div className="aspect-square bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center">
-              <span className="material-symbols-outlined text-carbon-text-muted text-6xl">
-                checkroom
-              </span>
-            </div>
+            {/* Product photo (Shopify CDN, synced by WMS). Click to zoom. */}
+            <button
+              type="button"
+              onClick={() => picked.sku.image_url && setZoom(true)}
+              className={picked.sku.image_url ? "cursor-zoom-in" : "cursor-default"}
+              aria-label="Zoom product photo"
+            >
+              <Thumb url={picked.sku.image_url ?? null} className="w-full aspect-[3/4] text-6xl" />
+            </button>
+            {zoom && (
+              <ProductImagePreview
+                imageUrl={picked.sku.image_url ?? null}
+                title={picked.sku.item_name}
+                subtitle={[picked.sku.color, picked.sku.size].filter(Boolean).join(" / ")}
+                onClose={() => setZoom(false)}
+              />
+            )}
 
             <div className="space-y-5">
               <div>
@@ -414,5 +424,29 @@ function StockTile({
       <p className="text-[10px] uppercase tracking-wider font-bold">{label}</p>
       <p className="text-3xl font-bold tabular-nums mt-1">{n}</p>
     </div>
+  );
+}
+
+/** Product photo with a garment-icon fallback when none is synced. */
+function Thumb({ url, className }: { url: string | null; className: string }) {
+  const [broken, setBroken] = useState(false);
+  if (!url || broken) {
+    return (
+      <div
+        className={`bg-[var(--carbon-surface-soft)] border border-carbon-border-soft flex items-center justify-center shrink-0 ${className}`}
+      >
+        <span className="material-symbols-outlined text-carbon-text-muted">checkroom</span>
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      loading="lazy"
+      onError={() => setBroken(true)}
+      className={`object-cover border border-carbon-border-soft shrink-0 bg-white ${className}`}
+    />
   );
 }

@@ -44,8 +44,10 @@ export async function GET(
       color: string | null;
       size: string | null;
       retail_price: string | null;
+      image_url: string | null;
     }>(
       `SELECT cs.sku,
+              COALESCE(cs.shopify_image_url, m.shopify_featured_image_url) AS image_url,
               COALESCE(cs.upc, m.upc) AS upc,
               m.description           AS item_name,
               m.brand                 AS brand,

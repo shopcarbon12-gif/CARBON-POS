@@ -54,6 +54,11 @@ export default async function ReportsHomePage({
       desc: "Every closed register session, drops, payouts, over/short.",
     },
     {
+      href: `/reports/${code}/hours`,
+      title: "Employee Hours",
+      desc: "Clock-in / clock-out hours per employee and every shift — for payroll.",
+    },
+    {
       href: `/reports/${code}/refunds`,
       title: "Refunds & Voids",
       desc: "All refunds and voided sales, with reason and who actioned them.",

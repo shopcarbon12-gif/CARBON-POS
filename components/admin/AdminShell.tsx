@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
+import { ClockButton } from "./ClockButton";
 
 type Tab =
   | "dashboard"
@@ -256,6 +257,7 @@ export function AdminShell({
           {rightSlot ? (
             <div className="hidden md:flex items-center">{rightSlot}</div>
           ) : null}
+          <ClockButton />
           <LocationUserMenu
             code={code}
             locName={locName ?? code}
