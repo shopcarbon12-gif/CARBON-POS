@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { formatMoney } from "@/lib/utils";
+import { storeToday } from "@/lib/reports";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { RegisterActionsClient } from "@/components/sales/RegisterActionsClient";
 import { OpenRegisterButton } from "@/components/sales/OpenRegisterButton";
@@ -37,19 +38,33 @@ export default async function SalesPage({
     from: `/sales/${code}`,
   });
   const sp = await searchParams;
-  const today = new Date().toISOString().slice(0, 10);
+  const pool = getPool();
+  const locR = await pool.query(
+    `SELECT id, COALESCE(timezone, 'America/New_York') AS tz
+       FROM pos_locations WHERE wms_location_id = $1::uuid LIMIT 1`,
+    [cashier.lid],
+  );
+  const posLocationId: number | null = locR.rows[0]?.id ?? null;
+  const tz: string = locR.rows[0]?.tz ?? "America/New_York";
+  const today = storeToday(tz);
   const from = sp.from || today;
   const to = sp.to || today;
+  // all | completed | refunded | voided | refunds (refund rows only)
   const status = sp.status ?? "all";
   const registerId = sp.register_id ? Number(sp.register_id) : null;
   const cashierId = sp.cashier_id ? Number(sp.cashier_id) : null;
   const q = (sp.q ?? "").trim();
+  const showSales = status !== "refunds";
+  const showRefunds = status === "all" || status === "refunds";
 
-  const pool = getPool();
+  // ---- sales (store-local days) ----
   const conds: string[] = [];
   const args: unknown[] = [];
-  conds.push(`s.created_at::date BETWEEN $${args.push(from)} AND $${args.push(to)}`);
-  if (status !== "all") {
+  conds.push(`s.pos_location_id = $${args.push(posLocationId)}`);
+  conds.push(
+    `(COALESCE(s.completed_at, s.created_at) AT TIME ZONE $${args.push(tz)})::date BETWEEN $${args.push(from)}::date AND $${args.push(to)}::date`,
+  );
+  if (status === "completed" || status === "refunded" || status === "voided") {
     conds.push(`s.status = $${args.push(status)}`);
   } else {
     conds.push(`s.status IN ('completed','refunded','voided')`);
@@ -57,34 +72,72 @@ export default async function SalesPage({
   if (registerId) conds.push(`s.register_id = $${args.push(registerId)}`);
   if (cashierId) conds.push(`s.cashier_id = $${args.push(cashierId)}`);
   if (q) {
-    args.push(`%${q}%`);
-    const idx = args.length;
+    const idx = args.push(`%${q}%`);
     conds.push(
       `(s.sale_number ILIKE $${idx} OR c.first_name ILIKE $${idx} OR c.last_name ILIKE $${idx})`,
     );
   }
-  // Active-location scope.
-  args.push(cashier.lid);
-  const lidIdx = args.length;
-  conds.push(`s.pos_location_id IN (SELECT id FROM pos_locations WHERE wms_location_id = $${lidIdx}::uuid)`);
 
-  const [rows, registers, cashiers, totalsRes, openSession] = await Promise.all([
-    pool.query(
-      `SELECT s.id, s.sale_number, s.total_amount, s.tax_amount, s.discount_amount,
-              s.status, s.created_at, s.completed_at,
-              r.name AS register_name,
-              u.email AS cashier_email,
-              c.first_name, c.last_name
-         FROM pos_sales s
-         JOIN pos_registers r  ON r.id = s.register_id
-         JOIN pos_employees pe ON pe.id = s.cashier_id
-         JOIN users u          ON u.id = pe.user_id
-         LEFT JOIN pos_customers c ON c.id = s.customer_id
-        WHERE ${conds.join(" AND ")}
-        ORDER BY s.completed_at DESC NULLS LAST, s.created_at DESC
-        LIMIT 200`,
-      args,
-    ),
+  // ---- refunds (by the day the refund was made) ----
+  const rconds: string[] = [];
+  const rargs: unknown[] = [];
+  rconds.push(`s.pos_location_id = $${rargs.push(posLocationId)}`);
+  rconds.push(
+    `(rf.created_at AT TIME ZONE $${rargs.push(tz)})::date BETWEEN $${rargs.push(from)}::date AND $${rargs.push(to)}::date`,
+  );
+  if (registerId) rconds.push(`COALESCE(rs.register_id, s.register_id) = $${rargs.push(registerId)}`);
+  if (cashierId) rconds.push(`rf.refunded_by = $${rargs.push(cashierId)}`);
+  if (q) {
+    const idx = rargs.push(`%${q}%`);
+    rconds.push(
+      `(s.sale_number ILIKE $${idx} OR c.first_name ILIKE $${idx} OR c.last_name ILIKE $${idx}
+        OR ('R' || lpad(rf.id::text, 6, '0')) ILIKE $${idx})`,
+    );
+  }
+
+  const name = (a: string) =>
+    `COALESCE(NULLIF(TRIM(COALESCE(${a}.first_name,'') || ' ' || COALESCE(${a}.last_name,'')), ''), ${a}.email)`;
+
+  const [rows, refundRows, registers, cashiers, totalsRes, refundTotalsRes, openSession] = await Promise.all([
+    showSales
+      ? pool.query(
+          `SELECT s.id, s.sale_number, s.total_amount, s.tax_amount, s.discount_amount,
+                  s.status, s.created_at, s.completed_at,
+                  r.name AS register_name,
+                  ${name("u")} AS cashier_name,
+                  c.first_name, c.last_name
+             FROM pos_sales s
+             JOIN pos_registers r  ON r.id = s.register_id
+             JOIN pos_employees pe ON pe.id = s.cashier_id
+             JOIN users u          ON u.id = pe.user_id
+             LEFT JOIN pos_customers c ON c.id = s.customer_id
+            WHERE ${conds.join(" AND ")}
+            ORDER BY COALESCE(s.completed_at, s.created_at) DESC
+            LIMIT 200`,
+          args,
+        )
+      : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+    showRefunds
+      ? pool.query(
+          `SELECT rf.id, rf.amount, rf.method, rf.reason, rf.created_at,
+                  s.id AS sale_id, s.sale_number,
+                  COALESCE(rr.name, r0.name) AS register_name,
+                  ${name("u")} AS cashier_name,
+                  c.first_name, c.last_name
+             FROM pos_refunds rf
+             JOIN pos_sales s           ON s.id = rf.original_sale_id
+             JOIN pos_registers r0      ON r0.id = s.register_id
+             LEFT JOIN pos_register_sessions rs ON rs.id = rf.register_session_id
+             LEFT JOIN pos_registers rr ON rr.id = rs.register_id
+             LEFT JOIN pos_employees pe ON pe.id = rf.refunded_by
+             LEFT JOIN users u          ON u.id = pe.user_id
+             LEFT JOIN pos_customers c  ON c.id = s.customer_id
+            WHERE ${rconds.join(" AND ")}
+            ORDER BY rf.created_at DESC
+            LIMIT 200`,
+          rargs,
+        )
+      : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
     pool.query(
       `SELECT r.id, r.name
          FROM pos_registers r
@@ -94,22 +147,38 @@ export default async function SalesPage({
       [cashier.lid],
     ),
     pool.query(
-      `SELECT pe.id, u.email
+      `SELECT pe.id, ${name("u")} AS name
          FROM pos_employees pe
          JOIN users u ON u.id = pe.user_id
         WHERE pe.is_active = TRUE
-        ORDER BY u.email`,
+        ORDER BY 2`,
     ),
-    pool.query(
-      `SELECT COUNT(*) AS tx_count,
-              COALESCE(SUM(s.total_amount),0)    AS revenue,
-              COALESCE(SUM(s.tax_amount),0)      AS tax,
-              COALESCE(SUM(s.discount_amount),0) AS discount
-         FROM pos_sales s
-         LEFT JOIN pos_customers c ON c.id = s.customer_id
-        WHERE ${conds.join(" AND ")}`,
-      args,
-    ),
+    // Sales totals — voided sales never count toward revenue.
+    showSales
+      ? pool.query(
+          `SELECT COUNT(*) FILTER (WHERE s.status <> 'voided')                         AS tx_count,
+                  COALESCE(SUM(s.total_amount)    FILTER (WHERE s.status <> 'voided'),0) AS revenue,
+                  COALESCE(SUM(s.tax_amount)      FILTER (WHERE s.status <> 'voided'),0) AS tax,
+                  COALESCE(SUM(s.discount_amount) FILTER (WHERE s.status <> 'voided'),0) AS discount
+             FROM pos_sales s
+             LEFT JOIN pos_customers c ON c.id = s.customer_id
+            WHERE ${conds.join(" AND ")}`,
+          args,
+        )
+      : Promise.resolve({ rows: [{ tx_count: 0, revenue: 0, tax: 0, discount: 0 }] }),
+    showRefunds
+      ? pool.query(
+          `SELECT COUNT(*) AS cnt,
+                  COALESCE(SUM(rf.amount),0) AS amount,
+                  COALESCE(SUM(rf.tax_amount),0) AS tax
+             FROM pos_refunds rf
+             JOIN pos_sales s           ON s.id = rf.original_sale_id
+             LEFT JOIN pos_register_sessions rs ON rs.id = rf.register_session_id
+             LEFT JOIN pos_customers c  ON c.id = s.customer_id
+            WHERE ${rconds.join(" AND ")}`,
+          rargs,
+        )
+      : Promise.resolve({ rows: [{ cnt: 0, amount: 0, tax: 0 }] }),
     // Does *this cashier* currently have a register session open at this
     // location? Drives the button-rail gating. We pull the location's
     // human-readable name in the same round-trip so the "Current register"
@@ -130,6 +199,70 @@ export default async function SalesPage({
     ),
   ]);
   const totals = totalsRes.rows[0];
+  const refundTotals = refundTotalsRes.rows[0];
+  const refundAmount = Number(refundTotals.amount ?? 0);
+  const netRevenue = Number(totals.revenue ?? 0) - refundAmount;
+  const netTax = Number(totals.tax ?? 0) - Number(refundTotals.tax ?? 0);
+
+  type ListRow = {
+    key: string;
+    kind: "sale" | "refund";
+    href: string;
+    number: string;
+    sub: string | null;
+    at: Date;
+    register: string;
+    cashier: string;
+    customer: string;
+    status: string;
+    amount: number;
+  };
+  const customerOf = (r: Record<string, unknown>) =>
+    [r.first_name, r.last_name].filter(Boolean).join(" ") || "—";
+  const REFUND_TO: Record<string, string> = {
+    original_card: "to card",
+    cash: "cash",
+    store_credit: "store credit",
+  };
+  const list: ListRow[] = [
+    ...rows.rows.map((r) => ({
+      key: `s${r.id}`,
+      kind: "sale" as const,
+      href: `/sales/${code}/${r.id}`,
+      number: String(r.sale_number),
+      sub: null,
+      at: new Date((r.completed_at ?? r.created_at) as string),
+      register: String(r.register_name),
+      cashier: String(r.cashier_name ?? ""),
+      customer: customerOf(r),
+      status: String(r.status),
+      amount: Number(r.total_amount),
+    })),
+    ...refundRows.rows.map((r) => ({
+      key: `r${r.id}`,
+      kind: "refund" as const,
+      href: `/sales/${code}/refund/receipt?refund=${r.id}&back=${encodeURIComponent(`/sales/${code}`)}`,
+      number: `R${String(r.id).padStart(6, "0")}`,
+      sub: `for ${r.sale_number}`,
+      at: new Date(r.created_at as string),
+      register: String(r.register_name),
+      cashier: String(r.cashier_name ?? ""),
+      customer: customerOf(r),
+      status: `refund · ${REFUND_TO[String(r.method)] ?? r.method}`,
+      amount: -Number(r.amount),
+    })),
+  ]
+    .sort((a, b) => b.at.getTime() - a.at.getTime())
+    .slice(0, 200);
+  const fmtWhen = (d: Date) =>
+    d.toLocaleString("en-US", {
+      timeZone: tz,
+      month: "numeric",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
   const isRegisterOpen = (openSession.rowCount ?? 0) > 0;
   const openRegisterName = openSession.rows[0]?.register_name as
     | string
@@ -259,7 +392,7 @@ export default async function SalesPage({
               <option value="">All</option>
               {cashiers.rows.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.email}
+                  {c.name}
                 </option>
               ))}
             </select>
@@ -274,6 +407,7 @@ export default async function SalesPage({
               <option value="completed">Completed</option>
               <option value="refunded">Refunded</option>
               <option value="voided">Voided</option>
+              <option value="refunds">Refunds only</option>
             </select>
           </Field>
           <Field label="Search">
@@ -281,7 +415,7 @@ export default async function SalesPage({
               type="text"
               name="q"
               defaultValue={q}
-              placeholder="POS-… or customer"
+              placeholder="Receipt #, R# or customer"
               className="tap rounded-lg border border-[var(--color-pos-border)] px-2 w-full"
             />
           </Field>
@@ -293,17 +427,22 @@ export default async function SalesPage({
           </button>
         </form>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
           <Stat label="Sales" value={String(totals.tx_count)} />
-          <Stat label="Revenue" value={formatMoney(totals.revenue)} />
-          <Stat label="Tax" value={formatMoney(totals.tax)} />
+          <Stat
+            label={`Refunds (${refundTotals.cnt})`}
+            value={refundAmount > 0 ? `-${formatMoney(refundAmount)}` : formatMoney(0)}
+            danger={refundAmount > 0}
+          />
+          <Stat label="Net revenue" value={formatMoney(netRevenue)} />
+          <Stat label="Tax (net)" value={formatMoney(netTax)} />
           <Stat label="Discounts" value={formatMoney(totals.discount)} />
         </div>
 
         <table className="w-full text-sm border border-[var(--color-pos-border)] overflow-hidden">
           <thead className="bg-[var(--color-pos-bg)]">
             <tr className="text-left">
-              <th className="px-3 py-2">Sale</th>
+              <th className="px-3 py-2">Receipt</th>
               <th className="px-3 py-2">When</th>
               <th className="px-3 py-2">Register</th>
               <th className="px-3 py-2">Cashier</th>
@@ -313,46 +452,82 @@ export default async function SalesPage({
             </tr>
           </thead>
           <tbody>
-            {rows.rows.length === 0 ? (
+            {list.length === 0 ? (
               <tr>
                 <td
                   colSpan={7}
                   className="px-3 py-6 text-center text-[var(--color-pos-muted)]"
                 >
-                  No sales match your filters.
+                  No sales or refunds match your filters.
                 </td>
               </tr>
             ) : (
-              rows.rows.map((s) => (
+              list.map((r) => (
                 <tr
-                  key={s.id}
-                  className="border-t border-[var(--color-pos-border)]"
+                  key={r.key}
+                  className={`border-t border-[var(--color-pos-border)] ${
+                    r.kind === "refund" ? "bg-red-50" : ""
+                  }`}
                 >
                   <td className="px-3 py-2">
-                    <Link href={`/sales/${code}/${s.id}`}>{s.sale_number}</Link>
+                    <Link
+                      href={r.href}
+                      className={`font-semibold hover:underline ${
+                        r.kind === "refund" ? "text-carbon-danger" : "text-carbon-blue"
+                      }`}
+                    >
+                      {r.number}
+                    </Link>
+                    {r.sub && (
+                      <span className="block text-xs text-[var(--color-pos-muted)]">
+                        {r.sub}
+                      </span>
+                    )}
                   </td>
+                  <td className="px-3 py-2">{fmtWhen(r.at)}</td>
+                  <td className="px-3 py-2">{r.register}</td>
+                  <td className="px-3 py-2">{r.cashier}</td>
+                  <td className="px-3 py-2">{r.customer}</td>
                   <td className="px-3 py-2">
-                    {new Date(s.completed_at ?? s.created_at).toLocaleString()}
+                    <span
+                      className={
+                        r.kind === "refund"
+                          ? "text-carbon-danger font-semibold"
+                          : r.status === "voided"
+                            ? "text-[var(--color-pos-muted)] line-through"
+                            : ""
+                      }
+                    >
+                      {r.status}
+                    </span>
                   </td>
-                  <td className="px-3 py-2">{s.register_name}</td>
-                  <td className="px-3 py-2">{s.cashier_email}</td>
-                  <td className="px-3 py-2">
-                    {[s.first_name, s.last_name].filter(Boolean).join(" ") ||
-                      "—"}
-                  </td>
-                  <td className="px-3 py-2">{s.status}</td>
-                  <td className="px-3 py-2 text-right font-medium tabular-nums">
-                    {formatMoney(s.total_amount)}
+                  <td
+                    className={`px-3 py-2 text-right font-medium tabular-nums ${
+                      r.kind === "refund" ? "text-carbon-danger" : ""
+                    } ${r.status === "voided" ? "line-through text-[var(--color-pos-muted)]" : ""}`}
+                  >
+                    {r.amount < 0 ? `-${formatMoney(-r.amount)}` : formatMoney(r.amount)}
                   </td>
                 </tr>
               ))
             )}
           </tbody>
+          {list.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-[var(--color-pos-ink)] font-bold bg-[var(--color-pos-bg)]">
+                <td className="px-3 py-2" colSpan={6}>
+                  Net revenue (sales − refunds, voids excluded)
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatMoney(netRevenue)}</td>
+              </tr>
+            </tfoot>
+          )}
         </table>
 
         <p className="text-xs text-[var(--color-pos-muted)] mt-2">
-          Showing the most recent {rows.rows.length} sales (capped at 200). Use
-          tighter filters or the Reports tab for date-range CSV exports.
+          Showing the most recent {list.length} sales and refunds (capped at
+          200). Use tighter filters or the Reports tab for date-range CSV
+          exports.
         </p>
       </section>
     </AdminShell>
@@ -398,11 +573,21 @@ function Field({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  danger,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+}) {
   return (
     <div className="bg-white border border-[var(--color-pos-border)] p-4">
       <p className="text-xs text-[var(--color-pos-muted)]">{label}</p>
-      <p className="total-display text-3xl mt-1">{value}</p>
+      <p className={`total-display text-3xl mt-1 ${danger ? "text-carbon-danger" : ""}`}>
+        {value}
+      </p>
     </div>
   );
 }

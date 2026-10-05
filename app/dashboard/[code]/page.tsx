@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { formatMoney } from "@/lib/utils";
+import { storeToday } from "@/lib/reports";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { OpenRegisterButton } from "@/components/sales/OpenRegisterButton";
 
@@ -29,109 +30,152 @@ export default async function DashboardPage({
   });
 
   const pool = getPool();
-  const [kpiR, hourlyR, topItemsR, openSessionsR, recentR] = await Promise.all([
-    // KPIs for today vs yesterday in one round-trip.
-    pool.query(
-      `SELECT
-         COALESCE(SUM(CASE WHEN s.completed_at::date = current_date THEN s.total_amount END), 0)        AS today_rev,
-         COALESCE(SUM(CASE WHEN s.completed_at::date = current_date - 1 THEN s.total_amount END), 0)    AS yest_rev,
-         COUNT(*) FILTER (WHERE s.completed_at::date = current_date)                                    AS today_tx,
-         COUNT(*) FILTER (WHERE s.completed_at::date = current_date - 1)                                AS yest_tx
-       FROM pos_sales s
-       WHERE s.status = 'completed'
-         AND s.completed_at::date BETWEEN current_date - 1 AND current_date
-         AND s.pos_location_id IN (SELECT id FROM pos_locations WHERE wms_location_id = $1::uuid)`,
-      [cashier.lid],
-    ),
-    // Hourly sales for today (0..23). We aggregate server-side and pad
-    // missing hours to 0 in JS so the SVG always renders 24 buckets.
-    pool.query(
-      `SELECT EXTRACT(HOUR FROM s.completed_at)::int AS hour,
-              COALESCE(SUM(s.total_amount), 0)::numeric AS total
-         FROM pos_sales s
-        WHERE s.status = 'completed'
-          AND s.completed_at::date = current_date
-          AND s.pos_location_id IN (SELECT id FROM pos_locations WHERE wms_location_id = $1::uuid)
-        GROUP BY hour
-        ORDER BY hour`,
-      [cashier.lid],
-    ),
-    // Top items today by quantity sold.
-    pool.query(
-      `SELECT sl.description,
-              SUM(sl.quantity)::int  AS qty,
-              SUM(sl.line_total)::numeric AS revenue
-         FROM pos_sale_lines sl
-         JOIN pos_sales s ON s.id = sl.sale_id
-        WHERE s.status = 'completed'
-          AND s.completed_at::date = current_date
-          AND s.pos_location_id IN (SELECT id FROM pos_locations WHERE wms_location_id = $1::uuid)
-        GROUP BY sl.description
-        ORDER BY qty DESC, revenue DESC
-        LIMIT 5`,
-      [cashier.lid],
-    ),
-    // Currently-open register sessions at this location.
-    pool.query(
-      `SELECT s.id, r.name AS register_name, s.opening_cash, s.opened_at,
-              u.email AS opened_by_email
-         FROM pos_register_sessions s
-         JOIN pos_registers r ON r.id = s.register_id
-         JOIN users u         ON u.id = s.opened_by
-        WHERE s.status = 'open'
-          AND r.pos_location_id IN (SELECT id FROM pos_locations WHERE wms_location_id = $1::uuid)
-        ORDER BY s.opened_at`,
-      [cashier.lid],
-    ),
-    // Recent activity — sales and refunds in one ordered list. Each row is
-    // tagged with its kind so the feed renderer picks the right icon and sign.
-    pool.query(
-      `SELECT * FROM (
-         SELECT 'sale'::text AS kind,
-                s.id::text   AS id,
-                s.sale_number,
-                s.total_amount,
-                s.status,
-                COALESCE(s.completed_at, s.created_at) AS happened_at,
-                NULL::text   AS reason
+  const locR = await pool.query(
+    `SELECT id, COALESCE(timezone, 'America/New_York') AS tz
+       FROM pos_locations WHERE wms_location_id = $1::uuid LIMIT 1`,
+    [cashier.lid],
+  );
+  const loc: number | null = locR.rows[0]?.id ?? null;
+  const tz: string = locR.rows[0]?.tz ?? "America/New_York";
+  const today = storeToday(tz);
+  const yd = new Date(`${today}T12:00:00Z`);
+  yd.setUTCDate(yd.getUTCDate() - 1);
+  const yesterday = yd.toISOString().slice(0, 10);
+  const sold = `s.status IN ('completed','refunded')`;
+  const localDay = (col: string) => `(${col} AT TIME ZONE $2)::date`;
+  const userName = (a: string) =>
+    `COALESCE(NULLIF(TRIM(COALESCE(${a}.first_name,'') || ' ' || COALESCE(${a}.last_name,'')), ''), ${a}.email)`;
+  const P = [loc, tz, today, yesterday];
+
+  const [salesKpiR, refundKpiR, hourlyR, hourlyRefR, topItemsR, openSessionsR, recentR] =
+    await Promise.all([
+      // Sales today / yesterday (store-local days). Sales later refunded
+      // still count on the day sold; refunds are subtracted below.
+      pool.query(
+        `SELECT ${localDay("s.completed_at")}::text AS day,
+                COUNT(*) AS tx, COALESCE(SUM(s.total_amount),0) AS total
            FROM pos_sales s
-          WHERE s.status IN ('completed','voided')
-            AND s.pos_location_id IN (SELECT id FROM pos_locations WHERE wms_location_id = $1::uuid)
-         UNION ALL
-         SELECT 'refund'::text AS kind,
-                rf.id::text    AS id,
-                s.sale_number,
-                rf.amount      AS total_amount,
-                'refunded'     AS status,
-                rf.created_at  AS happened_at,
-                rf.reason
-           FROM pos_refunds rf
-           JOIN pos_sales s ON s.id = rf.original_sale_id
-          WHERE s.pos_location_id IN (SELECT id FROM pos_locations WHERE wms_location_id = $1::uuid)
-       ) feed
-       ORDER BY happened_at DESC NULLS LAST
-       LIMIT 12`,
-      [cashier.lid],
-    ),
-  ]);
+          WHERE s.pos_location_id = $1 AND ${sold}
+            AND ${localDay("s.completed_at")} IN ($3::date, $4::date)
+          GROUP BY 1`,
+        P,
+      ),
+      pool.query(
+        `SELECT ${localDay("rf.created_at")}::text AS day,
+                COUNT(*) AS cnt, COALESCE(SUM(rf.amount),0) AS amount
+           FROM pos_refunds rf JOIN pos_sales s ON s.id = rf.original_sale_id
+          WHERE s.pos_location_id = $1
+            AND ${localDay("rf.created_at")} IN ($3::date, $4::date)
+          GROUP BY 1`,
+        P,
+      ),
+      // Hourly sales, today + yesterday, store-local hours.
+      pool.query(
+        `SELECT ${localDay("s.completed_at")}::text AS day,
+                EXTRACT(HOUR FROM s.completed_at AT TIME ZONE $2)::int AS hour,
+                COALESCE(SUM(s.total_amount),0) AS total
+           FROM pos_sales s
+          WHERE s.pos_location_id = $1 AND ${sold}
+            AND ${localDay("s.completed_at")} IN ($3::date, $4::date)
+          GROUP BY 1, 2`,
+        P,
+      ),
+      pool.query(
+        `SELECT ${localDay("rf.created_at")}::text AS day,
+                EXTRACT(HOUR FROM rf.created_at AT TIME ZONE $2)::int AS hour,
+                COALESCE(SUM(rf.amount),0) AS total
+           FROM pos_refunds rf JOIN pos_sales s ON s.id = rf.original_sale_id
+          WHERE s.pos_location_id = $1
+            AND ${localDay("rf.created_at")} IN ($3::date, $4::date)
+          GROUP BY 1, 2`,
+        P,
+      ),
+      // Top products today: units + net sales before tax.
+      pool.query(
+        `SELECT COALESCE(m.description, sl.description) AS description,
+                SUM(sl.quantity)::int AS qty,
+                COALESCE(SUM(sl.unit_price * sl.quantity - sl.discount_amount),0) AS revenue
+           FROM pos_sale_lines sl
+           JOIN pos_sales s         ON s.id = sl.sale_id
+           LEFT JOIN custom_skus cs ON cs.id = sl.sku_id
+           LEFT JOIN matrices m     ON m.id = cs.matrix_id
+          WHERE s.pos_location_id = $1 AND ${sold}
+            AND sl.line_type IN ('product','misc','gift_card')
+            AND ${localDay("s.completed_at")} = $3::date
+          GROUP BY 1
+          ORDER BY qty DESC, revenue DESC
+          LIMIT 5`,
+        [loc, tz, today],
+      ),
+      // Open registers with what they've taken so far and the cash that
+      // should be in the drawer now (same formula as Close Register).
+      pool.query(
+        `SELECT ss.id, r.name AS register_name, ss.opening_cash, ss.opened_at,
+                ${userName("u")} AS opened_by,
+                (SELECT COUNT(*) FROM pos_sales x
+                  WHERE x.register_id = ss.register_id AND x.created_at >= ss.opened_at
+                    AND x.status IN ('completed','refunded')) AS sales_count,
+                (SELECT COALESCE(SUM(x.total_amount),0) FROM pos_sales x
+                  WHERE x.register_id = ss.register_id AND x.created_at >= ss.opened_at
+                    AND x.status IN ('completed','refunded')) AS sales_total,
+                ss.opening_cash
+                + (SELECT COALESCE(SUM(p.amount),0) FROM pos_payments p JOIN pos_sales x ON x.id = p.sale_id
+                    WHERE x.register_id = ss.register_id AND x.created_at >= ss.opened_at
+                      AND p.method = 'cash' AND p.status = 'completed')
+                + (SELECT COALESCE(SUM(CASE WHEN type = 'add' THEN amount ELSE -amount END),0)
+                     FROM pos_cash_movements WHERE register_session_id = ss.id)
+                - (SELECT COALESCE(SUM(amount),0) FROM pos_refunds
+                    WHERE register_session_id = ss.id AND method = 'cash') AS expected_cash
+           FROM pos_register_sessions ss
+           JOIN pos_registers r ON r.id = ss.register_id
+           JOIN users u         ON u.id = ss.opened_by
+          WHERE ss.status = 'open' AND r.pos_location_id = $1
+          ORDER BY ss.opened_at`,
+        [loc],
+      ),
+      // Recent activity — sales (incl. later-refunded) and refunds.
+      pool.query(
+        `SELECT * FROM (
+           SELECT 'sale'::text AS kind, s.id AS id, s.id AS sale_id, s.sale_number,
+                  s.total_amount, s.status,
+                  COALESCE(s.completed_at, s.created_at) AS happened_at
+             FROM pos_sales s
+            WHERE s.status IN ('completed','refunded','voided') AND s.pos_location_id = $1
+           UNION ALL
+           SELECT 'refund'::text, rf.id, s.id, s.sale_number, rf.amount, rf.method,
+                  rf.created_at
+             FROM pos_refunds rf JOIN pos_sales s ON s.id = rf.original_sale_id
+            WHERE s.pos_location_id = $1
+         ) feed
+         ORDER BY happened_at DESC NULLS LAST
+         LIMIT 12`,
+        [loc],
+      ),
+    ]);
 
-  const k = kpiR.rows[0];
-  const todayRev = Number(k.today_rev ?? 0);
-  const yestRev = Number(k.yest_rev ?? 0);
-  const todayTx = Number(k.today_tx ?? 0);
-  const yestTx = Number(k.yest_tx ?? 0);
-  const todayAov = todayTx > 0 ? todayRev / todayTx : 0;
-  const yestAov = yestTx > 0 ? yestRev / yestTx : 0;
+  const byDay = <T,>(rows: Array<Record<string, unknown>>, day: string, f: (r: Record<string, unknown>) => T, d: T) => {
+    const r = rows.find((x) => x.day === day);
+    return r ? f(r) : d;
+  };
+  const kpi = (day: string) => {
+    const tx = byDay(salesKpiR.rows, day, (r) => Number(r.tx), 0);
+    const gross = byDay(salesKpiR.rows, day, (r) => Number(r.total), 0);
+    const refunds = byDay(refundKpiR.rows, day, (r) => Number(r.amount), 0);
+    const refundCnt = byDay(refundKpiR.rows, day, (r) => Number(r.cnt), 0);
+    return { tx, gross, refunds, refundCnt, net: gross - refunds, aov: tx ? gross / tx : 0 };
+  };
+  const kT = kpi(today);
+  const kY = kpi(yesterday);
 
-  const hourlyByHour = new Map<number, number>();
-  for (const row of hourlyR.rows) {
-    hourlyByHour.set(Number(row.hour), Number(row.total));
-  }
-  const hourly: Array<{ hour: number; total: number }> = [];
-  for (let h = 0; h < 24; h++) {
-    hourly.push({ hour: h, total: hourlyByHour.get(h) ?? 0 });
-  }
-  const hourlyMax = Math.max(1, ...hourly.map((p) => p.total));
+  const hourlyFor = (day: string) => {
+    const h = new Array(24).fill(0) as number[];
+    for (const r of hourlyR.rows) if (r.day === day) h[Number(r.hour)] += Number(r.total);
+    for (const r of hourlyRefR.rows) if (r.day === day) h[Number(r.hour)] -= Number(r.total);
+    return h.map((total, hour) => ({ hour, total: Math.round(total * 100) / 100 }));
+  };
+  const hourly = hourlyFor(today);
+  const hourlyPrev = hourlyFor(yesterday);
+  const hourlyMax = Math.max(1, ...hourly.map((p) => p.total), ...hourlyPrev.map((p) => p.total));
 
   const topItems = topItemsR.rows as Array<{
     description: string;
@@ -145,24 +189,30 @@ export default async function DashboardPage({
     register_name: string;
     opening_cash: string;
     opened_at: string;
-    opened_by_email: string;
+    opened_by: string;
+    sales_count: string;
+    sales_total: string;
+    expected_cash: string;
   }>;
   const recent = recentR.rows as Array<{
     kind: "sale" | "refund";
-    id: string;
+    id: number;
+    sale_id: number;
     sale_number: string;
     total_amount: string;
-    status: "completed" | "voided" | "refunded";
+    status: string;
     happened_at: string;
-    reason: string | null;
   }>;
 
-  const today = new Date();
-  const todayLabel = today.toLocaleDateString(undefined, {
+  const todayLabel = new Date(`${today}T12:00:00Z`).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    weekday: "short",
     month: "short",
     day: "numeric",
     year: "numeric",
   });
+  const timeIn = (iso: string) =>
+    new Date(iso).toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
 
   return (
     <AdminShell email={cashier.email} active="dashboard" code={code}>
@@ -175,7 +225,7 @@ export default async function DashboardPage({
                 Daily Overview
               </h1>
               <p className="text-base text-carbon-text-muted mt-1">
-                Today&apos;s performance metrics and recent activity.
+                Today&apos;s performance at this store, in store time.
               </p>
             </div>
             <div className="flex items-center gap-2 text-carbon-blue text-[11px] uppercase tracking-wider font-bold">
@@ -185,25 +235,34 @@ export default async function DashboardPage({
           </div>
 
           {/* KPI bento */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
             <KpiCard
               label="Net Sales"
               icon="payments"
-              value={formatMoney(todayRev)}
-              delta={pctDelta(todayRev, yestRev)}
+              value={formatMoney(kT.net)}
+              delta={pctDelta(kT.net, kY.net)}
+              sub="sales − refunds · vs. yesterday"
               accentBar
             />
             <KpiCard
               label="Average Order Value"
               icon="shopping_bag"
-              value={formatMoney(todayAov)}
-              delta={pctDelta(todayAov, yestAov)}
+              value={formatMoney(kT.aov)}
+              delta={pctDelta(kT.aov, kY.aov)}
             />
             <KpiCard
               label="Transactions"
               icon="receipt_long"
-              value={String(todayTx)}
-              delta={pctDelta(todayTx, yestTx)}
+              value={String(kT.tx)}
+              delta={pctDelta(kT.tx, kY.tx)}
+            />
+            <KpiCard
+              label="Refunds"
+              icon="assignment_return"
+              value={kT.refunds > 0 ? `-${formatMoney(kT.refunds)}` : formatMoney(0)}
+              delta={pctDelta(kT.refunds, kY.refunds)}
+              sub={`${kT.refundCnt} refund${kT.refundCnt === 1 ? "" : "s"} today · vs. yesterday`}
+              invert
             />
           </div>
 
@@ -216,13 +275,21 @@ export default async function DashboardPage({
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-base font-semibold">Hourly Sales Trend</h3>
                   <Link
-                    href={`/reports/${code}/sales-tax`}
+                    href={`/reports/${code}/end-of-day?from=${today}&to=${today}`}
                     className="text-[11px] uppercase tracking-wider font-bold text-carbon-blue border border-carbon-blue px-3 py-1 hover:bg-[var(--carbon-blue-soft)] transition-colors"
                   >
                     Export
                   </Link>
                 </div>
-                <HourlyChart points={hourly} max={hourlyMax} />
+                <HourlyChart points={hourly} prev={hourlyPrev} max={hourlyMax} />
+                <div className="flex gap-5 mt-4 text-xs text-carbon-text-muted">
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block w-5 h-0.5 bg-carbon-blue" /> Today (net of refunds)
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block w-5 border-t border-dashed border-carbon-text-muted" /> Yesterday
+                  </span>
+                </div>
               </div>
 
               {/* Top Items + Open Registers */}
@@ -285,22 +352,29 @@ export default async function DashboardPage({
                   ) : (
                     <ul className="divide-y divide-carbon-border-soft">
                       {openSessions.map((s) => (
-                        <li key={s.id} className="py-3 flex justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-semibold truncate">
-                              {s.register_name}
-                            </p>
-                            <p className="text-xs text-carbon-text-muted truncate">
-                              {s.opened_by_email} ·{" "}
-                              {new Date(s.opened_at).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+                        <li key={s.id} className="py-3">
+                          <div className="flex justify-between gap-3">
+                            <p className="font-semibold truncate">{s.register_name}</p>
+                            <p className="text-right font-mono tabular-nums shrink-0">
+                              {formatMoney(s.sales_total)}
                             </p>
                           </div>
-                          <p className="text-right font-mono tabular-nums shrink-0">
-                            {formatMoney(s.opening_cash)}
-                          </p>
+                          <div className="flex justify-between gap-3 text-xs text-carbon-text-muted">
+                            <span className="truncate">
+                              {s.opened_by} · opened {timeIn(s.opened_at)}
+                            </span>
+                            <span className="shrink-0">
+                              {Number(s.sales_count)} sale{Number(s.sales_count) === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3 text-xs mt-1">
+                            <span className="text-carbon-text-muted">
+                              Opened with {formatMoney(s.opening_cash)}
+                            </span>
+                            <span className="font-semibold">
+                              Cash in drawer {formatMoney(s.expected_cash)}
+                            </span>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -328,6 +402,7 @@ export default async function DashboardPage({
                       key={`${row.kind}-${row.id}`}
                       row={row}
                       code={code}
+                      time={timeIn(row.happened_at)}
                     />
                   ))
                 )}
@@ -357,16 +432,22 @@ function KpiCard({
   icon,
   value,
   delta,
+  sub = "vs. yesterday",
   accentBar,
+  invert,
 }: {
   label: string;
   icon: string;
   value: string;
   /** Signed pct vs previous period. null when no baseline (e.g. yesterday=0). */
   delta: number | null;
+  sub?: string;
   accentBar?: boolean;
+  /** For refunds: going up is bad, so colour the arrow the other way. */
+  invert?: boolean;
 }) {
-  const positive = (delta ?? 0) >= 0;
+  const up = (delta ?? 0) >= 0;
+  const positive = invert ? !up : up;
   return (
     <div className="carbon-card p-6 relative overflow-hidden">
       {accentBar ? (
@@ -389,7 +470,7 @@ function KpiCard({
             }`}
           >
             <span className="material-symbols-outlined text-base">
-              {positive ? "arrow_upward" : "arrow_downward"}
+              {up ? "arrow_upward" : "arrow_downward"}
             </span>
             {Math.abs(delta).toFixed(1)}%
           </span>
@@ -397,24 +478,29 @@ function KpiCard({
           <span className="font-mono text-sm text-carbon-text-muted">—</span>
         )}
       </div>
-      <p className="text-xs text-carbon-text-muted mt-2">vs. previous day</p>
+      <p className="text-xs text-carbon-text-muted mt-2">{sub}</p>
     </div>
   );
 }
 
 function HourlyChart({
   points,
+  prev,
   max,
 }: {
   points: Array<{ hour: number; total: number }>;
+  prev: Array<{ hour: number; total: number }>;
   max: number;
 }) {
   // Map each point to the SVG viewBox 0..100 in x and 0..100 in y (inverted).
-  const pathParts = points.map((p, i) => {
-    const x = (i / (points.length - 1)) * 100;
-    const y = 100 - (p.total / max) * 90;
-    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-  });
+  const toPath = (pts: Array<{ total: number }>) =>
+    pts
+      .map((p, i) => {
+        const x = (i / (pts.length - 1)) * 100;
+        const y = 100 - (Math.max(0, p.total) / max) * 90;
+        return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
   // Tick labels every 3 hours: 0,3,6,...,21.
   const ticks = [0, 3, 6, 9, 12, 15, 18, 21];
   return (
@@ -443,12 +529,33 @@ function HourlyChart({
           />
         ))}
         <path
-          d={pathParts.join(" ")}
+          d={toPath(prev)}
+          fill="none"
+          stroke="var(--carbon-text-muted, #888)"
+          strokeWidth={1.25}
+          strokeDasharray="4,3"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path
+          d={toPath(points)}
           fill="none"
           stroke="var(--carbon-blue)"
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
         />
+        {points.map((p, i) =>
+          p.total !== 0 ? (
+            <circle
+              key={p.hour}
+              cx={(i / (points.length - 1)) * 100}
+              cy={100 - (Math.max(0, p.total) / max) * 90}
+              r={1.2}
+              fill="var(--carbon-blue)"
+            >
+              <title>{`${labelHour(p.hour)}: ${formatMoney(p.total)} today, ${formatMoney(prev[i]?.total ?? 0)} yesterday`}</title>
+            </circle>
+          ) : null,
+        )}
       </svg>
       <div className="absolute -bottom-1 left-10 right-0 flex justify-between text-carbon-text-muted font-mono text-[10px]">
         {ticks.map((t) => (
@@ -462,26 +569,26 @@ function HourlyChart({
 function ActivityRow({
   row,
   code,
+  time,
 }: {
   row: {
     kind: "sale" | "refund";
-    id: string;
+    id: number;
+    sale_id: number;
     sale_number: string;
     total_amount: string;
-    status: "completed" | "voided" | "refunded";
+    status: string;
     happened_at: string;
   };
   code: string;
+  time: string;
 }) {
   const isRefund = row.kind === "refund";
-  const isVoided = row.status === "voided";
-  const icon = isRefund
-    ? "assignment_return"
-    : isVoided
-      ? "cancel"
-      : "check_circle";
+  const isVoided = !isRefund && row.status === "voided";
+  const wasRefunded = !isRefund && row.status === "refunded";
+  const icon = isRefund ? "assignment_return" : isVoided ? "cancel" : "check_circle";
   const iconClass = isRefund
-    ? "text-carbon-text-muted"
+    ? "text-carbon-danger"
     : isVoided
       ? "text-carbon-danger"
       : "text-carbon-blue";
@@ -490,35 +597,40 @@ function ActivityRow({
     : isVoided
       ? "text-carbon-text-muted line-through"
       : "text-carbon-text";
+  const REFUND_TO: Record<string, string> = {
+    original_card: "to card",
+    cash: "cash",
+    store_credit: "store credit",
+  };
   const verb = isRefund
-    ? "Refund processed"
+    ? `Refund (${REFUND_TO[row.status] ?? row.status}) for`
     : isVoided
       ? "Sale voided"
-      : "Sale completed";
+      : wasRefunded
+        ? "Sale (refunded)"
+        : "Sale completed";
+  const href = isRefund
+    ? `/sales/${code}/refund/receipt?refund=${row.id}&back=${encodeURIComponent(`/dashboard/${code}`)}`
+    : `/sales/${code}/${row.sale_id}`;
 
   return (
     <Link
-      href={`/sales/${code}/${row.kind === "sale" ? row.id : ""}`}
+      href={href}
       className="flex items-start gap-3 py-3 border-b border-carbon-border-soft last:border-0 hover:bg-carbon-bg transition-colors"
     >
       <div className="w-8 h-8 bg-[var(--carbon-surface-soft)] flex items-center justify-center flex-shrink-0">
-        <span className={`material-symbols-outlined text-sm ${iconClass}`}>
-          {icon}
-        </span>
+        <span className={`material-symbols-outlined text-sm ${iconClass}`}>{icon}</span>
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm text-carbon-text truncate">
-          {verb}{" "}
-          <span className="font-mono text-carbon-blue">#{row.sale_number}</span>
+          {verb} <span className="font-mono text-carbon-blue">#{row.sale_number}</span>
         </p>
         <p className="text-[11px] text-carbon-text-muted uppercase tracking-wider font-bold">
-          {timeAgo(row.happened_at)}
+          {timeAgo(row.happened_at)} · {time}
         </p>
       </div>
-      <p
-        className={`font-mono font-semibold tabular-nums shrink-0 ${amountClass}`}
-      >
-        {isRefund ? "−" : ""}
+      <p className={`font-mono font-semibold tabular-nums shrink-0 ${amountClass}`}>
+        {isRefund ? "-" : ""}
         {formatMoney(row.total_amount)}
       </p>
     </Link>
