@@ -226,6 +226,14 @@ function ReceiptInner() {
                 ? "Sent ✓"
                 : "Email Receipt"}
           </button>
+          <a
+            href={`/api/pos/sales/${saleId}/pdf`}
+            target="_blank"
+            rel="noopener"
+            className="text-sm text-center underline text-[var(--color-pos-muted)]"
+          >
+            View PDF receipt
+          </a>
         </div>
       </div>
 
