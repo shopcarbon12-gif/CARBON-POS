@@ -17,7 +17,7 @@ fi
 # Sanity check: report if the WMS tables POS depends on aren't present.
 if [ -n "$DATABASE_URL" ]; then
   missing=""
-  for t in locations users custom_skus epcs; do
+  for t in locations users custom_skus items; do
     hit=$(psql "$DATABASE_URL" -tAc "select 1 from information_schema.tables where table_schema='public' and table_name='$t' limit 1" 2>/dev/null | tr -d " \t\r\n")
     if [ "$hit" != "1" ]; then
       missing="${missing}${missing:+ }${t}"
@@ -27,7 +27,7 @@ if [ -n "$DATABASE_URL" ]; then
     echo "pos: CRITICAL — missing WMS table(s) POS reads from: ${missing}." >&2
     echo "pos: Confirm DATABASE_URL points at the WMS Postgres and that WMS migrations have run." >&2
   else
-    echo "pos: WMS tables OK (locations, users, custom_skus, epcs)" >&2
+    echo "pos: WMS tables OK (locations, users, custom_skus, items)" >&2
   fi
   for t in pos_locations pos_registers pos_register_sessions pos_sales pos_sale_lines pos_payments; do
     hit=$(psql "$DATABASE_URL" -tAc "select 1 from information_schema.tables where table_schema='public' and table_name='$t' limit 1" 2>/dev/null | tr -d " \t\r\n")

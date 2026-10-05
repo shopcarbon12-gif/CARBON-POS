@@ -34,6 +34,8 @@ export function TotalPanel({
   totals,
   customer,
   loyaltyBalance,
+  redeemPaused = false,
+  minRedeemPoints = 100,
   onPickCustomer,
   onClearCustomer,
   onNewCustomer,
@@ -72,6 +74,11 @@ export function TotalPanel({
   customer: PickedCustomer | null;
   /** Loyalty points balance for the attached customer (null = unknown / loading). */
   loyaltyBalance: number | null;
+  /** Rewards program paused (settings.live === false): show the balance
+   *  but swap the Redeem button for a muted hint. Earning is unaffected. */
+  redeemPaused?: boolean;
+  /** Smallest redemption Carbon Rewards allows (live setting). */
+  minRedeemPoints?: number;
   onPickCustomer: (c: PickedCustomer) => void;
   onClearCustomer: () => void;
   onNewCustomer: () => void;
@@ -129,14 +136,18 @@ export function TotalPanel({
                     {loyaltyBalance.toLocaleString()} pts
                   </span>
                 </span>
-                <button
-                  type="button"
-                  onClick={onRedeemPoints}
-                  disabled={loyaltyBalance < 100 || disabled}
-                  className="carbon-btn-secondary text-xs font-bold px-3 py-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Redeem
-                </button>
+                {redeemPaused ? (
+                  <span className="text-xs text-carbon-text-muted">Rewards paused</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onRedeemPoints}
+                    disabled={loyaltyBalance < minRedeemPoints || disabled}
+                    className="carbon-btn-secondary text-xs font-bold px-3 py-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Redeem
+                  </button>
+                )}
               </div>
             ) : null}
           </>

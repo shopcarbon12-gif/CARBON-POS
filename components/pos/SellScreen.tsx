@@ -896,22 +896,25 @@ export function SellScreen({
   // When a customer is attached, fetch their balance from
   // /api/pos/loyalty/balance (a thin proxy on POS that calls
   // rewards.shopcarbon.com server-side with the API key). Cleared on
-  // detach. RedeemPointsModal is gated on having a balance + subtotal.
+  // detach. RedeemPointsModal is gated on having a balance + subtotal,
+  // and on the program being live (Rewards admin can pause it — earning
+  // still runs, only redemption is switched off at the till).
   const [loyaltyBalance, setLoyaltyBalance] = useState<number | null>(null);
   const [redeemSettings, setRedeemSettings] = useState<{
+    live: boolean;
     redeemPointsPerDollar: number;
     redeemIncrement: number;
     minRedeemPoints: number;
     maxPctOfOrder: number;
     maxDollarsPerOrder: number;
-  }>({ redeemPointsPerDollar: 10, redeemIncrement: 100, minRedeemPoints: 100, maxPctOfOrder: 50, maxDollarsPerOrder: 30 });
+  }>({ live: true, redeemPointsPerDollar: 10, redeemIncrement: 100, minRedeemPoints: 100, maxPctOfOrder: 50, maxDollarsPerOrder: 30 });
   const [showRedeem, setShowRedeem] = useState(false);
 
   useEffect(() => {
-    if (!customer) {
-      setLoyaltyBalance(null);
-      return;
-    }
+    // Clear first so a failed lookup never leaves the previous customer's
+    // balance on screen.
+    setLoyaltyBalance(null);
+    if (!customer) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -1182,6 +1185,8 @@ export function SellScreen({
           totals={totals}
           customer={customer}
           loyaltyBalance={loyaltyBalance}
+          redeemPaused={!redeemSettings.live}
+              minRedeemPoints={redeemSettings.minRedeemPoints}
           onPickCustomer={setCustomer}
           onClearCustomer={() => setCustomer(null)}
           onNewCustomer={() => {
@@ -1309,6 +1314,8 @@ export function SellScreen({
               totals={totals}
               customer={customer}
               loyaltyBalance={loyaltyBalance}
+              redeemPaused={!redeemSettings.live}
+              minRedeemPoints={redeemSettings.minRedeemPoints}
               onPickCustomer={setCustomer}
               onClearCustomer={() => setCustomer(null)}
               onNewCustomer={() => {
@@ -1351,6 +1358,8 @@ export function SellScreen({
               totals={totals}
               customer={customer}
               loyaltyBalance={loyaltyBalance}
+              redeemPaused={!redeemSettings.live}
+              minRedeemPoints={redeemSettings.minRedeemPoints}
               onPickCustomer={setCustomer}
               onClearCustomer={() => setCustomer(null)}
               onNewCustomer={() => {
@@ -1386,7 +1395,7 @@ export function SellScreen({
               onResendPhonePrompt={resendPhonePrompt}
             />
           </div>
-          {customer && loyaltyBalance !== null ? (
+          {customer && loyaltyBalance !== null && redeemSettings.live ? (
             <RedeemPointsModal
               open={showRedeem}
               customer={{ name: customer.name }}

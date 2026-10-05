@@ -5,9 +5,12 @@ import { loyaltyGet } from "@/lib/loyalty-client";
 /**
  * Fallback redeem settings — only used when the loyalty service is
  * unreachable or its payload has no `rules` block. The live values are
- * owned by Carbon-Rewards (loyalty_settings).
+ * owned by Carbon-Rewards (loyalty_settings). `live` defaults to true
+ * because an unreachable service already returns balance: null, which
+ * keeps the Redeem control hidden on its own.
  */
 const FALLBACK_SETTINGS = {
+  live: true,
   redeemPointsPerDollar: 10,
   redeemIncrement: 100,
   minRedeemPoints: 100,
@@ -70,12 +73,15 @@ export async function GET(req: Request) {
 }
 
 /** Map the service's snake_case rules onto the cashier UI's settings
- *  shape. Any missing / non-numeric field keeps its fallback value. */
+ *  shape. Any missing / non-numeric field keeps its fallback value.
+ *  `live` is only false when Rewards explicitly says the program is
+ *  paused — the till then hides redemption (earning is unaffected). */
 function settingsFromRules(rules: RedeemRules | null | undefined) {
   if (!rules) return FALLBACK_SETTINGS;
   const num = (v: unknown, fallback: number) =>
     typeof v === "number" && Number.isFinite(v) ? v : fallback;
   return {
+    live: rules.live !== false,
     redeemPointsPerDollar: num(rules.redeem_points_per_dollar, FALLBACK_SETTINGS.redeemPointsPerDollar),
     redeemIncrement: num(rules.redeem_increment_points, FALLBACK_SETTINGS.redeemIncrement),
     minRedeemPoints: num(rules.min_redeem_points, FALLBACK_SETTINGS.minRedeemPoints),
