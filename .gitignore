@@ -15,3 +15,6 @@ next-env.d.ts
 
 # Coolify deploy credentials (never commit)
 .env.coolify.local
+
+# Print agent key (lives only on the store PC)
+print-agent/config.json

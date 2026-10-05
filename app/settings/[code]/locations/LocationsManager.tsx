@@ -23,6 +23,9 @@ type PosLocationRow = {
   register_count: number;
   printer_host: string | null;
   printer_port: number | null;
+  print_agent_configured: boolean;
+  print_agent_last_seen_at: string | null;
+  print_agent_info: string | null;
 };
 
 type WmsLocationRow = { id: string; name: string };
@@ -169,6 +172,7 @@ function LocationCard({ loc }: { loc: PosLocationRow }) {
           defaultValue={String(loc.printer_port ?? 9100)}
         />
       </div>
+      <PrintAgentBox loc={loc} />
       {error && <p className="text-[var(--color-pos-danger)] mt-2">{error}</p>}
       {done && <p className="text-green-700 mt-2">Saved ✓</p>}
       <div className="flex justify-end mt-3">
@@ -181,6 +185,96 @@ function LocationCard({ loc }: { loc: PosLocationRow }) {
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Store print relay setup. The key is shown once; it goes into the
+ * print agent's config on a PC in the store (see print-agent/README.md).
+ */
+function PrintAgentBox({ loc }: { loc: PosLocationRow }) {
+  const router = useRouter();
+  const [token, setToken] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const lastSeen = loc.print_agent_last_seen_at
+    ? new Date(loc.print_agent_last_seen_at)
+    : null;
+  const online = lastSeen !== null && Date.now() - lastSeen.getTime() < 45_000;
+
+  async function generate() {
+    if (
+      loc.print_agent_configured &&
+      !confirm("Replace the key? The print agent using the old key stops working until you update it.")
+    ) {
+      return;
+    }
+    setBusy(true);
+    const res = await fetch(`/api/pos/locations/${loc.id}/print-agent`, { method: "POST" });
+    setBusy(false);
+    if (res.ok) {
+      setToken(((await res.json()) as { token: string }).token);
+      router.refresh();
+    }
+  }
+
+  async function revoke() {
+    if (!confirm("Turn off the print agent for this store? Printing goes back to browser → printer.")) return;
+    setBusy(true);
+    await fetch(`/api/pos/locations/${loc.id}/print-agent`, { method: "DELETE" });
+    setBusy(false);
+    setToken(null);
+    router.refresh();
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-[var(--color-pos-border)] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-semibold text-sm">Print agent</p>
+          <p className="text-xs text-[var(--color-pos-muted)]">
+            {!loc.print_agent_configured
+              ? "Not set up — registers print straight to the printer from the browser."
+              : online
+                ? `Online${loc.print_agent_info ? ` · ${loc.print_agent_info}` : ""} — all printing goes through it.`
+                : lastSeen
+                  ? `Offline since ${lastSeen.toLocaleString()} — registers fall back to browser printing.`
+                  : "Key created — waiting for the agent to connect."}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => void generate()}
+            disabled={busy}
+            className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-semibold px-4 text-sm"
+          >
+            {loc.print_agent_configured ? "New key" : "Set up print agent"}
+          </button>
+          {loc.print_agent_configured && (
+            <button
+              type="button"
+              onClick={() => void revoke()}
+              disabled={busy}
+              className="tap rounded-xl bg-white border border-[var(--color-pos-border)] font-semibold px-4 text-sm"
+            >
+              Turn off
+            </button>
+          )}
+        </div>
+      </div>
+      {token && (
+        <div className="mt-3 text-sm">
+          <p className="font-semibold">Agent key (shown once — copy it now):</p>
+          <code className="block mt-1 p-2 rounded-lg bg-[var(--color-pos-bg)] break-all select-all">
+            {token}
+          </code>
+          <p className="text-xs text-[var(--color-pos-muted)] mt-2">
+            Put it in <code>config.json</code> next to the print agent on the
+            store PC as <code>&quot;token&quot;</code>, then start the agent.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 

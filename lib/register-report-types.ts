@@ -77,5 +77,20 @@ export type RegisterReport = {
       by: string;
     }>;
     by_employee: Array<{ name: string; count: number; total: number }>;
+    /** Every sale, void, refund and cash in/out in the shift, oldest first. */
+    activity: ActivityRow[];
   };
+};
+
+export type ActivityRow = {
+  at: string;
+  type: "sale" | "void" | "refund" | "add" | "drop" | "payout";
+  /** Sale number (sales, voids, refunds) — null for cash in/out. */
+  ref: string | null;
+  sale_id: number | null;
+  /** Payment methods, refund method + reason, or cash movement reason. */
+  detail: string;
+  by: string;
+  /** Signed effect: sales/adds positive, refunds/drops/payouts negative. */
+  amount: number;
 };

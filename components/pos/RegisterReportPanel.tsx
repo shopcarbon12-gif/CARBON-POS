@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RegisterReportView } from "@/components/pos/RegisterReportView";
-import { printElement } from "@/lib/epos-print";
+import { PrintError, printElement } from "@/lib/epos-print";
 import type { RegisterReport } from "@/lib/register-report-types";
 
 type Kind = "open" | "eod";
@@ -51,26 +51,16 @@ export function RegisterReportPanel({
     async (kind: Kind) => {
       if (!report) return;
       setPrintError(null);
-      if (!report.printer_host) {
-        setPrintError(
-          "No receipt printer is configured for this location. Set it in Settings → Locations → printer host/port.",
-        );
-        setState((s) => ({ ...s, [kind]: "error" }));
-        return;
-      }
       const main = refs.current[kind]?.querySelector("main");
       if (!main) return;
       setState((s) => ({ ...s, [kind]: "printing" }));
       try {
-        await printElement(report.printer_host, main as HTMLElement);
+        await printElement(main as HTMLElement);
         setState((s) => ({ ...s, [kind]: "done" }));
       } catch (err) {
         console.error("[register-report] print failed", err);
         setPrintError(
-          `Couldn't reach the printer at ${report.printer_host}. If Chrome asks to "access other ` +
-          `devices on your local network", click Allow. Otherwise open ` +
-          `https://${report.printer_host}/ in a new tab, accept the certificate warning, ` +
-          `then try again.`,
+          err instanceof PrintError ? err.message : "Couldn't print the report.",
         );
         setState((s) => ({ ...s, [kind]: "error" }));
       }

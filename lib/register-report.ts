@@ -12,7 +12,7 @@ import { getPool } from "@/lib/db";
  */
 
 export * from "@/lib/register-report-types";
-import type { RegisterReport } from "@/lib/register-report-types";
+import type { ActivityRow, RegisterReport } from "@/lib/register-report-types";
 
 const PAYMENT_LABEL: Record<string, string> = {
   cash: "Cash",
@@ -74,7 +74,7 @@ export async function loadRegisterReport(
         AND s.created_at >= $2::timestamptz
         AND s.created_at < COALESCE($3::timestamptz, now())`;
 
-  const [salesR, itemsR, payR, refundR, cashRefundR, moveR, empR] = await Promise.all([
+  const [salesR, itemsR, payR, refundR, cashRefundR, moveR, empR, saleListR] = await Promise.all([
     pool.query(
       `SELECT COUNT(*) FILTER (WHERE s.status IN ('completed','refunded'))     AS sales_count,
               COUNT(*) FILTER (WHERE s.status = 'voided')                      AS voided_count,
@@ -112,15 +112,19 @@ export async function loadRegisterReport(
     // migration 016 have no session link — fall back to the ones issued
     // at this store during the shift.
     pool.query(
-      `SELECT rf.method, COUNT(*) AS cnt, COALESCE(SUM(rf.amount), 0) AS amount
+      `SELECT rf.method, rf.amount, rf.reason, rf.created_at,
+              s.id AS sale_id, s.sale_number,
+              ${userName("u")} AS by_name
          FROM pos_refunds rf
-         JOIN pos_sales s ON s.id = rf.original_sale_id
+         JOIN pos_sales s          ON s.id = rf.original_sale_id
+         LEFT JOIN pos_employees pe ON pe.id = rf.refunded_by
+         LEFT JOIN users u          ON u.id = pe.user_id
         WHERE rf.register_session_id = $4
            OR (rf.register_session_id IS NULL
                AND s.pos_location_id = $1
                AND rf.created_at >= $2::timestamptz
                AND rf.created_at < COALESCE($3::timestamptz, now()))
-        GROUP BY rf.method`,
+        ORDER BY rf.created_at`,
       [s.pos_location_id, s.opened_at, s.closed_at, s.id],
     ),
     pool.query(
@@ -151,6 +155,20 @@ export async function loadRegisterReport(
         ORDER BY 3 DESC`,
       win,
     ),
+    pool.query(
+      `SELECT s.id, s.sale_number, s.status, s.created_at, s.total_amount,
+              ${userName("u")} AS by_name,
+              (SELECT string_agg(p.method, ',' ORDER BY p.id)
+                 FROM pos_payments p
+                WHERE p.sale_id = s.id AND p.status = 'completed') AS methods
+         FROM pos_sales s
+         LEFT JOIN pos_employees pe ON pe.id = s.cashier_id
+         LEFT JOIN users u          ON u.id = pe.user_id
+        WHERE ${saleWindow}
+          AND s.status IN ('completed','refunded','voided')
+        ORDER BY s.created_at`,
+      win,
+    ),
   ]);
 
   const sales = salesR.rows[0];
@@ -179,12 +197,51 @@ export async function loadRegisterReport(
   const payouts = sumMove("payout");
   // Only refunds tied to this session came out of this drawer.
   const cashRefunds = n(cashRefundR.rows[0]?.amount);
-  const refundRows = refundR.rows.map((r) => ({
-    method: r.method as string,
-    label: REFUND_LABEL[r.method] ?? r.method,
-    count: n(r.cnt),
-    amount: n(r.amount),
+  const refundBy = new Map<string, { count: number; amount: number }>();
+  for (const r of refundR.rows) {
+    const cur = refundBy.get(r.method) ?? { count: 0, amount: 0 };
+    refundBy.set(r.method, { count: cur.count + 1, amount: cur.amount + n(r.amount) });
+  }
+  const refundRows = [...refundBy.entries()].map(([method, v]) => ({
+    method,
+    label: REFUND_LABEL[method] ?? method,
+    count: v.count,
+    amount: Math.round(v.amount * 100) / 100,
   }));
+
+  const activity: ActivityRow[] = [
+    ...saleListR.rows.map((r) => ({
+      at: new Date(r.created_at).toISOString(),
+      type: (r.status === "voided" ? "void" : "sale") as ActivityRow["type"],
+      ref: r.sale_number as string,
+      sale_id: r.id as number,
+      detail: ((r.methods as string | null) ?? "")
+        .split(",")
+        .filter(Boolean)
+        .map((m) => PAYMENT_LABEL[m] ?? m)
+        .join(" + "),
+      by: (r.by_name as string | null) ?? "",
+      amount: r.status === "voided" ? 0 : n(r.total_amount),
+    })),
+    ...refundR.rows.map((r) => ({
+      at: new Date(r.created_at).toISOString(),
+      type: "refund" as const,
+      ref: r.sale_number as string,
+      sale_id: r.sale_id as number,
+      detail: [REFUND_LABEL[r.method] ?? r.method, r.reason].filter(Boolean).join(" · "),
+      by: (r.by_name as string | null) ?? "",
+      amount: -n(r.amount),
+    })),
+    ...movements.map((m) => ({
+      at: m.at,
+      type: m.type as ActivityRow["type"],
+      ref: null,
+      sale_id: null,
+      detail: m.reason ?? "",
+      by: m.by,
+      amount: m.type === "add" ? m.amount : -m.amount,
+    })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
 
   return {
     session: {
@@ -256,6 +313,7 @@ export async function loadRegisterReport(
         count: n(r.cnt),
         total: n(r.total),
       })),
+      activity,
     },
   };
 }

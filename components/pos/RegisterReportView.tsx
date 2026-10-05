@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { formatMoney } from "@/lib/utils";
 import {
   DENOM_VALUES,
+  type ActivityRow,
   type Denoms,
   type RegisterReport,
 } from "@/lib/register-report-types";
@@ -193,17 +194,19 @@ function EodBody({ report }: { report: RegisterReport }) {
         </Section>
       )}
 
-      {e.movements.length > 0 && (
-        <Section title="Cash In / Out">
-          {e.movements.map((m, i) => (
-            <div key={i} style={{ marginBottom: "1mm" }}>
+      {e.activity.length > 0 && (
+        <Section title={`Shift Activity (${e.activity.length})`}>
+          {e.activity.map((a, i) => (
+            <div key={i} style={S.activityRow}>
               <KV
-                k={`${fmtTime(m.at, s.timezone)} ${MOVE_LABEL[m.type] ?? m.type}`}
-                v={m.type === "add" ? formatMoney(m.amount) : neg(m.amount)}
+                k={`${fmtTime(a.at, s.timezone)} ${ACTIVITY_LABEL[a.type]}${
+                  a.ref ? ` ${a.ref}` : ""
+                }`}
+                v={a.type === "void" ? "VOID" : signedMoney(a.amount)}
               />
-              {(m.reason || m.by) && (
+              {(a.detail || a.by) && (
                 <div style={S.small}>
-                  {[m.reason, m.by].filter(Boolean).join(" · ")}
+                  {[a.detail, a.by].filter(Boolean).join(" · ")}
                 </div>
               )}
             </div>
@@ -228,11 +231,18 @@ function EodBody({ report }: { report: RegisterReport }) {
   );
 }
 
-const MOVE_LABEL: Record<string, string> = {
-  add: "Add",
+export const ACTIVITY_LABEL: Record<ActivityRow["type"], string> = {
+  sale: "Sale",
+  void: "Void",
+  refund: "Refund",
+  add: "Cash add",
   drop: "Drop",
   payout: "Payout",
 };
+
+function signedMoney(x: number): string {
+  return x < 0 ? neg(x) : formatMoney(x);
+}
 
 function DenomTable({ denoms }: { denoms: Denoms }) {
   let bills = 0;
@@ -407,4 +417,5 @@ const S: Record<string, CSSProperties> = {
   r: { textAlign: "right", fontVariantNumeric: "tabular-nums" },
   muted: { fontSize: 12, margin: 0 },
   small: { fontSize: 11, lineHeight: 1.2 },
+  activityRow: { marginBottom: "1mm" },
 };

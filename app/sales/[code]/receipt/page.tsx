@@ -13,7 +13,7 @@ import {
   escPosKickDrawer,
   rasterizeElement,
 } from "@/lib/receipt-raster";
-import { sendToEposPrinter } from "@/lib/epos-print";
+import { deliverPrint, PrintError } from "@/lib/epos-print";
 
 type SaleDetail = {
   sale: {
@@ -95,25 +95,7 @@ function ReceiptInner() {
     setPrintState("printing");
     setErrorMsg(null);
 
-    // 1) Ask the server which printer to talk to. We don't use any of
-    //    the ESC/POS payload it builds — the receipt design comes from
-    //    the on-screen DOM, rasterized below.
-    const tgt = await fetch(`/api/pos/sales/${saleId}/escpos`);
-    if (!tgt.ok) {
-      setErrorMsg("Couldn't load the printer target.");
-      setPrintState("error");
-      return;
-    }
-    const target = await tgt.json();
-    if (target.skipped || !target.host) {
-      setErrorMsg(
-        "No receipt printer is configured for this location. Set it in Settings → Locations → printer host/port.",
-      );
-      setPrintState("error");
-      return;
-    }
-
-    // 2) Rasterize each on-screen ReceiptView to the printer's native
+    // Rasterize each on-screen ReceiptView to the printer's native
     //    dot width. The merchant + customer ReceiptView nodes are
     //    rendered (visible, scrollable) above; html-to-image walks the
     //    DOM and produces a pixel-perfect canvas of what you see.
@@ -150,17 +132,14 @@ function ReceiptInner() {
         escPosKickDrawer(),
       );
 
-      await sendToEposPrinter(target.host, bytesToHex(merchantJob));
-      await sendToEposPrinter(target.host, bytesToHex(customerJob));
+      // Store print agent when online, else browser → printer.
+      await deliverPrint([bytesToHex(merchantJob), bytesToHex(customerJob)]);
       setPrintState("done");
     } catch (err) {
-      console.error("[print] rasterize / ePOS-Print POST failed", err);
+      console.error("[print] rasterize / print failed", err);
       setErrorMsg(
-        `Couldn't reach the printer at ${target.host}. If Chrome asks to "access other ` +
-          `devices on your local network", click Allow. Otherwise open ` +
-          `https://${target.host}/ in a new tab, accept the certificate warning, ` +
-          `then try again.`,
-        );
+        err instanceof PrintError ? err.message : "Couldn't print the receipt.",
+      );
       setPrintState("error");
     }
   }

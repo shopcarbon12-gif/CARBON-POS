@@ -50,12 +50,93 @@ export async function sendToEposPrinter(
   });
 }
 
+export class PrintError extends Error {
+  constructor(
+    message: string,
+    /** Printer IP for the "accept the certificate" hint (direct mode). */
+    readonly host: string | null = null,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Deliver one or more cut tickets (raw ESC/POS, hex) to the store's
+ * printer. Goes through the store print agent when it's online (no
+ * certificate / local-network prompts on the device); otherwise falls
+ * back to the browser → printer ePOS-Print path.
+ */
+export async function deliverPrint(jobsHex: string[]): Promise<"agent" | "direct"> {
+  const res = await fetch("/api/pos/print-jobs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jobs: jobsHex }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    mode?: "agent" | "direct";
+    ids?: number[];
+    host?: string | null;
+    message?: string;
+  };
+  if (!res.ok) {
+    throw new PrintError(data.message ?? "Couldn't send the print job.");
+  }
+
+  if (data.mode === "agent" && data.ids) {
+    await waitForAgent(data.ids);
+    return "agent";
+  }
+
+  const host = data.host;
+  if (!host) {
+    throw new PrintError(
+      "No receipt printer is configured for this location. Set it in Settings → Locations → printer host/port.",
+    );
+  }
+  try {
+    for (const hex of jobsHex) await sendToEposPrinter(host, hex);
+  } catch {
+    throw new PrintError(
+      `Couldn't reach the printer at ${host}. If Chrome asks to "access other ` +
+        `devices on your local network", click Allow. Otherwise open ` +
+        `https://${host}/ in a new tab, accept the certificate warning, ` +
+        `then try again.`,
+      host,
+    );
+  }
+  return "direct";
+}
+
+/** Poll job status until the agent has printed them all (or failed). */
+async function waitForAgent(ids: number[]): Promise<void> {
+  const deadline = Date.now() + 25_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 700));
+    const res = await fetch(`/api/pos/print-jobs?ids=${ids.join(",")}`);
+    if (!res.ok) continue;
+    const { jobs } = (await res.json()) as {
+      jobs: Array<{ id: number; status: string; error: string | null }>;
+    };
+    const failed = jobs.find((j) => j.status === "failed" || j.status === "expired");
+    if (failed) {
+      throw new PrintError(
+        `The store print agent couldn't print: ${failed.error ?? failed.status}. Check the printer is on and has paper.`,
+      );
+    }
+    if (jobs.length === ids.length && jobs.every((j) => j.status === "printed")) {
+      return;
+    }
+  }
+  throw new PrintError(
+    "The store print agent didn't confirm the print. Check the printer, then try again.",
+  );
+}
+
 /**
  * Rasterize an on-screen element and print it as one cut ticket.
  * `kickDrawer` pops the cash drawer after the cut.
  */
 export async function printElement(
-  host: string,
   el: HTMLElement,
   opts: { kickDrawer?: boolean } = {},
 ): Promise<void> {
@@ -67,5 +148,5 @@ export async function printElement(
     escPosCut(),
     ...(opts.kickDrawer ? [escPosKickDrawer()] : []),
   );
-  await sendToEposPrinter(host, bytesToHex(job));
+  await deliverPrint([bytesToHex(job)]);
 }

@@ -50,7 +50,15 @@ export default async function LocationsSettingsPage({
       </header>
       <section className="p-6">
         <LocationsManager
-          locations={locs.rows}
+          locations={locs.rows.map(
+            ({ print_agent_token_hash, print_agent_last_seen_at, ...r }) => ({
+              ...r,
+              print_agent_configured: Boolean(print_agent_token_hash),
+              print_agent_last_seen_at: print_agent_last_seen_at
+                ? new Date(print_agent_last_seen_at).toISOString()
+                : null,
+            }),
+          )}
           availableWmsLocations={avail.rows}
         />
       </section>

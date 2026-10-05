@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatMoney } from "@/lib/utils";
+import { ShiftReview } from "@/components/pos/ShiftReview";
 
 /**
  * Bill denominations shown for the cash row. Per spec we omit cents
@@ -30,7 +31,7 @@ export type CloseRow = {
   kind: RowKind;
 };
 
-type Step = "count" | "summary";
+type Step = "review" | "count" | "summary";
 
 export function CloseRegisterClient({
   sessionId,
@@ -42,7 +43,7 @@ export function CloseRegisterClient({
   rows: CloseRow[];
 }) {
   const router = useRouter();
-  const [step, setStep] = useState<Step>("count");
+  const [step, setStep] = useState<Step>("review");
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -132,6 +133,16 @@ export function CloseRegisterClient({
     setError(null);
     await fetch("/api/pos/cash-drawer/kick", { method: "POST" }).catch(
       () => undefined,
+    );
+  }
+
+  if (step === "review") {
+    return (
+      <ShiftReview
+        sessionId={sessionId}
+        code={code}
+        onApprove={() => setStep("count")}
+      />
     );
   }
 
