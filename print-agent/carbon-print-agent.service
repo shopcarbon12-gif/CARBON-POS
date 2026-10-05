@@ -1,0 +1,23 @@
+# systemd unit for the Carbon POS print agent on a Linux box in the store
+# (installed on the warehouse CDM VM, 192.168.1.219).
+#   sudo install -m 644 carbon-print-agent.service /etc/systemd/system/
+#   sudo systemctl enable --now carbon-print-agent
+[Unit]
+Description=Carbon POS print agent (POS server -> receipt printer relay)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shopcarbon
+WorkingDirectory=/opt/carbon-print-agent
+ExecStart=/usr/bin/node /opt/carbon-print-agent/carbon-print-agent.mjs
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

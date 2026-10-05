@@ -1,5 +1,12 @@
 # Carbon Print Agent
 
+> **Orlando is already set up — nothing to do.** The agent runs as the
+> `carbon-print-agent` service on the warehouse CDM VM (`192.168.1.219`,
+> always on, starts at boot, restarts itself). Files in
+> `/opt/carbon-print-agent/`, log in `print-agent.log` there. Check it with
+> `ssh shopcarbon@192.168.1.219 systemctl status carbon-print-agent`.
+> The Windows steps below are only for a store without such a machine.
+
 A small program that runs on one computer inside the store and sends
 every POS print (receipts, register reports, cash drawer kicks) to the
 receipt printer over the store network.
