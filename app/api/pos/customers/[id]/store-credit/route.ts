@@ -173,6 +173,14 @@ export async function POST(
           RETURNING *`,
         [next, cid],
       );
+      // Customer-page history of every credit movement (same table the
+      // refund + checkout paths write to).
+      await client.query(
+        `INSERT INTO pos_store_credit_ledger
+           (customer_id, delta, balance_after, kind, reason, employee_id)
+         VALUES ($1, $2, $3, 'adjustment', $4, $5)`,
+        [cid, effectiveDelta, next, effectiveReason ?? null, cashier.employee_id],
+      );
       try {
         await client.query("SAVEPOINT audit");
         await client.query(

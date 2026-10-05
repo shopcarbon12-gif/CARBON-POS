@@ -22,7 +22,7 @@ export async function GET(
     return NextResponse.json({ error: "bad_id" }, { status: 400 });
   }
   const pool = getPool();
-  const [saleRes, linesRes, paymentsRes] = await Promise.all([
+  const [saleRes, linesRes, paymentsRes, returnedRes] = await Promise.all([
     pool.query(
       `SELECT s.*,
               pl.receipt_header,
@@ -58,6 +58,13 @@ export async function GET(
       `SELECT * FROM pos_payments WHERE sale_id = $1 ORDER BY id`,
       [saleId],
     ),
+    // Lines already returned on earlier refunds (refund screen disables them).
+    pool.query<{ id: number }>(
+      `SELECT DISTINCT unnest(line_ids) AS id
+         FROM pos_refunds
+        WHERE original_sale_id = $1 AND line_ids IS NOT NULL`,
+      [saleId],
+    ),
   ]);
   const sale = saleRes.rows[0];
   if (!sale) {
@@ -81,6 +88,7 @@ export async function GET(
     sale,
     lines: linesRes.rows,
     payments: paymentsRes.rows,
+    returned_line_ids: returnedRes.rows.map((r) => Number(r.id)),
     loyalty: {
       is_member: isMember,
       points: earn.points,

@@ -29,7 +29,7 @@ export default async function CustomerDetailPage({
   const cid = Number(id);
   if (!Number.isFinite(cid)) notFound();
   const pool = getPool();
-  const [c, purchases] = await Promise.all([
+  const [c, purchases, creditLog] = await Promise.all([
     pool.query(
       `SELECT pc.*, u.email AS created_by_email,
               (SELECT l.name FROM pos_locations pl
@@ -53,6 +53,16 @@ export default async function CustomerDetailPage({
         WHERE cp.customer_id = $1
         ORDER BY cp.placed_at DESC NULLS LAST
         LIMIT 100`,
+      [cid],
+    ),
+    // Store credit movements (refunds in, purchases out, adjustments).
+    pool.query(
+      `SELECT g.id, g.delta, g.balance_after, g.kind, g.reason, g.created_at,
+              g.sale_id, g.refund_id
+         FROM pos_store_credit_ledger g
+        WHERE g.customer_id = $1
+        ORDER BY g.created_at DESC
+        LIMIT 15`,
       [cid],
     ),
   ]);
@@ -127,6 +137,58 @@ export default async function CustomerDetailPage({
               customerId={cid}
               isApprover={isStoreCreditApprover(cashier.email)}
             />
+            {creditLog.rows.length > 0 && (
+              <div className="mt-4 border-t border-carbon-border-soft pt-3">
+                <p className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted mb-2">
+                  History
+                </p>
+                <ul className="text-sm divide-y divide-carbon-border-soft">
+                  {creditLog.rows.map((g) => {
+                    const delta = Number(g.delta);
+                    const href = g.refund_id
+                      ? `/sales/${code}/refund/receipt?refund=${g.refund_id}&back=${encodeURIComponent(`/customers/${code}/${cid}`)}`
+                      : g.sale_id
+                        ? `/sales/${code}/${g.sale_id}`
+                        : null;
+                    const label =
+                      g.kind === "refund"
+                        ? "Refund to credit"
+                        : g.kind === "purchase"
+                          ? "Used on purchase"
+                          : g.kind === "exchange"
+                            ? "Exchange"
+                            : "Adjustment";
+                    return (
+                      <li key={g.id} className="py-1.5 flex justify-between gap-3">
+                        <span className="min-w-0">
+                          {href ? (
+                            <Link href={href} className="font-semibold text-carbon-blue hover:underline">
+                              {label}
+                            </Link>
+                          ) : (
+                            <span className="font-semibold">{label}</span>
+                          )}
+                          <span className="block text-xs text-carbon-text-muted truncate">
+                            {new Date(g.created_at).toLocaleDateString("en-US", {
+                              timeZone: "America/New_York",
+                            })}
+                            {g.reason ? ` · ${g.reason}` : ""}
+                          </span>
+                        </span>
+                        <span className="text-right shrink-0 tabular-nums">
+                          <span className={delta < 0 ? "text-carbon-danger font-semibold" : "text-emerald-700 font-semibold"}>
+                            {delta < 0 ? `-${formatMoney(-delta)}` : `+${formatMoney(delta)}`}
+                          </span>
+                          <span className="block text-xs text-carbon-text-muted">
+                            bal {formatMoney(g.balance_after)}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="border border-carbon-border bg-white p-4 min-w-0 lg:col-span-2">

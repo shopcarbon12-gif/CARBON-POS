@@ -5,6 +5,7 @@ import type { PoolClient } from "pg";
 import { withTransaction } from "@/lib/db";
 import { queueLoyaltyCall } from "@/lib/loyalty-client";
 import { currentCashier } from "@/lib/session";
+import { moveStoreCredit } from "@/lib/store-credit-ledger";
 
 const schema = z.object({
   sale_id: z.number().int().positive(),
@@ -23,17 +24,19 @@ const schema = z.object({
  *     refundable (sale total − prior pos_refunds) BEFORE touching Stripe.
  *   - For 'original_card': find the most-recent card payment on the sale,
  *     create a Stripe refund against its PaymentIntent.
- *   - For 'cash' / 'store_credit': no Stripe call; we just record the row.
+ *   - For 'cash': no Stripe call; we just record the row.
+ *   - For 'store_credit': adds the amount to the sale customer's balance
+ *     (pos_store_credit_ledger); rejected when the sale has no customer.
  *   - In all cases, write a pos_refunds row inside the same transaction.
- *     RFID tags on the sale flip back to 'in-stock' only when this refund
- *     takes the sale to fully refunded.
+ *     RFID tags on the returned lines (line_ids) flip back to 'in-stock';
+ *     a line can only be returned once. Refunds without line detail
+ *     restock the whole sale when it becomes fully refunded.
  *   - When the sale has a customer, queue /api/v1/refund in the loyalty
  *     outbox (same transaction) so Carbon-Rewards claws back the earned
  *     points and returns redeemed ones, pro-rated by refund / sale total.
  *   - For partial refunds, you can call this multiple times — each call
- *     records a separate pos_refunds row but the sale stays in
- *     status='completed' (and its inventory stays 'sold') until the full
- *     total is refunded. Phase 2 will add per-line refunds.
+ *     records a separate pos_refunds row; the sale stays 'completed'
+ *     until the full total is refunded.
  */
 export async function POST(req: Request) {
   const cashier = await currentCashier();
@@ -59,12 +62,24 @@ export async function POST(req: Request) {
       // Over-refund guard. FOR UPDATE serialises concurrent refunds on the
       // same sale, so two tills can't both pass the check. It runs before
       // the Stripe call — a rejected refund never reaches the card.
-      const saleRes = await client.query<{ total_amount: string }>(
-        `SELECT total_amount FROM pos_sales WHERE id = $1 FOR UPDATE`,
+      const saleRes = await client.query<{
+        total_amount: string;
+        customer_id: number | null;
+        sale_number: string;
+      }>(
+        `SELECT total_amount, customer_id, sale_number FROM pos_sales WHERE id = $1 FOR UPDATE`,
         [sale_id],
       );
       if (saleRes.rows.length === 0) {
         throw new RefundRejected(404, "sale_not_found", "Sale not found.");
+      }
+      // Store credit lands on the sale's customer — there must be one.
+      if (method === "store_credit" && saleRes.rows[0].customer_id == null) {
+        throw new RefundRejected(
+          422,
+          "store_credit_needs_customer",
+          "This sale has no customer attached, so there's no account to put store credit on. Refund as cash or to the card instead.",
+        );
       }
       const priorRes = await client.query<{ refunded: string }>(
         `SELECT COALESCE(SUM(amount), 0) AS refunded
@@ -85,6 +100,25 @@ export async function POST(req: Request) {
           "exceeds_refundable",
           `Refund of $${amount.toFixed(2)} is more than the $${Math.max(0, remaining).toFixed(2)} still refundable on this sale.`,
         );
+      }
+
+      // A line can only be returned once — reject lines already on an
+      // earlier refund of this sale (before any money moves).
+      if (line_ids && line_ids.length) {
+        const dup = await client.query<{ id: number }>(
+          `SELECT DISTINCT unnest(line_ids) AS id
+             FROM pos_refunds
+            WHERE original_sale_id = $1 AND line_ids IS NOT NULL`,
+          [sale_id],
+        );
+        const already = new Set(dup.rows.map((r) => Number(r.id)));
+        if (line_ids.some((id) => already.has(id))) {
+          throw new RefundRejected(
+            422,
+            "already_returned",
+            "One or more of these items were already returned on an earlier refund.",
+          );
+        }
       }
 
       if (method === "original_card") {
@@ -141,8 +175,19 @@ export async function POST(req: Request) {
         ],
       );
 
-      // Mark sale refunded (and restock its RFID tags) if we just refunded
-      // the full total.
+      if (method === "store_credit" && saleRes.rows[0].customer_id != null) {
+        await moveStoreCredit(client, {
+          customerId: saleRes.rows[0].customer_id,
+          delta: amount,
+          kind: "refund",
+          reason: `Refund of ${saleRes.rows[0].sale_number}`,
+          saleId: sale_id,
+          refundId: ins.rows[0].id,
+          employeeId: cashier.employee_id,
+        });
+      }
+
+      // Mark the sale refunded once the full total has been given back.
       const sumRes = await client.query(
         `SELECT COALESCE(SUM(amount), 0) AS refunded,
                 (SELECT total_amount FROM pos_sales WHERE id = $1) AS total,
@@ -153,51 +198,61 @@ export async function POST(req: Request) {
       );
       const refunded = Number(sumRes.rows[0].refunded);
       const total = Number(sumRes.rows[0].total);
-      if (refunded >= total - 0.005) {
+      const fullyRefunded = refunded >= total - 0.005;
+      if (fullyRefunded) {
         await client.query(
           `UPDATE pos_sales SET status = 'refunded' WHERE id = $1`,
           [sale_id],
         );
+      }
 
-        // Reverse EPCs: the sale is now fully refunded, so every tag
-        // captured on its lines flips back to 'in-stock'. Partial refunds
-        // only carry an amount, not lines, so they can't tell which pieces
-        // came back — they leave inventory alone and staff restock the
-        // returned pieces in WMS until line-level returns exist.
-        // WMS unified the legacy `epcs` table into `items` (see capture).
-        // Mirror capture: flip only rows still 'sold' and log one
-        // STATUS_CHANGE per flipped EPC.
-        const epcRes = await client.query(
-          `SELECT epc FROM pos_sale_lines
-            WHERE sale_id = $1 AND epc IS NOT NULL`,
-          [sale_id],
+      // Restock exactly the returned pieces: every tag on the lines this
+      // refund covers (partial refunds included). Refunds without line
+      // detail (older screens) restock the whole sale once it's fully
+      // refunded. Flip only tags still 'sold' and log one STATUS_CHANGE
+      // per flipped EPC, mirroring capture.
+      const returnedLines: number[] = ins.rows[0].line_ids ?? [];
+      const epcRes =
+        returnedLines.length > 0
+          ? await client.query(
+              `SELECT DISTINCT unnest(COALESCE(epcs, ARRAY[epc])) AS epc
+                 FROM pos_sale_lines
+                WHERE sale_id = $1 AND id = ANY($2::int[])`,
+              [sale_id, returnedLines],
+            )
+          : fullyRefunded
+            ? await client.query(
+                `SELECT DISTINCT unnest(COALESCE(epcs, ARRAY[epc])) AS epc
+                   FROM pos_sale_lines
+                  WHERE sale_id = $1`,
+                [sale_id],
+              )
+            : { rows: [] as Array<{ epc: string | null }> };
+      const epcs = epcRes.rows.map((r) => r.epc).filter((e): e is string => !!e);
+      if (epcs.length > 0) {
+        const flipped = await client.query<{ epc: string; old_status: string }>(
+          `WITH prev AS (
+             SELECT epc, status AS old_status
+               FROM items
+              WHERE epc = ANY($1::text[])
+           )
+           UPDATE items i
+              SET status = 'in-stock'
+             FROM prev p
+            WHERE i.epc = p.epc
+              AND i.status = 'sold'
+           RETURNING i.epc, p.old_status`,
+          [epcs],
         );
-        const epcs = epcRes.rows.map((r) => r.epc as string);
-        if (epcs.length > 0) {
-          const flipped = await client.query<{ epc: string; old_status: string }>(
-            `WITH prev AS (
-               SELECT epc, status AS old_status
-                 FROM items
-                WHERE epc = ANY($1::text[])
-             )
-             UPDATE items i
-                SET status = 'in-stock'
-               FROM prev p
-              WHERE i.epc = p.epc
-                AND i.status = 'sold'
-             RETURNING i.epc, p.old_status`,
-            [epcs],
+        for (const r of flipped.rows) {
+          await client.query(
+            `INSERT INTO inventory_audit_logs
+               (tenant_id, log_type, entity_type, entity_reference,
+                old_value, new_value, reason, user_id, user_uuid)
+             VALUES ($1::uuid, 'STATUS_CHANGE', 'EPC', $2, $3, 'in-stock',
+                     'pos_refund', NULL, $4::uuid)`,
+            [cashier.tid, r.epc, r.old_status, cashier.user_id],
           );
-          for (const r of flipped.rows) {
-            await client.query(
-              `INSERT INTO inventory_audit_logs
-                 (tenant_id, log_type, entity_type, entity_reference,
-                  old_value, new_value, reason, user_id, user_uuid)
-               VALUES ($1::uuid, 'STATUS_CHANGE', 'EPC', $2, $3, 'in-stock',
-                       'pos_refund', NULL, $4::uuid)`,
-              [cashier.tid, r.epc, r.old_status, cashier.user_id],
-            );
-          }
         }
       }
 

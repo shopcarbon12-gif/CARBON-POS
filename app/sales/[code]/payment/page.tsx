@@ -46,6 +46,17 @@ function PaymentInner() {
   const [cashGiven, setCashGiven] = useState("");
 
   const [splitOn, setSplitOn] = useState(false);
+  // Attached customer's store credit (null = no customer / not loaded).
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  useEffect(() => {
+    if (!cart?.customerId) return;
+    fetch(`/api/pos/customers/${cart.customerId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.customer) setCreditBalance(Number(d.customer.store_credit_balance ?? 0));
+      })
+      .catch(() => undefined);
+  }, [cart?.customerId]);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -225,9 +236,12 @@ function PaymentInner() {
         <OtherSection
           total={total}
           saving={saving}
+          hasCustomer={!!cart?.customerId}
+          creditBalance={creditBalance}
           onStoreCredit={() =>
             finishSale([{ method: "store_credit", amount: total }])
           }
+          onSplitCredit={() => setSplitOn(true)}
           onAccount={(reference) =>
             finishSale([
               { method: "account", amount: total, reference: reference || null },
@@ -249,6 +263,7 @@ function PaymentInner() {
         <div className="mt-2">
           <SplitBuilder
             total={total}
+            creditBalance={cart?.customerId ? creditBalance : 0}
             readerId={readerId}
             saving={saving}
             onFinish={(tenders) => finishSale(tenders)}
@@ -330,13 +345,19 @@ function MethodTab({
 function OtherSection({
   total,
   saving,
+  hasCustomer,
+  creditBalance,
   onStoreCredit,
+  onSplitCredit,
   onAccount,
   onGiftCard,
 }: {
   total: number;
   saving: boolean;
+  hasCustomer: boolean;
+  creditBalance: number | null;
   onStoreCredit: () => void;
+  onSplitCredit: () => void;
   onAccount: (reference: string) => void;
   onGiftCard: (cardNumber: string) => void;
 }) {
@@ -347,17 +368,48 @@ function OtherSection({
       {/* Store Credit */}
       <div>
         <p className="font-bold text-carbon-text mb-1">Store Credit</p>
-        <p className="text-sm text-carbon-text-muted mb-3">
-          Applies the customer&apos;s store credit balance to this sale.
-        </p>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={onStoreCredit}
-          className="carbon-btn-secondary tap w-full font-semibold disabled:opacity-50"
-        >
-          Use store credit ({formatMoney(total)})
-        </button>
+        {!hasCustomer ? (
+          <p className="text-sm text-carbon-text-muted">
+            Attach the customer to the sale (back on the cart) to use their
+            store credit.
+          </p>
+        ) : creditBalance === null ? (
+          <p className="text-sm text-carbon-text-muted">Loading balance…</p>
+        ) : creditBalance + 0.005 >= total ? (
+          <>
+            <p className="text-sm text-carbon-text-muted mb-3">
+              Balance {formatMoney(creditBalance)} — leaves{" "}
+              {formatMoney(creditBalance - total)} after this sale.
+            </p>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onStoreCredit}
+              className="carbon-btn-secondary tap w-full font-semibold disabled:opacity-50"
+            >
+              Pay {formatMoney(total)} with store credit
+            </button>
+          </>
+        ) : creditBalance > 0 ? (
+          <>
+            <p className="text-sm text-carbon-text-muted mb-3">
+              Balance {formatMoney(creditBalance)} doesn&apos;t cover{" "}
+              {formatMoney(total)}. Use it for part and pay the rest another way.
+            </p>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onSplitCredit}
+              className="carbon-btn-secondary tap w-full font-semibold disabled:opacity-50"
+            >
+              Split: {formatMoney(creditBalance)} credit + the rest
+            </button>
+          </>
+        ) : (
+          <p className="text-sm text-carbon-text-muted">
+            This customer has no store credit.
+          </p>
+        )}
       </div>
 
       {/* Account */}

@@ -17,6 +17,7 @@ type SaleDetail = {
   sale: SaleSummary & {
     location_name: string;
     register_name: string;
+    customer_id?: number | null;
   };
   lines: Array<{
     id: number;
@@ -29,6 +30,7 @@ type SaleDetail = {
     method: "card" | "cash" | "check" | "store_credit";
     amount: string;
   }>;
+  returned_line_ids?: number[];
 };
 
 export default function RefundPage() {
@@ -67,14 +69,17 @@ export default function RefundPage() {
     if (!res.ok) return;
     const data: SaleDetail = await res.json();
     setPicked(data);
+    const returned = new Set(data.returned_line_ids ?? []);
     setPickedLineIds(
-      Object.fromEntries(data.lines.map((l) => [l.id, true])),
+      Object.fromEntries(data.lines.map((l) => [l.id, !returned.has(l.id)])),
     );
   }
 
   const refundAmount = picked
     ? picked.lines
-        .filter((l) => pickedLineIds[l.id])
+        .filter(
+          (l) => pickedLineIds[l.id] && !(picked.returned_line_ids ?? []).includes(l.id),
+        )
         .reduce((s, l) => s + Number(l.line_total), 0)
     : 0;
 
@@ -184,14 +189,19 @@ export default function RefundPage() {
             {picked.sale.sale_number} · {formatMoney(picked.sale.total_amount)}
           </p>
           <ul className="border-t border-[var(--color-pos-border)] pt-2">
-            {picked.lines.map((l) => (
+            {picked.lines.map((l) => {
+              const returned = (picked.returned_line_ids ?? []).includes(l.id);
+              return (
               <li
                 key={l.id}
-                className="flex items-center gap-3 py-2 border-b border-[var(--color-pos-border)] last:border-b-0"
+                className={`flex items-center gap-3 py-2 border-b border-[var(--color-pos-border)] last:border-b-0 ${
+                  returned ? "opacity-50" : ""
+                }`}
               >
                 <input
                   type="checkbox"
-                  checked={!!pickedLineIds[l.id]}
+                  disabled={returned}
+                  checked={!returned && !!pickedLineIds[l.id]}
                   onChange={(e) =>
                     setPickedLineIds((m) => ({
                       ...m,
@@ -204,13 +214,15 @@ export default function RefundPage() {
                   <p>{l.description}</p>
                   <p className="text-xs text-[var(--color-pos-muted)]">
                     Qty {l.quantity}
+                    {returned ? " · Already returned" : ""}
                   </p>
                 </div>
-                <span className="font-semibold">
+                <span className={`font-semibold ${returned ? "line-through" : ""}`}>
                   {formatMoney(l.line_total)}
                 </span>
               </li>
-            ))}
+              );
+            })}
           </ul>
           <div className="mt-4">
             <label className="text-sm font-medium">Refund as</label>
@@ -229,8 +241,19 @@ export default function RefundPage() {
                 active={method === "store_credit"}
                 onClick={() => setMethod("store_credit")}
                 label="Store credit"
+                disabled={picked.sale.customer_id == null}
               />
             </div>
+            {picked.sale.customer_id == null && (
+              <p className="text-xs text-[var(--color-pos-muted)] mt-1">
+                Store credit needs a customer on the sale — this one has none.
+              </p>
+            )}
+            {method === "store_credit" && picked.sale.customer_id != null && (
+              <p className="text-xs text-[var(--color-pos-muted)] mt-1">
+                Adds {formatMoney(refundAmount)} to the customer&apos;s store credit balance.
+              </p>
+            )}
           </div>
           <label className="block mt-3 text-sm font-medium">
             Reason (optional)
@@ -270,15 +293,18 @@ function MethodTab({
   active,
   onClick,
   label,
+  disabled,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`tap rounded-xl font-medium ${
+      disabled={disabled}
+      className={`tap rounded-xl font-medium disabled:opacity-40 ${
         active
           ? "bg-[var(--color-pos-ink)] text-white"
           : "bg-white border border-[var(--color-pos-border)]"

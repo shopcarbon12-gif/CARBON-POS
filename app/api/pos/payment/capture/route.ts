@@ -4,6 +4,7 @@ import { stripe } from "@/lib/stripe-terminal";
 import { withTransaction, getPool } from "@/lib/db";
 import { queueLoyaltyCall } from "@/lib/loyalty-client";
 import { currentCashier } from "@/lib/session";
+import { moveStoreCredit, StoreCreditError } from "@/lib/store-credit-ledger";
 import { formatSaleNumber } from "@/lib/utils";
 
 const lineSchema = z.object({
@@ -115,6 +116,40 @@ export async function POST(req: Request) {
     );
   }
   const data = parsed.data;
+
+  // Store credit is drawn from the attached customer's balance. Check it
+  // before any card is captured so a short balance never charges a card
+  // (the locked deduction inside the transaction is the final guard).
+  const storeCreditUsed = Math.round(
+    data.payments
+      .filter((p) => p.method === "store_credit")
+      .reduce((s, p) => s + p.amount, 0) * 100,
+  ) / 100;
+  if (storeCreditUsed > 0) {
+    if (!data.customer_id) {
+      return NextResponse.json(
+        {
+          error: "store_credit_needs_customer",
+          message: "Attach the customer to the sale to pay with their store credit.",
+        },
+        { status: 422 },
+      );
+    }
+    const bal = await getPool().query<{ store_credit_balance: string }>(
+      `SELECT store_credit_balance FROM pos_customers WHERE id = $1`,
+      [data.customer_id],
+    );
+    const have = Number(bal.rows[0]?.store_credit_balance ?? 0);
+    if (have + 0.005 < storeCreditUsed) {
+      return NextResponse.json(
+        {
+          error: "insufficient_store_credit",
+          message: `The customer only has $${have.toFixed(2)} in store credit.`,
+        },
+        { status: 422 },
+      );
+    }
+  }
 
   const cardPayments = data.payments.filter((p) => p.method === "card");
   const capturedIntents: string[] = [];
@@ -241,8 +276,8 @@ export async function POST(req: Request) {
           `INSERT INTO pos_sale_lines
              (sale_id, sku_id, epc, description, quantity, unit_price,
               discount_amount, tax_rate, tax_amount, line_total, line_type,
-              attributed_employee_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+              attributed_employee_id, epcs)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           [
             sale.id,
             l.sku_id,
@@ -256,6 +291,9 @@ export async function POST(req: Request) {
             lineTotal,
             l.line_type,
             l.attributed_employee_id ?? saleAttributedEmployeeId,
+            // Every tag on the row (RFID rows can hold several) so a
+            // refund of this line restocks all of them.
+            lineEpcs(l),
           ],
         );
       }
@@ -303,6 +341,17 @@ export async function POST(req: Request) {
             reference,
           ],
         );
+      }
+
+      if (storeCreditUsed > 0 && data.customer_id) {
+        await moveStoreCredit(client, {
+          customerId: data.customer_id,
+          delta: -storeCreditUsed,
+          kind: "purchase",
+          reason: `Purchase ${sale.sale_number}`,
+          saleId: sale.id,
+          employeeId: cashier.employee_id,
+        });
       }
 
       // Mark every scanned EPC as sold in the WMS table. Cart rows
@@ -424,6 +473,12 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("[capture] db transaction failed", err);
     await refundAll(capturedIntents);
+    if (err instanceof StoreCreditError) {
+      return NextResponse.json(
+        { error: "insufficient_store_credit", message: `${err.message} The card was not charged.` },
+        { status: 422 },
+      );
+    }
     const msg =
       (err as Error).message === "register_not_open"
         ? "Your register isn't open. Reopen it from the Register screen."
@@ -444,3 +499,11 @@ async function refundAll(intentIds: string[]) {
 
 // Force-import getPool so unused-import lint doesn't flag the helper file.
 void getPool;
+
+/** All EPCs on a cart line, uppercased and de-duplicated, or null. */
+function lineEpcs(l: { epc?: string | null; epcs?: string[] }): string[] | null {
+  const all = [...(l.epcs ?? []), ...(l.epc ? [l.epc] : [])]
+    .map((e) => e.trim().toUpperCase())
+    .filter(Boolean);
+  return all.length ? [...new Set(all)] : null;
+}

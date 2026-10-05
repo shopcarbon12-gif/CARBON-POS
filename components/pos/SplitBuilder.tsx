@@ -40,11 +40,14 @@ type AddMode =
  */
 export function SplitBuilder({
   total,
+  creditBalance = null,
   readerId,
   saving,
   onFinish,
 }: {
   total: number;
+  /** Attached customer's store credit; 0 = no customer/credit, null = unknown. */
+  creditBalance?: number | null;
   readerId: string | null;
   saving: boolean;
   onFinish: (tenders: Tender[]) => void;
@@ -141,10 +144,16 @@ export function SplitBuilder({
               onClick={() => setAddMode("gift_card")}
             />
             <AddButton label="Account" onClick={() => setAddMode("account")} />
-            <AddButton
-              label="Store Credit"
-              onClick={() => setAddMode("store_credit")}
-            />
+            {creditBalance !== 0 && (
+              <AddButton
+                label={
+                  creditBalance
+                    ? `Store Credit (${formatMoney(creditBalance)})`
+                    : "Store Credit"
+                }
+                onClick={() => setAddMode("store_credit")}
+              />
+            )}
             <AddButton label="Check" onClick={() => setAddMode("check")} />
           </div>
           <button
@@ -195,7 +204,22 @@ export function SplitBuilder({
       )}
       {addMode === "store_credit" && (
         <AddStoreCredit
-          remaining={remaining}
+          remaining={
+            creditBalance == null
+              ? remaining
+              : round2(
+                  Math.max(
+                    0,
+                    Math.min(
+                      remaining,
+                      creditBalance -
+                        tenders
+                          .filter((t) => t.method === "store_credit")
+                          .reduce((s, t) => s + t.amount, 0),
+                    ),
+                  ),
+                )
+          }
           onAdd={addTender}
           onCancel={() => setAddMode(null)}
         />
