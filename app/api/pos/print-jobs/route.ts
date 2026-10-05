@@ -11,9 +11,11 @@ const postSchema = z.object({
 
 /**
  * POST /api/pos/print-jobs
- * Queue print jobs for the store's print agent. When the store has no
- * agent online, returns { mode: "direct", host } and the browser prints
- * straight to the printer (ePOS-Print) as before.
+ * Queue print jobs for the store's print agent (the only print path —
+ * browsers never talk to the printer directly, because doing so over the
+ * printer's self-signed HTTPS made Chrome flag the whole POS site "Not
+ * secure"). If the agent is offline the jobs wait and print when it
+ * reconnects (they expire after JOB_EXPIRE_SECONDS).
  */
 export async function POST(req: Request) {
   const cashier = await currentCashier();
@@ -27,9 +29,6 @@ export async function POST(req: Request) {
   const target = await locationPrintTarget(cashier.lid);
   if (!target) {
     return NextResponse.json({ error: "no_location" }, { status: 404 });
-  }
-  if (!target.agent_online) {
-    return NextResponse.json({ mode: "direct", host: target.printer_host });
   }
   if (!target.printer_host) {
     return NextResponse.json(
@@ -46,7 +45,7 @@ export async function POST(req: Request) {
     parsed.data.jobs.map((h) => Buffer.from(h, "hex")),
     cashier.user_id,
   );
-  return NextResponse.json({ mode: "agent", ids });
+  return NextResponse.json({ mode: "agent", ids, agent_online: target.agent_online });
 }
 
 /**
