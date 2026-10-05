@@ -174,7 +174,11 @@ search & RFID scan, cart math + tax, full Stripe Terminal endpoints, sale
 capture transaction with EPC update, receipt print + email, refund flow,
 admin dashboard, end-of-day report, health check.
 
-**Phase 2 (todo):** color/size matrix picker, hold/park multiple sales,
-manager-PIN gates, customer CRUD UI in /admin, discount-rules engine,
-clock in/out + hours report, store-credit issuance/redemption, offline
-write queue, full reports + CSV export.
+**Phase 2 (shipped Oct 2026):** exchanges (credit from returned items,
+pay or give back the difference), per-item refunds with exact restock
+and refund receipts, real store credit (balance + history), manager PIN
+for discounts over 20% (enforced at checkout) + automatic promotions,
+hold/park sales, color/size picker, clock in/out + Employee Hours report,
+Lookup product photos, offline cash sales (sync on reconnect), register
+Open / End of Day reports, store print relay (`print-agent/`), PDF email
+receipts, full reports with CSV.
