@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { formatMoney } from "@/lib/utils";
 import { ACTIVITY_LABEL } from "@/components/pos/RegisterReportView";
 import type { RegisterReport } from "@/lib/register-report-types";
+import { readQueue } from "@/lib/offline-queue";
 
 /**
  * First step of Close Register: everything that happened on this shift
@@ -23,6 +24,8 @@ export function ShiftReview({
 }) {
   const [report, setReport] = useState<RegisterReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [unsynced, setUnsynced] = useState(0);
+  useEffect(() => setUnsynced(readQueue().length), []);
 
   useEffect(() => {
     fetch(`/api/pos/sessions/${sessionId}/report`)
@@ -50,6 +53,15 @@ export function ShiftReview({
 
   return (
     <>
+      {unsynced > 0 && (
+        <div className="border-2 border-red-600 bg-red-50 p-3 mb-4 text-sm text-red-800">
+          <span className="font-bold">
+            {unsynced} offline cash sale{unsynced === 1 ? " hasn't" : "s haven't"} synced yet.
+          </span>{" "}
+          They aren&apos;t in these totals or the expected cash. Get this register
+          back online and let them sync before closing.
+        </div>
+      )}
       <p className="text-sm text-carbon-text-muted mb-4">
         Opened{" "}
         <span className="font-semibold text-carbon-text">

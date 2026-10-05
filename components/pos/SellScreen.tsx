@@ -7,6 +7,9 @@ import { CartPanel } from "./CartPanel";
 import { TotalPanel, type PickedCustomer } from "./TotalPanel";
 import { RedeemPointsModal } from "./RedeemPointsModal";
 import { RFIDScanModal, type RfidResolvedItem } from "./RFIDScanModal";
+import { CashKeypad } from "./CashKeypad";
+import { captureLines } from "@/lib/capture-payload";
+import { enqueueOfflineSale, serverReachable } from "@/lib/offline-queue";
 import { calculateTotals } from "@/lib/tax";
 import { markdownFraction, needsManagerApproval } from "@/lib/discount-policy";
 import { capitalizeName } from "@/lib/utils";
@@ -73,6 +76,43 @@ export function SellScreen({
     }
     setExchange(null);
   }
+  // Offline cash sales: register id cached for when the server is down.
+  const [offline, setOffline] = useState(false);
+  const [offlineCash, setOfflineCash] = useState(false);
+  const [offlineNotice, setOfflineNotice] = useState<string | null>(null);
+  const [registerId, setRegisterId] = useState<number | null>(null);
+  useEffect(() => {
+    const key = `pos:register:${code}`;
+    try {
+      const cached = Number(localStorage.getItem(key));
+      if (cached) setRegisterId(cached);
+    } catch {
+      /* ignore */
+    }
+    fetch("/api/pos/sessions?current=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const id = d?.session?.register_id;
+        if (id) {
+          setRegisterId(id);
+          try {
+            localStorage.setItem(key, String(id));
+          } catch {
+            /* ignore */
+          }
+        }
+      })
+      .catch(() => undefined);
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    setOffline(navigator.onLine === false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, [code]);
   // Hold / park sale.
   const [showHold, setShowHold] = useState(false);
   const [showHeld, setShowHeld] = useState(false);
@@ -1299,8 +1339,29 @@ export function SellScreen({
     return null;
   }
 
-  function startCheckout(method: "card" | "cash" | "other") {
+  async function startCheckout(method: "card" | "cash" | "other") {
     if (lines.length === 0) return;
+    setOfflineNotice(null);
+    // No connection to the server: cash can still be taken (queued on this
+    // register and synced later); card and other tenders can't.
+    if (!(await serverReachable())) {
+      setOffline(true);
+      if (method !== "cash") {
+        setOfflineNotice("No internet — card and other payments need a connection. Take cash, or wait for the internet to come back.");
+        return;
+      }
+      if (exchange || lines.some((l) => l.line_type === "loyalty_redemption")) {
+        setOfflineNotice("No internet — exchanges and points redemptions need a connection. Remove them or wait.");
+        return;
+      }
+      if (!registerId) {
+        setOfflineNotice("No internet, and this register's id isn't known on this device yet — can't take an offline sale.");
+        return;
+      }
+      setOfflineCash(true);
+      return;
+    }
+    setOffline(false);
     const cart = encodeURIComponent(
       JSON.stringify({
         lines,
@@ -1315,8 +1376,64 @@ export function SellScreen({
     router.push(`/sales/${code}/payment?method=${method}&cart=${cart}`);
   }
 
+  /** Record the cart as an offline cash sale and start a fresh one. */
+  function saveOfflineCashSale(cashGiven: number) {
+    const total = totals.total;
+    const uuid = crypto.randomUUID();
+    enqueueOfflineSale({
+      client_uuid: uuid,
+      total,
+      change: Math.round(Math.max(0, cashGiven - total) * 100) / 100,
+      created_at: new Date().toISOString(),
+      attempts: 0,
+      error: null,
+      payload: {
+        register_id: registerId,
+        customer_id: customer?.id ?? null,
+        attributed_employee_id: saleAttributedEmployeeId,
+        lines: captureLines(lines),
+        payments: [{ method: "cash", amount: total, cash_given: cashGiven }],
+        client_uuid: uuid,
+        offline_recorded_at: new Date().toISOString(),
+      },
+    });
+    setLines([]);
+    setCustomer(null);
+    setOfflineCash(false);
+    const change = Math.max(0, cashGiven - total);
+    setOfflineNotice(
+      `Saved offline${change > 0 ? ` — give ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(change)} change` : ""}. It will sync and appear in Orders when the internet is back (print the receipt from there).`,
+    );
+  }
+
   return (
     <div className="flex-1 overflow-y-auto p-3 sm:p-6 flex flex-col space-y-4 sm:space-y-6">
+      {offline && (
+        <div className="border-2 border-amber-500 bg-amber-50 p-3 flex items-center gap-3">
+          <span className="material-symbols-outlined text-amber-700" aria-hidden>cloud_off</span>
+          <p className="text-sm text-amber-900">
+            <span className="font-bold">Offline.</span> You can still take cash —
+            sales are saved on this register and sync automatically when the
+            internet is back. Card payments need a connection. Don&apos;t refresh or
+            clear this browser.
+          </p>
+        </div>
+      )}
+      {offlineNotice && (
+        <div className="border border-carbon-border bg-white p-3 flex items-start gap-3">
+          <p className="text-sm flex-1">{offlineNotice}</p>
+          <button onClick={() => setOfflineNotice(null)} className="text-carbon-text-muted px-2" aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
+      {offlineCash && (
+        <OfflineCashModal
+          total={totals.total}
+          onCancel={() => setOfflineCash(false)}
+          onConfirm={saveOfflineCashSale}
+        />
+      )}
       {exchange && (
         <div className="border-2 border-emerald-600 bg-emerald-50 p-3 sm:p-4 flex flex-wrap items-center gap-3">
           <span className="material-symbols-outlined text-emerald-700" aria-hidden>
@@ -1837,6 +1954,44 @@ type DiscountModalPayload =
   | { kind: "set-price"; value: number };
 
 
+
+
+function OfflineCashModal({
+  total,
+  onCancel,
+  onConfirm,
+}: {
+  total: number;
+  onCancel: () => void;
+  onConfirm: (cashGiven: number) => void;
+}) {
+  const [given, setGiven] = useState("");
+  const ok = Number(given || 0) + 0.005 >= total;
+  return (
+    <BasicModal title="Offline cash sale" onCancel={onCancel}>
+      <p className="text-sm text-amber-800 mt-1">
+        No internet. This sale is saved on this register and syncs when the
+        connection is back. The receipt can be printed from Orders after it
+        syncs.
+      </p>
+      <div className="mt-3">
+        <CashKeypad value={given} onChange={setGiven} total={total} />
+      </div>
+      <div className="mt-4 flex gap-2">
+        <button onClick={onCancel} className="tap border border-[var(--color-pos-border)] flex-1 font-medium">
+          Cancel
+        </button>
+        <button
+          disabled={!ok}
+          onClick={() => onConfirm(Math.round(Number(given) * 100) / 100)}
+          className="tap carbon-btn-primary flex-1 font-semibold disabled:opacity-50"
+        >
+          Save cash sale
+        </button>
+      </div>
+    </BasicModal>
+  );
+}
 
 function HoldSaleModal({
   customerName,

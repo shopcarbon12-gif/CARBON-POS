@@ -97,6 +97,11 @@ const schema = z.object({
         giftCardPayment,
       ]),
     ),
+  /** Client-generated id — a retried send returns the existing sale
+   *  instead of creating a duplicate (offline queue, flaky network). */
+  client_uuid: z.string().uuid().optional(),
+  /** When the sale was actually rung up while the register was offline. */
+  offline_recorded_at: z.string().datetime().optional(),
   /** Exchange: items coming back from an earlier sale pay for this one. */
   exchange: z
     .object({
@@ -139,6 +144,35 @@ export async function POST(req: Request) {
     );
   }
   const data = parsed.data;
+
+  // Idempotent retry: this exact sale was already saved.
+  if (data.client_uuid) {
+    const dup = await getPool().query(`SELECT * FROM pos_sales WHERE client_uuid = $1`, [
+      data.client_uuid,
+    ]);
+    if (dup.rows[0]) return NextResponse.json({ sale: dup.rows[0], duplicate: true });
+  }
+  // Offline sales keep the time they were rung up (bounded: not in the
+  // future, not older than 7 days). Only cash can be taken offline.
+  let offlineAt: Date | null = null;
+  if (data.offline_recorded_at) {
+    const t = new Date(data.offline_recorded_at);
+    const age = Date.now() - t.getTime();
+    if (age < -5 * 60_000 || age > 7 * 24 * 3600_000) {
+      return NextResponse.json(
+        { error: "offline_too_old", message: "This offline sale is too old to sync automatically. Enter it by hand." },
+        { status: 422 },
+      );
+    }
+    if (data.payments.some((p) => p.method !== "cash") || data.exchange) {
+      return NextResponse.json(
+        { error: "offline_cash_only", message: "Only cash sales can be recorded offline." },
+        { status: 422 },
+      );
+    }
+    offlineAt = t;
+  }
+
   if (data.payments.length === 0 && !data.exchange) {
     return NextResponse.json(
       { error: "invalid_request", message: "No payment was provided." },
@@ -337,12 +371,14 @@ export async function POST(req: Request) {
            FROM pos_registers r
            JOIN pos_locations pl ON pl.id = r.pos_location_id
           WHERE r.id = $1
-            AND EXISTS (
+            AND ($2::boolean OR EXISTS (
               SELECT 1 FROM pos_register_sessions s
                WHERE s.register_id = r.id AND s.status = 'open'
-            )
+            ))
           LIMIT 1`,
-        [data.register_id],
+        // An offline sale was rung up while the register was open; it may
+        // have been closed since, so don't require an open session now.
+        [data.register_id, offlineAt !== null],
       );
       const regRow = reg.rows[0];
       if (!regRow) throw new Error("register_not_open");
@@ -369,9 +405,12 @@ export async function POST(req: Request) {
         `INSERT INTO pos_sales
            (sale_number, register_id, pos_location_id, cashier_id, customer_id,
             subtotal, discount_amount, tax_amount, total_amount,
-            status, completed_at, notes, attributed_employee_id)
+            status, created_at, completed_at, notes, attributed_employee_id,
+            client_uuid, recorded_offline)
          VALUES
-           ($1,$2,$3,$4,$5,$6,$7,$8,$9,'completed', now(), $10, $11)
+           ($1,$2,$3,$4,$5,$6,$7,$8,$9,'completed',
+            COALESCE($12::timestamptz, now()), COALESCE($12::timestamptz, now()),
+            $10, $11, $13, $12::timestamptz IS NOT NULL)
          RETURNING *`,
         [
           saleNumber,
@@ -385,6 +424,8 @@ export async function POST(req: Request) {
           total,
           data.notes ?? null,
           saleAttributedEmployeeId,
+          offlineAt ? offlineAt.toISOString() : null,
+          data.client_uuid ?? null,
         ],
       );
       const sale = saleRow.rows[0];
@@ -566,7 +607,7 @@ export async function POST(req: Request) {
             sale_id: sale.id,
             location_id: null, // wms_location_id is on locations, not pos_locations
             eligible_amount: eligibleAmount,
-            occurred_at: new Date().toISOString(),
+            occurred_at: (offlineAt ?? new Date()).toISOString(),
           });
         }
         // Detect redemption lines and queue separately. line_type
@@ -618,6 +659,13 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ sale });
   } catch (err) {
+    // Two sends of the same offline sale raced: return the one that won.
+    if ((err as { code?: string }).code === "23505" && data.client_uuid) {
+      const won = await getPool().query(`SELECT * FROM pos_sales WHERE client_uuid = $1`, [
+        data.client_uuid,
+      ]);
+      if (won.rows[0]) return NextResponse.json({ sale: won.rows[0], duplicate: true });
+    }
     console.error("[capture] db transaction failed", err);
     await refundAll(capturedIntents);
     if (err instanceof ExchangeError) {

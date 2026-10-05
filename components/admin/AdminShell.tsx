@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import { ClockButton } from "./ClockButton";
+import { OfflineSync } from "./OfflineSync";
 
 type Tab =
   | "dashboard"
@@ -257,6 +258,7 @@ export function AdminShell({
           {rightSlot ? (
             <div className="hidden md:flex items-center">{rightSlot}</div>
           ) : null}
+          <OfflineSync />
           <ClockButton />
           <LocationUserMenu
             code={code}
