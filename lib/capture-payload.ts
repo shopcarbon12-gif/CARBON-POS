@@ -16,5 +16,6 @@ export function captureLines(lines: CartLine[]) {
     attributed_employee_id: l.attributed_employee_id ?? null,
     promo_rule_id: l.discount_source === "promo" ? (l.promo_rule_id ?? null) : null,
     discount_approval: l.discount_approval ?? null,
+    override_token: l.override_token ?? null,
   }));
 }

@@ -8,6 +8,7 @@ import { moveStoreCredit, StoreCreditError } from "@/lib/store-credit-ledger";
 import { markdownFraction, needsManagerApproval } from "@/lib/discount-policy";
 import { verifyApproval } from "@/lib/approval-token";
 import { evaluatePromotions } from "@/lib/promotions";
+import { verifyOverride } from "@/lib/override";
 import {
   ExchangeError,
   quoteExchange,
@@ -38,6 +39,9 @@ const lineSchema = z.object({
   /** Signed manager approval (POST /api/pos/auth/manager-approve) for a
    *  markdown over the policy threshold. */
   discount_approval: z.string().max(2000).nullable().optional(),
+  /** Admin-approved override (lib/override) to sell an RFID item
+   *  without scanning its tag. */
+  override_token: z.string().max(2000).nullable().optional(),
 });
 
 const cardPayment = z.object({
@@ -114,10 +118,15 @@ const schema = z.object({
             line_id: z.number().int().positive(),
             epc: z.string().max(64).nullable().optional(),
             quantity: z.number().int().positive().optional(),
+            override_token: z.string().max(2000).nullable().optional(),
           }),
         )
         .min(1)
         .max(500),
+      /** Admin-approved override (kind exchange_payout, ref = original
+       *  sale id) to pay the difference back to the original payment
+       *  instead of store credit. */
+      payout_override: z.string().max(2000).nullable().optional(),
       /** Ignored — an exchange never pays money out: when the returned
        *  items are worth more, the difference always goes to the
        *  customer's store credit. Money back is only ever a refund. */
@@ -262,6 +271,38 @@ export async function POST(req: Request) {
     }
   }
 
+  // RFID items must be sold by scanning their tags. A line of an
+  // RFID-tracked product with fewer scanned tags than its quantity needs
+  // an admin-approved override (PIN or emailed code).
+  const lineOverrideBy: Array<string | null> = data.lines.map(() => null);
+  {
+    const skuIds = [...new Set(data.lines.filter((l) => l.line_type === "product" && l.sku_id).map((l) => l.sku_id!))];
+    if (skuIds.length) {
+      const tracked = await getPool().query<{ id: string }>(
+        `SELECT cs.id::text FROM custom_skus cs JOIN matrices m ON m.id = cs.matrix_id
+          WHERE cs.id = ANY($1::uuid[]) AND NOT COALESCE(m.is_manual_only, FALSE)`,
+        [skuIds],
+      );
+      const rfidSkus = new Set(tracked.rows.map((r) => r.id));
+      for (const [i, l] of data.lines.entries()) {
+        if (l.line_type !== "product" || !l.sku_id || !rfidSkus.has(l.sku_id)) continue;
+        const tags = new Set([...(l.epcs ?? []), ...(l.epc ? [l.epc] : [])].map((e) => e.toUpperCase()));
+        if (tags.size >= l.quantity) continue;
+        const by = verifyOverride(l.override_token, "rfid_sale", l.sku_id, cashier.lid);
+        if (!by) {
+          return NextResponse.json(
+            {
+              error: "rfid_override_required",
+              message: `"${l.description}" has an RFID tag — scan it, or get an admin override to sell it without scanning.`,
+            },
+            { status: 403 },
+          );
+        }
+        lineOverrideBy[i] = by;
+      }
+    }
+  }
+
   // Store credit is drawn from the attached customer's balance. Check it
   // before any card is captured so a short balance never charges a card
   // (the locked deduction inside the transaction is the final guard).
@@ -349,7 +390,11 @@ export async function POST(req: Request) {
   // Exchange policy: no money ever goes back on an exchange — a leftover
   // difference always lands on the customer's store credit (money back is
   // only ever a refund), so a customer must be on the sale.
-  if (exchangeOverage > 0 && !(exchangeQuote?.customerId ?? data.customer_id)) {
+  const payoutApprovedBy =
+    exchangeOverage > 0 && exchangeQuote
+      ? verifyOverride(data.exchange?.payout_override, "exchange_payout", String(exchangeQuote.saleId), cashier.lid)
+      : null;
+  if (exchangeOverage > 0 && !payoutApprovedBy && !(exchangeQuote?.customerId ?? data.customer_id)) {
     await refundAll(capturedIntents);
     return NextResponse.json(
       {
@@ -372,6 +417,9 @@ export async function POST(req: Request) {
     );
   }
 
+  // Exchange difference going back to the original card: refunded at
+  // Stripe only after the sale is saved (see below).
+  let cardPayout: { refundId: number; amount: number; intent: string } | null = null;
   try {
     const sale = await withTransaction(async (client) => {
       // Verify register session is open before persisting.
@@ -448,8 +496,8 @@ export async function POST(req: Request) {
           `INSERT INTO pos_sale_lines
              (sale_id, sku_id, epc, description, quantity, unit_price,
               discount_amount, tax_rate, tax_amount, line_total, line_type,
-              attributed_employee_id, epcs, discount_approved_by, promo_rule_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+              attributed_employee_id, epcs, discount_approved_by, promo_rule_id, override_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
           [
             sale.id,
             l.sku_id,
@@ -468,6 +516,7 @@ export async function POST(req: Request) {
             lineEpcs(l),
             lineApprover[li],
             linePromo[li],
+            lineOverrideBy[li],
           ],
         );
       }
@@ -527,14 +576,15 @@ export async function POST(req: Request) {
       }
 
       if (exchangeQuote && data.exchange) {
-        await recordExchangeReturn(client, {
+        cardPayout = await recordExchangeReturn(client, {
           quote: exchangeQuote,
           items: data.exchange.items,
           lid: cashier.lid,
           newSale: { id: sale.id, number: sale.sale_number },
           creditApplied,
           overage: exchangeOverage,
-          payout: exchangeOverage > 0 ? "store_credit" : null,
+          payout: exchangeOverage > 0 ? (payoutApprovedBy ? "original" : "store_credit") : null,
+          payoutApprovedBy,
           customerId: exchangeQuote.customerId ?? data.customer_id ?? null,
           cashier,
           registerId: data.register_id,
@@ -667,7 +717,26 @@ export async function POST(req: Request) {
 
       return sale;
     });
-    return NextResponse.json({ sale });
+    let payoutWarning: string | null = null;
+    if (cardPayout) {
+      const cp: { refundId: number; amount: number; intent: string } = cardPayout;
+      try {
+        const sr = await stripe().refunds.create({
+          payment_intent: cp.intent,
+          amount: Math.round(cp.amount * 100),
+        });
+        await getPool().query(`UPDATE pos_refunds SET stripe_refund_id = $2 WHERE id = $1`, [
+          cp.refundId,
+          sr.id,
+        ]);
+      } catch (e) {
+        console.error("[capture] exchange card payout failed", e);
+        // Keep the books true to what happens next: hand it over in cash.
+        await getPool().query(`UPDATE pos_refunds SET method = 'cash' WHERE id = $1`, [cp.refundId]);
+        payoutWarning = `The card refund didn't go through — give the customer $${cp.amount.toFixed(2)} in cash from the drawer.`;
+      }
+    }
+    return NextResponse.json({ sale, payout_warning: payoutWarning });
   } catch (err) {
     // Two sends of the same offline sale raced: return the one that won.
     if ((err as { code?: string }).code === "23505" && data.client_uuid) {

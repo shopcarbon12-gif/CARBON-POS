@@ -40,12 +40,15 @@ export async function recordExchangeReturn(
     newSale: { id: number; number: string };
     creditApplied: number;
     overage: number;
-    payout: "store_credit" | null;
+    /** store_credit (policy) or, with an approved override, back to the
+     *  original payment (card if the sale had one, else cash). */
+    payout: "store_credit" | "original" | null;
+    payoutApprovedBy?: string | null;
     customerId: number | null;
     cashier: { employee_id: number; tid: string; user_id: string };
     registerId: number;
   },
-) {
+): Promise<{ refundId: number; amount: number; intent: string } | null> {
   // Final check under a row lock: nothing about the return changed since
   // the quote (e.g. the same piece returned on another register).
   const locked = await quoteExchange(client, {
@@ -66,16 +69,33 @@ export async function recordExchangeReturn(
     locked.credit > 0 ? Math.round(((amt * locked.tax) / locked.credit) * 100) / 100 : 0;
   const reason = `Exchanged for ${a.newSale.number}`;
 
+  // Original payment for an approved payout: the sale's card if it had
+  // one (refunded at Stripe after commit by the caller), else cash.
+  let cardIntent: string | null = null;
+  if (a.payout === "original") {
+    const card = await client.query<{ stripe_payment_intent_id: string | null }>(
+      `SELECT stripe_payment_intent_id FROM pos_payments
+        WHERE sale_id = $1 AND method = 'card' AND status = 'completed'
+          AND stripe_payment_intent_id IS NOT NULL
+        ORDER BY processed_at DESC LIMIT 1`,
+      [locked.saleId],
+    );
+    cardIntent = card.rows[0]?.stripe_payment_intent_id ?? null;
+  }
+  const payoutMethod =
+    a.payout === "original" ? (cardIntent ? "original_card" : "cash") : a.payout;
+  let cardPayout: { refundId: number; amount: number; intent: string } | null = null;
+
   const rows: Array<{ method: string; amount: number }> = [];
   if (a.creditApplied > 0) rows.push({ method: "exchange", amount: a.creditApplied });
-  if (a.overage > 0 && a.payout) rows.push({ method: a.payout, amount: a.overage });
+  if (a.overage > 0 && payoutMethod) rows.push({ method: payoutMethod, amount: a.overage });
   let firstRefundId: number | null = null;
   for (const [i, r] of rows.entries()) {
     const ins = await client.query<{ id: number }>(
       `INSERT INTO pos_refunds
          (original_sale_id, amount, reason, method, refunded_by,
-          register_session_id, line_ids, tax_amount, exchange_sale_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          register_session_id, line_ids, tax_amount, exchange_sale_id, override_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        RETURNING id`,
       [
         locked.saleId,
@@ -87,8 +107,12 @@ export async function recordExchangeReturn(
         i === 0 ? locked.lineIds : null,
         taxShare(r.amount),
         a.newSale.id,
+        i > 0 && a.payout === "original" ? (a.payoutApprovedBy ?? null) : null,
       ],
     );
+    if (r.method === "original_card" && cardIntent) {
+      cardPayout = { refundId: ins.rows[0].id, amount: r.amount, intent: cardIntent };
+    }
     if (i === 0) {
       firstRefundId = ins.rows[0].id;
       // The returned pieces live on one row.
@@ -127,4 +151,5 @@ export async function recordExchangeReturn(
       refund_pct: pct,
     });
   }
+  return cardPayout;
 }

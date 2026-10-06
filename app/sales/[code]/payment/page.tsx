@@ -9,6 +9,7 @@ import { SplitBuilder, type Tender } from "@/components/pos/SplitBuilder";
 import type { CartLine, CartTotals } from "@/types/pos";
 import { captureLines } from "@/lib/capture-payload";
 import { calculateTotals } from "@/lib/tax";
+import { OverrideModal } from "@/components/pos/OverrideModal";
 
 type CartPayload = {
   lines: CartLine[];
@@ -73,7 +74,10 @@ function PaymentInner() {
     line_id: l.return_ref!.line_id,
     epc: l.return_ref!.epc,
     quantity: 1,
+    override_token: l.return_ref!.override_token ?? null,
   }));
+  // Exchange difference to the original payment (admin override).
+  const [payoutAsk, setPayoutAsk] = useState(false);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   useEffect(() => {
@@ -145,7 +149,7 @@ function PaymentInner() {
   const returnCustomerId = quote?.customer_id ?? cart.customerId ?? null;
   const cashAmount = round2(Number(cashGiven || 0));
 
-  async function finishSale(payments: Tender[]) {
+  async function finishSale(payments: Tender[], payoutOverride?: string) {
     if (!cart) return;
     if (!registerId) {
       setError("Your register isn't open. Go to the Register screen first.");
@@ -163,7 +167,7 @@ function PaymentInner() {
         lines: captureLines(newLines),
         payments,
         exchange: hasReturns && returnSaleId
-          ? { sale_id: returnSaleId, items: returnItems }
+          ? { sale_id: returnSaleId, items: returnItems, payout_override: payoutOverride ?? null }
           : undefined,
       }),
     });
@@ -174,6 +178,7 @@ function PaymentInner() {
       return;
     }
     const data = await res.json();
+    if (data.payout_warning) window.alert(data.payout_warning);
     // Clear the persisted SellScreen cart so the next sale starts empty.
     try {
       window.localStorage.removeItem(`pos:cart:${code}`);
@@ -269,7 +274,8 @@ function PaymentInner() {
           {toStoreCredit > 0 && !returnCustomerId ? (
             <p className="mt-6 text-[var(--color-pos-danger)] font-semibold">
               An exchange never gives money back — the {formatMoney(toStoreCredit)} difference goes
-              to the customer&apos;s store credit. Go back and attach the customer.
+              to the customer&apos;s store credit. Go back and attach the customer
+              (or use the admin override below).
             </p>
           ) : (
             <button
@@ -283,6 +289,28 @@ function PaymentInner() {
                   ? `Complete — ${formatMoney(toStoreCredit)} to store credit`
                   : "Complete exchange"}
             </button>
+          )}
+          {toStoreCredit > 0 && (
+            <button
+              disabled={saving}
+              onClick={() => setPayoutAsk(true)}
+              className="tap w-full mt-3 border border-amber-500 text-amber-800 font-semibold disabled:opacity-50"
+            >
+              Refund {formatMoney(toStoreCredit)} to the original payment instead (admin approval)
+            </button>
+          )}
+          {payoutAsk && returnSaleId && (
+            <OverrideModal
+              kind="exchange_payout"
+              refId={String(returnSaleId)}
+              title="Refund the difference instead of store credit?"
+              detail={`Exchange on receipt #${quote.sale_number}: pay ${formatMoney(toStoreCredit)} back to the original payment (card if it was paid by card, otherwise cash) instead of store credit.`}
+              onCancel={() => setPayoutAsk(false)}
+              onApproved={(token) => {
+                setPayoutAsk(false);
+                void finishSale([], token);
+              }}
+            />
           )}
           {error && <p className="mt-4 text-[var(--color-pos-danger)]">{error}</p>}
         </div>

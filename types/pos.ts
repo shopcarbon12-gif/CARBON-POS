@@ -250,7 +250,13 @@ export type CartLine = {
     line_id: number;
     epc: string | null;
     needs_tag: boolean;
+    /** Admin override to take this RFID piece back without its tag. */
+    override_token?: string | null;
+    override_by?: string | null;
   } | null;
+  /** Admin override to sell this RFID item without scanning its tag. */
+  override_token?: string | null;
+  override_by?: string | null;
   /** pos_employees.id of the sales associate getting credit for this line.
    *  Defaults to the cashier ringing the sale; can be reassigned per-row
    *  in the Cart panel, or in bulk via the cart-header dropdown. Required

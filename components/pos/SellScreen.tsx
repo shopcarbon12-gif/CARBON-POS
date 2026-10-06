@@ -8,6 +8,7 @@ import { TotalPanel, type PickedCustomer } from "./TotalPanel";
 import { RedeemPointsModal } from "./RedeemPointsModal";
 import { RFIDScanModal, type RfidResolvedItem } from "./RFIDScanModal";
 import { CashKeypad } from "./CashKeypad";
+import { OverrideModal, type OverrideKind } from "./OverrideModal";
 import { captureLines } from "@/lib/capture-payload";
 import { enqueueOfflineSale, serverReachable } from "@/lib/offline-queue";
 import type { ReturnableLine, ReturnableSale } from "@/lib/returns-types";
@@ -225,6 +226,14 @@ export function SellScreen({
       window.removeEventListener("offline", off);
     };
   }, [code]);
+  // Admin override in progress (RFID sale / RFID return).
+  const [overrideReq, setOverrideReq] = useState<{
+    kind: OverrideKind;
+    refId: string;
+    title: string;
+    detail: string;
+    onApproved: (token: string, approver: string) => void;
+  } | null>(null);
   // Hold / park sale.
   const [showHold, setShowHold] = useState(false);
   const [showHeld, setShowHeld] = useState(false);
@@ -1141,7 +1150,7 @@ export function SellScreen({
     addProductDirect(item);
   }
 
-  function addProductDirect(item: SearchResultItem) {
+  function addProductDirect(item: SearchResultItem, override?: { token: string; by: string }) {
     const price = Number(item.retail_price ?? 0);
     setLines((prev) => {
       // Manual rows stack on same sku_id — but ONLY with other manual
@@ -1155,7 +1164,13 @@ export function SellScreen({
       );
       if (existing) {
         return prev.map((l) =>
-          l === existing ? { ...l, quantity: l.quantity + 1 } : l,
+          l === existing
+            ? {
+                ...l,
+                quantity: l.quantity + 1,
+                ...(override ? { override_token: override.token, override_by: override.by } : {}),
+              }
+            : l,
         );
       }
       return [
@@ -1179,6 +1194,8 @@ export function SellScreen({
           tax_rate: taxRate,
           line_type: "product",
           attributed_employee_id: saleAttributedEmployeeId,
+          override_token: override?.token ?? null,
+          override_by: override?.by ?? null,
         },
       ];
     });
@@ -1557,6 +1574,23 @@ export function SellScreen({
           inCart={(lineId) => inCartReturns(lineId).length}
           pendingTags={pendingTags}
           onReturn={addReturnPiece}
+          onReturnNoTag={(line) => {
+            if (!returnSale) return;
+            setOverrideReq({
+              kind: "rfid_return",
+              refId: String(returnSale.id),
+              title: "Return without scanning the tag?",
+              detail: `Take back "${line.description}" from receipt #${returnSale.sale_number} without scanning its RFID tag (it won't be put back in stock automatically).`,
+              onApproved: (token, by) => {
+                if (line.available_qty - inCartReturns(line.id).length <= 0) return;
+                const l = returnLineFor(returnSale, line, null);
+                setLines((prev) => [
+                  ...prev,
+                  { ...l, return_ref: { ...l.return_ref!, needs_tag: false, override_token: token, override_by: by } },
+                ]);
+              },
+            });
+          }}
           onScanTags={() => {
             markActivity();
             if (readerState === "off") void startReader();
@@ -1918,7 +1952,13 @@ export function SellScreen({
           onProcessManual={() => {
             const it = rfidConfirmItem;
             setRfidConfirmItem(null);
-            addProductDirect(it);
+            setOverrideReq({
+              kind: "rfid_sale",
+              refId: it.id,
+              title: "Sell without scanning the tag?",
+              detail: `Sell "${[it.item_name, it.color, it.size].filter(Boolean).join(" · ")}" (SKU ${it.sku ?? "—"}) without scanning its RFID tag.`,
+              onApproved: (token, by) => addProductDirect(it, { token, by }),
+            });
           }}
           onScanRfid={() => {
             setRfidConfirmItem(null);
@@ -1927,6 +1967,19 @@ export function SellScreen({
             setShowRfid(true);
           }}
           onCancel={() => setRfidConfirmItem(null)}
+        />
+      )}
+      {overrideReq && (
+        <OverrideModal
+          kind={overrideReq.kind}
+          refId={overrideReq.refId}
+          title={overrideReq.title}
+          detail={overrideReq.detail}
+          onCancel={() => setOverrideReq(null)}
+          onApproved={(token, by) => {
+            overrideReq.onApproved(token, by);
+            setOverrideReq(null);
+          }}
         />
       )}
     </div>
@@ -2093,6 +2146,7 @@ function ReturnPanel({
   inCart,
   pendingTags,
   onReturn,
+  onReturnNoTag,
   onScanTags,
   onClose,
   onCancel,
@@ -2101,6 +2155,8 @@ function ReturnPanel({
   inCart: (lineId: number) => number;
   pendingTags: number;
   onReturn: (line: ReturnableLine) => void;
+  /** RFID piece back without its tag — needs an admin override. */
+  onReturnNoTag: (line: ReturnableLine) => void;
   onScanTags: () => void;
   onClose: () => void;
   onCancel: () => void;
@@ -2139,6 +2195,17 @@ function ReturnPanel({
                     {tagged ? " · RFID — scan to verify" : " · no tag"}
                   </p>
                 </div>
+                {tagged && (
+                  <button
+                    type="button"
+                    disabled={left <= 0}
+                    onClick={() => onReturnNoTag(l)}
+                    title="Tag missing or unreadable — needs an admin override"
+                    className="tap border border-amber-500 text-amber-800 px-2 text-xs font-semibold disabled:opacity-30"
+                  >
+                    Return w/o tag
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={left <= 0}

@@ -102,6 +102,10 @@ export function CartPanel({
                     : null,
                 ].filter(Boolean)
               : [];
+            const overrideSuffix =
+              line.line_type === "product" && line.override_by
+                ? `not scanned — override by ${line.override_by}`
+                : null;
             const discountSuffix =
               line.line_type === "product" && line.discount_amount > 0
                 ? `−${formatMoney(line.discount_amount)} off${
@@ -117,16 +121,19 @@ export function CartPanel({
             const subtitle = isReturn
               ? [
                   `Return from #${line.return_ref?.sale_number ?? ""}`,
-                  line.return_ref?.needs_tag
-                    ? line.return_ref?.epc
-                      ? "tag verified ✓"
-                      : "⚠ scan its tag to verify"
-                    : "no tag (sold manually)",
+                  line.return_ref?.override_by
+                    ? `no tag — override by ${line.return_ref.override_by}`
+                    : line.return_ref?.needs_tag
+                      ? line.return_ref?.epc
+                        ? "tag verified ✓"
+                        : "⚠ scan its tag to verify"
+                      : "no tag (sold manually)",
                 ].join(" · ")
               : [
                   ...idParts,
                   ...miscMeta,
                   discountSuffix,
+                  overrideSuffix,
                 ]
                   .filter(Boolean)
                   .join(" · ");

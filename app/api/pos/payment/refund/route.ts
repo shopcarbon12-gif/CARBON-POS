@@ -29,6 +29,7 @@ const schema = z.object({
         line_id: z.number().int().positive(),
         epc: z.string().max(64).nullable().optional(),
         quantity: z.number().int().positive().optional(),
+        override_token: z.string().max(2000).nullable().optional(),
       }),
     )
     .max(500)

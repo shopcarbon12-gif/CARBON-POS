@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from "pg";
+import { verifyOverride } from "@/lib/override";
 
 /**
  * Per-item, tag-verified returns shared by refunds and exchanges.
@@ -12,7 +13,14 @@ import type { Pool, PoolClient } from "pg";
 
 export class ReturnError extends Error {}
 
-export type ReturnItemInput = { line_id: number; epc?: string | null; quantity?: number };
+export type ReturnItemInput = {
+  line_id: number;
+  epc?: string | null;
+  quantity?: number;
+  /** Admin-approved override (lib/override, kind rfid_return, ref = sale
+   *  id) to take back an RFID piece without scanning its tag. */
+  override_token?: string | null;
+};
 
 export type { ReturnableLine, ReturnableSale } from "@/lib/returns-types";
 import type { ReturnableSale } from "@/lib/returns-types";
@@ -135,6 +143,8 @@ export type ReturnEntry = {
   quantity: number;
   amount: number;
   tax: number;
+  /** Approver when an RFID piece came back without its tag scanned. */
+  override_by?: string | null;
 };
 
 export type ReturnQuote = {
@@ -180,7 +190,15 @@ export async function priceReturn(
     if (line.epcs.length > 0) {
       const epc = (it.epc ?? "").trim().toUpperCase();
       if (!epc) {
-        throw new ReturnError(`Scan the tag of "${line.description}" — RFID items must be scanned coming back.`);
+        // Unscanned RFID piece: only with an admin-approved override. Its
+        // tag isn't known, so nothing is restocked automatically.
+        const by = verifyOverride(it.override_token, "rfid_return", String(sale.id), a.lid);
+        if (!by) {
+          throw new ReturnError(`Scan the tag of "${line.description}" — RFID items must be scanned coming back (or get an admin override).`);
+        }
+        entries.push({ line_id: line.id, epc: null, quantity: 1, amount: 0, tax: 0, override_by: by });
+        qtyPerLine.set(line.id, (qtyPerLine.get(line.id) ?? 0) + 1);
+        continue;
       }
       if (!line.epcs.includes(epc)) {
         throw new ReturnError(`The scanned tag doesn't match the "${line.description}" sold on this receipt.`);
@@ -243,9 +261,9 @@ export async function priceReturn(
 export async function recordReturnItems(client: PoolClient, refundId: number, entries: ReturnEntry[]) {
   for (const e of entries) {
     await client.query(
-      `INSERT INTO pos_refund_items (refund_id, sale_line_id, epc, quantity, amount, tax_amount)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [refundId, e.line_id, e.epc, e.quantity, e.amount, e.tax],
+      `INSERT INTO pos_refund_items (refund_id, sale_line_id, epc, quantity, amount, tax_amount, override_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [refundId, e.line_id, e.epc, e.quantity, e.amount, e.tax, e.override_by ?? null],
     );
   }
 }
