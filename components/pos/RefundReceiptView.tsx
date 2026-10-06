@@ -36,7 +36,7 @@ export type RefundReceiptData = {
     phone: string | null;
     timezone: string;
   };
-  lines: Array<{ id: number; title: string; detail: string; qty: number; amount: number }>;
+  lines: Array<{ id: number; title: string; detail: string; qty: number; amount: number; tags_verified?: number }>;
 };
 
 /**
@@ -128,6 +128,11 @@ export function RefundReceiptView({
               <span>
                 <span style={S.itemName}>{l.title}</span>
                 {l.detail && <div style={S.itemDetail}>{l.detail}</div>}
+                {l.tags_verified ? (
+                  <div style={S.itemDetail}>
+                    RFID tag{l.tags_verified === 1 ? "" : "s"} verified ✓
+                  </div>
+                ) : null}
               </span>
               <span style={S.r}>{l.qty}</span>
               <span style={S.r}>{formatMoney(l.amount)}</span>

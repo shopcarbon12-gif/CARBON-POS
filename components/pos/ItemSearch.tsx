@@ -28,10 +28,19 @@ export type SearchResultItem = {
  * so we treat an Enter press as "pick the first result". A short debounce
  * keeps the network quiet during keyboard typing.
  */
+/** Receipt numbers: 12-digit sale number (13 with the barcode's check
+ *  digit, as scanned off a receipt) or legacy POS-##### numbers. */
+const RECEIPT_RE = /^(\d{12,13}|POS-\d+)$/i;
+
 export function ItemSearch({
   onPick,
+  onReceipt,
 }: {
   onPick: (item: SearchResultItem) => void;
+  /** A scanned / typed receipt number: load that sale for return. Resolve
+   *  true when it was a sale (the search box clears), false to fall back
+   *  to item lookup. */
+  onReceipt?: (receipt: string) => Promise<boolean>;
 }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResultItem[]>([]);
@@ -72,9 +81,17 @@ export function ItemSearch({
     };
   }, [q]);
 
-  function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
+  async function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
     e.preventDefault();
+    const term = q.trim();
+    if (onReceipt && RECEIPT_RE.test(term)) {
+      if (await onReceipt(term)) {
+        setQ("");
+        setResults([]);
+        return;
+      }
+    }
     const first = results[0];
     if (first) {
       onPick(first);

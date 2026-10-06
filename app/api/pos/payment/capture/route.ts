@@ -106,9 +106,21 @@ const schema = z.object({
   exchange: z
     .object({
       sale_id: z.number().int().positive(),
-      line_ids: z.array(z.number().int().positive()).min(1).max(200),
-      /** How to give back the difference when the returned items are
-       *  worth more than the new ones. */
+      /** Pieces coming back: RFID by the EPC scanned on return, untagged
+       *  by quantity (verified + priced by lib/returns). */
+      items: z
+        .array(
+          z.object({
+            line_id: z.number().int().positive(),
+            epc: z.string().max(64).nullable().optional(),
+            quantity: z.number().int().positive().optional(),
+          }),
+        )
+        .min(1)
+        .max(500),
+      /** Ignored — an exchange never pays money out: when the returned
+       *  items are worth more, the difference always goes to the
+       *  customer's store credit. Money back is only ever a refund. */
       payout_method: z.enum(["cash", "store_credit"]).optional(),
     })
     .optional(),
@@ -187,7 +199,7 @@ export async function POST(req: Request) {
     try {
       exchangeQuote = await quoteExchange(getPool(), {
         saleId: data.exchange.sale_id,
-        lineIds: data.exchange.line_ids,
+        items: data.exchange.items,
         lid: cashier.lid,
       });
     } catch (err) {
@@ -334,22 +346,19 @@ export async function POST(req: Request) {
   const exchangeOverage = round(Math.max(0, exchangeCredit - total));
   const due = round(total - creditApplied);
   const paid = round(data.payments.reduce((s, p) => s + p.amount, 0));
-  if (exchangeOverage > 0) {
-    const payout = data.exchange?.payout_method;
-    const payoutCustomer = exchangeQuote?.customerId ?? data.customer_id ?? null;
-    if (!payout || (payout === "store_credit" && !payoutCustomer)) {
-      await refundAll(capturedIntents);
-      return NextResponse.json(
-        {
-          error: "exchange_payout_required",
-          message:
-            payout === "store_credit"
-              ? "Store credit needs a customer on the sale."
-              : "Choose how to give back the difference (cash or store credit).",
-        },
-        { status: 400 },
-      );
-    }
+  // Exchange policy: no money ever goes back on an exchange — a leftover
+  // difference always lands on the customer's store credit (money back is
+  // only ever a refund), so a customer must be on the sale.
+  if (exchangeOverage > 0 && !(exchangeQuote?.customerId ?? data.customer_id)) {
+    await refundAll(capturedIntents);
+    return NextResponse.json(
+      {
+        error: "exchange_needs_customer",
+        message:
+          "The returned items are worth more than the new ones — the difference goes to the customer's store credit, so attach a customer to the sale.",
+      },
+      { status: 400 },
+    );
   }
   if (Math.abs(paid - due) > 0.01) {
     await refundAll(capturedIntents);
@@ -520,11 +529,12 @@ export async function POST(req: Request) {
       if (exchangeQuote && data.exchange) {
         await recordExchangeReturn(client, {
           quote: exchangeQuote,
+          items: data.exchange.items,
           lid: cashier.lid,
           newSale: { id: sale.id, number: sale.sale_number },
           creditApplied,
           overage: exchangeOverage,
-          payout: data.exchange.payout_method ?? null,
+          payout: exchangeOverage > 0 ? "store_credit" : null,
           customerId: exchangeQuote.customerId ?? data.customer_id ?? null,
           cashier,
           registerId: data.register_id,

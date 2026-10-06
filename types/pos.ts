@@ -240,7 +240,17 @@ export type CartLine = {
   unit_price: number;
   discount_amount: number;
   tax_rate: number;
-  line_type: "product" | "misc" | "gift_card" | "loyalty_redemption";
+  line_type: "product" | "misc" | "gift_card" | "loyalty_redemption" | "return";
+  /** Return lines (line_type 'return'): one returned piece from an earlier
+   *  sale, shown as a negative line. RFID pieces need their tag scanned
+   *  back (epc set) before checkout; untagged pieces don't. */
+  return_ref?: {
+    sale_id: number;
+    sale_number: string;
+    line_id: number;
+    epc: string | null;
+    needs_tag: boolean;
+  } | null;
   /** pos_employees.id of the sales associate getting credit for this line.
    *  Defaults to the cashier ringing the sale; can be reassigned per-row
    *  in the Cart panel, or in bulk via the cart-header dropdown. Required

@@ -10,6 +10,7 @@ import { RFIDScanModal, type RfidResolvedItem } from "./RFIDScanModal";
 import { CashKeypad } from "./CashKeypad";
 import { captureLines } from "@/lib/capture-payload";
 import { enqueueOfflineSale, serverReachable } from "@/lib/offline-queue";
+import type { ReturnableLine, ReturnableSale } from "@/lib/returns-types";
 import { calculateTotals } from "@/lib/tax";
 import { markdownFraction, needsManagerApproval } from "@/lib/discount-policy";
 import { capitalizeName } from "@/lib/utils";
@@ -57,25 +58,136 @@ export function SellScreen({
   const [employees, setEmployees] = useState<AttributionEmployee[]>([]);
   const [showRfid, setShowRfid] = useState(false);
   const [showMisc, setShowMisc] = useState(false);
-  // Exchange in progress (set by /sales/{code}/exchange): the returned
-  // items' credit reduces what's due on this cart.
-  const [exchange, setExchange] = useState<ExchangeContext | null>(null);
+  // Returns / exchanges on this screen: scan a receipt, take pieces back
+  // as negative lines (RFID pieces verified by scanning their tag), keep
+  // scanning new items; the cart nets the difference.
+  const [returnSale, setReturnSale] = useState<ReturnableSale | null>(null);
+  const [returnPanelOpen, setReturnPanelOpen] = useState(false);
+  const returnLines = lines.filter((l) => l.line_type === "return");
+  const pendingTags = returnLines.filter((l) => l.return_ref?.needs_tag && !l.return_ref?.epc).length;
+  const returnMode: "none" | "exchange" | "refund" =
+    returnLines.length === 0
+      ? "none"
+      : lines.some((l) => l.line_type !== "return")
+        ? "exchange"
+        : "refund";
+
+  // Arrived from the Exchange / Refund buttons: prompt for the receipt.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(`pos:exchange:${code}`);
-      if (raw) setExchange(JSON.parse(raw) as ExchangeContext);
-    } catch {
-      /* no exchange */
+    const mode = searchParams.get("returns");
+    if (mode) {
+      setOfflineNotice(
+        `${mode === "refund" ? "Refund" : "Exchange"}: scan the receipt barcode (or type the receipt number) in the search box and press Enter.`,
+      );
     }
-  }, [code]);
-  function cancelExchange() {
-    try {
-      localStorage.removeItem(`pos:exchange:${code}`);
-    } catch {
-      /* ignore */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function loadReceipt(receipt: string): Promise<boolean> {
+    const r = await fetch(`/api/pos/returns/lookup?number=${encodeURIComponent(receipt)}`).catch(() => null);
+    if (!r?.ok) return false;
+    const { sale } = (await r.json()) as { sale: ReturnableSale };
+    if (returnLines.length > 0 && returnLines[0].return_ref?.sale_id !== sale.id) {
+      setOfflineNotice(
+        `This cart already has returns from #${returnLines[0].return_ref?.sale_number}. Finish or remove those before returning items from another receipt.`,
+      );
+      return true;
     }
-    setExchange(null);
+    setReturnSale(sale);
+    setReturnPanelOpen(true);
+    if (!customer && sale.customer) {
+      setCustomer({ id: sale.customer.id, name: sale.customer.name ?? "", email: sale.customer.email ?? null, phone: null } as PickedCustomer);
+    }
+    return true;
   }
+
+  // A held cart with returns (resumed) brings its receipt back.
+  useEffect(() => {
+    const ref = lines.find((l) => l.line_type === "return")?.return_ref;
+    if (ref && (!returnSale || returnSale.id !== ref.sale_id)) {
+      fetch(`/api/pos/returns/lookup?sale_id=${ref.sale_id}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d?.sale && setReturnSale(d.sale))
+        .catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines.length]);
+
+  /** Pieces of a sale line already in the cart as returns. */
+  function inCartReturns(lineId: number) {
+    return lines.filter((l) => l.line_type === "return" && l.return_ref?.line_id === lineId);
+  }
+
+  function returnLineFor(sale: ReturnableSale, line: ReturnableLine, epc: string | null): CartLine {
+    return {
+      cart_id: cryptoId(),
+      sku_id: null,
+      epc: null,
+      description: `Return · ${line.description}`,
+      quantity: 1,
+      unit_price: -line.unit_value,
+      discount_amount: 0,
+      tax_rate: 0,
+      line_type: "return",
+      attributed_employee_id: saleAttributedEmployeeId,
+      return_ref: {
+        sale_id: sale.id,
+        sale_number: sale.sale_number,
+        line_id: line.id,
+        epc,
+        needs_tag: line.epcs.length > 0,
+      },
+    };
+  }
+
+  /** "−1" from the return panel. RFID pieces wait for their tag scan. */
+  function addReturnPiece(line: ReturnableLine) {
+    if (!returnSale) return;
+    if (line.available_qty - inCartReturns(line.id).length <= 0) return;
+    setLines((prev) => [...prev, returnLineFor(returnSale, line, null)]);
+  }
+
+  /** Tags scanned that were sold on the receipt: verify waiting return
+   *  lines, or add new verified return lines. */
+  function applyReturnTags(epcs: string[]) {
+    if (!returnSale) return;
+    setLines((prev) => {
+      const next = [...prev];
+      const used = new Set(next.map((l) => l.return_ref?.epc).filter(Boolean) as string[]);
+      for (const raw of epcs) {
+        const epc = raw.toUpperCase();
+        if (used.has(epc)) continue;
+        const line = returnSale.lines.find(
+          (l) => l.epcs.includes(epc) && !l.returned_epcs.includes(epc),
+        );
+        if (!line) continue;
+        used.add(epc);
+        const waiting = next.findIndex(
+          (l) => l.line_type === "return" && l.return_ref?.line_id === line.id && !l.return_ref?.epc,
+        );
+        if (waiting >= 0) {
+          next[waiting] = { ...next[waiting], return_ref: { ...next[waiting].return_ref!, epc } };
+        } else {
+          const inCart = next.filter((l) => l.line_type === "return" && l.return_ref?.line_id === line.id).length;
+          if (inCart < line.available_qty) next.push(returnLineFor(returnSale, line, epc));
+        }
+      }
+      return next;
+    });
+  }
+
+  function cancelReturn() {
+    setLines((prev) => prev.filter((l) => l.line_type !== "return"));
+    setReturnSale(null);
+    setReturnPanelOpen(false);
+  }
+
+  /** Tags on the receipt still returnable and not yet scanned into the cart. */
+  const returnableEpcs = returnSale
+    ? returnSale.lines
+        .flatMap((l) => l.epcs.filter((e) => !l.returned_epcs.includes(e)))
+        .filter((e) => !returnLines.some((l) => l.return_ref?.epc === e))
+    : [];
   // Offline cash sales: register id cached for when the server is down.
   const [offline, setOffline] = useState(false);
   const [offlineCash, setOfflineCash] = useState(false);
@@ -1284,7 +1396,7 @@ export function SellScreen({
     if (target === "sale") {
       if (payload.kind === "set-price") return 0;
       const after = splitSaleDiscount(lines, payload.value, payload.kind === "percent", null);
-      return Math.max(0, ...after.filter((l) => l.line_type !== "loyalty_redemption").map(markdownFraction));
+      return Math.max(0, ...after.filter((l) => l.line_type !== "loyalty_redemption" && l.line_type !== "return").map(markdownFraction));
     }
     const l = lines.find((x) => x.cart_id === target);
     if (!l) return 0;
@@ -1342,6 +1454,12 @@ export function SellScreen({
   async function startCheckout(method: "card" | "cash" | "other") {
     if (lines.length === 0) return;
     setOfflineNotice(null);
+    if (pendingTags > 0) {
+      setOfflineNotice(
+        `Scan the tag${pendingTags === 1 ? "" : "s"} of the ${pendingTags} returned item${pendingTags === 1 ? "" : "s"} (Scan RFID) before checkout — every RFID item coming back must match the tag that was sold.`,
+      );
+      return;
+    }
     // No connection to the server: cash can still be taken (queued on this
     // register and synced later); card and other tenders can't.
     if (!(await serverReachable())) {
@@ -1350,8 +1468,8 @@ export function SellScreen({
         setOfflineNotice("No internet — card and other payments need a connection. Take cash, or wait for the internet to come back.");
         return;
       }
-      if (exchange || lines.some((l) => l.line_type === "loyalty_redemption")) {
-        setOfflineNotice("No internet — exchanges and points redemptions need a connection. Remove them or wait.");
+      if (returnLines.length > 0 || lines.some((l) => l.line_type === "loyalty_redemption")) {
+        setOfflineNotice("No internet — returns, exchanges and points redemptions need a connection. Remove them or wait.");
         return;
       }
       if (!registerId) {
@@ -1370,7 +1488,6 @@ export function SellScreen({
         customerId: customer?.id ?? null,
         taxRate,
         attributedEmployeeId: saleAttributedEmployeeId,
-        exchange,
       }),
     );
     router.push(`/sales/${code}/payment?method=${method}&cart=${cart}`);
@@ -1434,29 +1551,30 @@ export function SellScreen({
           onConfirm={saveOfflineCashSale}
         />
       )}
-      {exchange && (
-        <div className="border-2 border-emerald-600 bg-emerald-50 p-3 sm:p-4 flex flex-wrap items-center gap-3">
-          <span className="material-symbols-outlined text-emerald-700" aria-hidden>
-            swap_horiz
-          </span>
-          <div className="flex-1 min-w-[220px]">
-            <p className="font-bold text-emerald-800">
-              Exchange for sale #{exchange.sale_number} — credit{" "}
-              {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(exchange.credit)}
-            </p>
-            <p className="text-sm text-emerald-900">
-              Returning: {exchange.items.join(", ")}. Add the new items below — the
-              customer pays only the difference.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={cancelExchange}
-            className="tap border border-emerald-700 text-emerald-800 px-3 font-semibold bg-white"
-          >
-            Cancel exchange
-          </button>
-        </div>
+      {returnSale && returnPanelOpen && (
+        <ReturnPanel
+          sale={returnSale}
+          inCart={(lineId) => inCartReturns(lineId).length}
+          pendingTags={pendingTags}
+          onReturn={addReturnPiece}
+          onScanTags={() => {
+            markActivity();
+            if (readerState === "off") void startReader();
+            setShowRfid(true);
+          }}
+          onClose={() => setReturnPanelOpen(false)}
+          onCancel={cancelReturn}
+        />
+      )}
+      {returnSale && !returnPanelOpen && (
+        <button
+          type="button"
+          onClick={() => setReturnPanelOpen(true)}
+          className="self-start text-sm font-semibold text-red-700 underline"
+        >
+          Show receipt #{returnSale.sale_number} ({returnLines.length} returning
+          {pendingTags ? `, ${pendingTags} tag${pendingTags === 1 ? "" : "s"} to scan` : ""})
+        </button>
       )}
       {/* "Hello, Elior" — appears when a customer is attached and we have
           at least one item in cart. Sits above the cart per design. */}
@@ -1472,7 +1590,7 @@ export function SellScreen({
           column TotalPanel (mode="all"), so this slot is hidden. */}
       <div className="lg:hidden">
         <TotalPanel
-          exchangeCredit={exchange?.credit ?? 0}
+          returnMode={returnMode}
           mode="customer-only"
           totals={totals}
           customer={customer}
@@ -1525,7 +1643,7 @@ export function SellScreen({
               wide to be useful), side-by-side from sm+. */}
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
             <div className="flex-1 min-w-0">
-              <ItemSearch onPick={addProduct} />
+              <ItemSearch onPick={addProduct} onReceipt={loadReceipt} />
             </div>
             <button
               onClick={() => {
@@ -1590,7 +1708,11 @@ export function SellScreen({
               Held Sales{heldCount > 0 ? ` (${heldCount})` : ""}
             </button>
             <button
-              onClick={() => setLines([])}
+              onClick={() => {
+                setLines([]);
+                setReturnSale(null);
+                setReturnPanelOpen(false);
+              }}
               disabled={lines.length === 0}
               className="flex-1 min-w-[140px] tap font-semibold border border-red-200 text-carbon-danger bg-white hover:bg-red-50 disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
             >
@@ -1611,7 +1733,7 @@ export function SellScreen({
           {/* Mobile: summary-only (customer already shown above the cart). */}
           <div className="lg:hidden">
             <TotalPanel
-          exchangeCredit={exchange?.credit ?? 0}
+          returnMode={returnMode}
               mode="summary-only"
               totals={totals}
               customer={customer}
@@ -1656,7 +1778,7 @@ export function SellScreen({
           {/* Desktop: full panel — customer + totals + payment buttons. */}
           <div className="hidden lg:block">
             <TotalPanel
-          exchangeCredit={exchange?.credit ?? 0}
+          returnMode={returnMode}
               mode="all"
               totals={totals}
               customer={customer}
@@ -1720,6 +1842,9 @@ export function SellScreen({
         open={showRfid}
         onClose={() => setShowRfid(false)}
         onAdd={addRfidItems}
+        returnEpcs={returnSale ? returnableEpcs : undefined}
+        returnLabel={returnSale ? `#${returnSale.sale_number}` : undefined}
+        onReturn={applyReturnTags}
         readerState={readerState}
         cartEpcs={lines.flatMap((l) => {
           // Rows that source='rfid' stack multiple EPCs into l.epcs[].
@@ -1956,6 +2081,104 @@ type DiscountModalPayload =
 
 
 
+
+/**
+ * Receipt loaded for a return / exchange: every item on the sale with
+ * what's still returnable. "−1 Return" adds a negative cart line; RFID
+ * pieces then need their tag scanned (Scan RFID) to verify it's the
+ * piece that was sold.
+ */
+function ReturnPanel({
+  sale,
+  inCart,
+  pendingTags,
+  onReturn,
+  onScanTags,
+  onClose,
+  onCancel,
+}: {
+  sale: ReturnableSale;
+  inCart: (lineId: number) => number;
+  pendingTags: number;
+  onReturn: (line: ReturnableLine) => void;
+  onScanTags: () => void;
+  onClose: () => void;
+  onCancel: () => void;
+}) {
+  const fmt = (n: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+  const lines = sale.lines.filter((l) => l.line_type !== "loyalty_redemption");
+  return (
+    <div className="border-2 border-red-600 bg-white">
+      <div className="bg-red-600 text-white px-4 py-2 flex flex-wrap items-center gap-2">
+        <span className="material-symbols-outlined" aria-hidden>assignment_return</span>
+        <span className="font-bold flex-1">
+          Return from receipt #{sale.sale_number}
+          {sale.completed_at
+            ? ` · ${new Date(sale.completed_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+            : ""}
+          {sale.customer?.name ? ` · ${sale.customer.name}` : ""}
+        </span>
+        <span className="text-sm">Refundable left {fmt(sale.remaining)}</span>
+      </div>
+      {sale.status === "voided" ? (
+        <p className="p-4 text-red-700 font-semibold">This sale was voided — nothing to return.</p>
+      ) : (
+        <ul className="divide-y divide-carbon-border-soft">
+          {lines.map((l) => {
+            const left = l.available_qty - inCart(l.id);
+            const tagged = l.epcs.length > 0;
+            return (
+              <li key={l.id} className="px-4 py-2 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold truncate">{l.description}</p>
+                  <p className="text-xs text-carbon-text-muted">
+                    Sold {l.quantity} · {fmt(l.unit_value)} each
+                    {l.returned_qty ? ` · ${l.returned_qty} already returned` : ""}
+                    {inCart(l.id) ? ` · ${inCart(l.id)} returning now` : ""}
+                    {tagged ? " · RFID — scan to verify" : " · no tag"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={left <= 0}
+                  onClick={() => onReturn(l)}
+                  className="tap border-2 border-red-600 text-red-700 px-3 font-bold disabled:opacity-30 disabled:border-carbon-border disabled:text-carbon-text-muted"
+                >
+                  −1 Return
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="px-4 py-3 bg-[var(--carbon-surface-soft)] flex flex-wrap items-center gap-3 border-t border-carbon-border-soft">
+        <p className="text-sm flex-1 min-w-[200px]">
+          {pendingTags > 0 ? (
+            <span className="text-amber-800 font-semibold">
+              {pendingTags} returned item{pendingTags === 1 ? "" : "s"} waiting for a tag scan.
+            </span>
+          ) : (
+            <span className="text-carbon-text-muted">
+              Tip: scanning the tags (Scan RFID) also adds them as returns.
+            </span>
+          )}{" "}
+          Then scan the new items — the cart shows the difference.
+        </p>
+        <button type="button" onClick={onScanTags} className="tap carbon-btn-primary px-4 font-semibold">
+          Scan returned tags
+        </button>
+        <button type="button" onClick={onClose} className="tap carbon-btn-secondary px-4 font-semibold">
+          Hide
+        </button>
+        <button type="button" onClick={onCancel} className="tap border border-red-300 text-red-700 px-4 font-semibold bg-white">
+          Cancel return
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function OfflineCashModal({
   total,
   onCancel,
@@ -2137,13 +2360,6 @@ function HeldSalesModal({
   );
 }
 
-export type ExchangeContext = {
-  sale_id: number;
-  sale_number: string;
-  line_ids: number[];
-  credit: number;
-  items: string[];
-};
 
 type Approval = { token: string; approver: string };
 
@@ -2164,14 +2380,14 @@ function splitSaleDiscount(
   isPercent: boolean,
   approval: Approval | null | undefined,
 ): CartLine[] {
-  const items = lines.filter((l) => l.line_type !== "loyalty_redemption");
+  const items = lines.filter((l) => l.line_type !== "loyalty_redemption" && l.line_type !== "return");
   const subtotal = items.reduce((s, l) => s + l.unit_price * l.quantity, 0);
   if (subtotal <= 0) return lines;
   const total = isPercent
     ? subtotal * (Math.min(100, value) / 100)
     : Math.min(subtotal, value);
   return lines.map((l) => {
-    if (l.line_type === "loyalty_redemption") return l;
+    if (l.line_type === "loyalty_redemption" || l.line_type === "return") return l;
     const lineSubtotal = l.unit_price * l.quantity;
     const share = lineSubtotal / subtotal;
     return {

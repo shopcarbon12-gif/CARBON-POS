@@ -6,14 +6,34 @@ import { withTransaction } from "@/lib/db";
 import { queueLoyaltyCall } from "@/lib/loyalty-client";
 import { currentCashier } from "@/lib/session";
 import { moveStoreCredit } from "@/lib/store-credit-ledger";
-import { alreadyReturnedLines, restockReturnedLines } from "@/lib/returns";
+import {
+  priceReturn,
+  recordReturnItems,
+  restockEpcs,
+  ReturnError,
+  type ReturnQuote,
+} from "@/lib/returns";
 
 const schema = z.object({
   sale_id: z.number().int().positive(),
-  amount: z.number().positive(),
+  /** Only for a price adjustment with no goods coming back (manager+).
+   *  When items are returned the server prices them itself. */
+  amount: z.number().positive().optional(),
   reason: z.string().max(500).optional(),
   method: z.enum(["original_card", "cash", "store_credit"]),
-  /** pos_sale_lines ids being returned — printed on the refund receipt. */
+  /** The pieces coming back: RFID pieces by the EPC scanned on return
+   *  (must be a tag sold on that line), untagged pieces by quantity. */
+  items: z
+    .array(
+      z.object({
+        line_id: z.number().int().positive(),
+        epc: z.string().max(64).nullable().optional(),
+        quantity: z.number().int().positive().optional(),
+      }),
+    )
+    .max(500)
+    .optional(),
+  /** Old whole-line returns — no longer accepted (items must be scanned). */
   line_ids: z.array(z.number().int().positive()).max(200).optional(),
 });
 
@@ -28,10 +48,12 @@ const schema = z.object({
  *   - For 'cash': no Stripe call; we just record the row.
  *   - For 'store_credit': adds the amount to the sale customer's balance
  *     (pos_store_credit_ledger); rejected when the sale has no customer.
- *   - In all cases, write a pos_refunds row inside the same transaction.
- *     RFID tags on the returned lines (line_ids) flip back to 'in-stock';
- *     a line can only be returned once. Refunds without line detail
- *     restock the whole sale when it becomes fully refunded.
+ *   - Returned goods come as `items`: every RFID piece by the EPC scanned
+ *     coming back (verified against the tags sold on that line, once
+ *     only), untagged pieces by quantity. The server prices them
+ *     (lib/returns), records them in pos_refund_items and puts exactly
+ *     those tags back in stock. A money-only price adjustment (no items)
+ *     is manager/admin only.
  *   - When the sale has a customer, queue /api/v1/refund in the loyalty
  *     outbox (same transaction) so Carbon-Rewards claws back the earned
  *     points and returns redeemed ones, pro-rated by refund / sale total.
@@ -52,8 +74,27 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const { sale_id, reason, method, line_ids } = parsed.data;
-  let amount = parsed.data.amount;
+  const { sale_id, reason, method, items, line_ids } = parsed.data;
+  if (!items?.length && line_ids?.length) {
+    return NextResponse.json(
+      {
+        error: "scan_required",
+        message: "Returned items have to be scanned back in. Use the return screen.",
+      },
+      { status: 422 },
+    );
+  }
+  if (!items?.length) {
+    // Money back with nothing returned (price adjustment) — managers only.
+    if (!parsed.data.amount || (cashier.role !== "manager" && cashier.role !== "admin")) {
+      return NextResponse.json(
+        { error: "items_required", message: "Pick and scan the items being returned." },
+        { status: 422 },
+      );
+    }
+  }
+  let amount = parsed.data.amount ?? 0;
+  let quote: ReturnQuote | null = null;
 
   // Set inside the transaction once Stripe succeeds, so the db_failed
   // message below can still hand the manager the Stripe refund id.
@@ -82,6 +123,22 @@ export async function POST(req: Request) {
           "This sale has no customer attached, so there's no account to put store credit on. Refund as cash or to the card instead.",
         );
       }
+      // Price the returned pieces (tags verified against the sale).
+      if (items?.length) {
+        try {
+          quote = await priceReturn(client, {
+            lid: cashier.lid,
+            saleId: sale_id,
+            items,
+            lock: true,
+          });
+        } catch (err) {
+          if (err instanceof ReturnError) throw new RefundRejected(422, "return_invalid", err.message);
+          throw err;
+        }
+        amount = quote.credit;
+      }
+
       const priorRes = await client.query<{ refunded: string }>(
         `SELECT COALESCE(SUM(amount), 0) AS refunded
            FROM pos_refunds
@@ -101,19 +158,6 @@ export async function POST(req: Request) {
           "exceeds_refundable",
           `Refund of $${amount.toFixed(2)} is more than the $${Math.max(0, remaining).toFixed(2)} still refundable on this sale.`,
         );
-      }
-
-      // A line can only be returned once — reject lines already on an
-      // earlier refund of this sale (before any money moves).
-      if (line_ids && line_ids.length) {
-        const already = await alreadyReturnedLines(client, sale_id);
-        if (line_ids.some((id) => already.has(id))) {
-          throw new RefundRejected(
-            422,
-            "already_returned",
-            "One or more of these items were already returned on an earlier refund.",
-          );
-        }
       }
 
       if (method === "original_card") {
@@ -144,19 +188,19 @@ export async function POST(req: Request) {
           LIMIT 1`,
         [cashier.user_id, cashier.lid],
       );
+      // tax_amount for the Sales Tax report: the returned pieces' tax, or
+      // the sale's tax share for a price adjustment.
+      const itemsValue = quote ? quote.entries.reduce((x, e) => x + e.amount, 0) : 0;
       const ins = await client.query(
-        // tax_amount: the refunded share of the sale's tax, recorded for
-        // the Sales Tax report (refunds are whole-amount, not per line).
         `INSERT INTO pos_refunds
            (original_sale_id, amount, reason, method, stripe_refund_id,
             refunded_by, register_session_id, line_ids, tax_amount)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,
-                 ARRAY(SELECT id FROM pos_sale_lines
-                        WHERE sale_id = $1 AND id = ANY($8::int[]) ORDER BY id),
-                 (SELECT CASE WHEN s.total_amount > 0
-                              THEN ROUND($2::numeric * s.tax_amount / s.total_amount, 2)
-                              ELSE 0 END
-                    FROM pos_sales s WHERE s.id = $1))
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
+                 COALESCE($9::numeric,
+                   (SELECT CASE WHEN s.total_amount > 0
+                                THEN ROUND($2::numeric * s.tax_amount / s.total_amount, 2)
+                                ELSE 0 END
+                      FROM pos_sales s WHERE s.id = $1)))
          RETURNING *`,
         [
           sale_id,
@@ -166,9 +210,15 @@ export async function POST(req: Request) {
           stripeRefundId,
           cashier.employee_id,
           sessRes.rows[0]?.id ?? null,
-          line_ids ?? [],
+          quote ? quote.lineIds : null,
+          quote
+            ? itemsValue > 0 && amount < itemsValue - 0.005
+              ? Math.round(((quote.tax * amount) / itemsValue) * 100) / 100
+              : quote.tax
+            : null,
         ],
       );
+      if (quote) await recordReturnItems(client, ins.rows[0].id, quote.entries);
 
       if (method === "store_credit" && saleRes.rows[0].customer_id != null) {
         await moveStoreCredit(client, {
@@ -201,15 +251,15 @@ export async function POST(req: Request) {
         );
       }
 
-      // Restock exactly the returned pieces (lib/returns).
-      await restockReturnedLines(client, {
-        saleId: sale_id,
-        lineIds: ins.rows[0].line_ids ?? [],
-        fullyRefunded,
-        tenantId: cashier.tid,
-        userId: cashier.user_id,
-        reason: "pos_refund",
-      });
+      // Exactly the scanned tags go back in stock (lib/returns).
+      if (quote) {
+        await restockEpcs(client, {
+          epcs: quote.epcs,
+          tenantId: cashier.tid,
+          userId: cashier.user_id,
+          reason: "pos_refund",
+        });
+      }
 
       // Loyalty hook — queue the points reversal in pos_loyalty_outbox so
       // it commits atomically with the refund row. Rewards pro-rates the

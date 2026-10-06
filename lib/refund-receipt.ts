@@ -46,7 +46,26 @@ export async function loadRefundReceipt(
   const rf = r.rows[0];
   if (!rf) return null;
 
-  const ids: number[] | null = rf.line_ids && rf.line_ids.length ? rf.line_ids : null;
+  // Pieces returned on this refund (tag-verified returns). An exchange's
+  // pieces sit on its first refund row; a cash/store-credit difference
+  // row of the same exchange shares them.
+  const piecesR = await pool.query<{ sale_line_id: number; qty: number; amount: string; epcs: string[] }>(
+    `SELECT ri.sale_line_id, SUM(ri.quantity)::int AS qty, SUM(ri.amount) AS amount,
+            COALESCE(array_agg(ri.epc) FILTER (WHERE ri.epc IS NOT NULL), ARRAY[]::text[]) AS epcs
+       FROM pos_refund_items ri
+      WHERE ri.refund_id = $1
+         OR ri.refund_id = (SELECT MIN(r2.id) FROM pos_refunds r2
+                             WHERE r2.exchange_sale_id IS NOT NULL
+                               AND r2.exchange_sale_id = (SELECT exchange_sale_id FROM pos_refunds WHERE id = $1))
+      GROUP BY ri.sale_line_id`,
+    [refundId],
+  );
+  const pieces = new Map(piecesR.rows.map((p) => [Number(p.sale_line_id), p]));
+  const ids: number[] | null = pieces.size
+    ? [...pieces.keys()]
+    : rf.line_ids && rf.line_ids.length
+      ? rf.line_ids
+      : null;
   const linesR = await pool.query(
     `SELECT sl.id, sl.description, sl.quantity, sl.unit_price, sl.discount_amount,
             sl.tax_amount, sl.line_total, sl.line_type,
@@ -108,14 +127,18 @@ export async function loadRefundReceipt(
       phone: rf.phone,
       timezone: rf.timezone,
     },
-    lines: linesR.rows.map((l) => ({
+    lines: linesR.rows.map((l) => {
+      const p = pieces.get(Number(l.id));
+      return {
       id: l.id,
       title: l.product ?? l.description,
       detail: [l.sku ? `SKU ${l.sku}` : null, [l.color_code, l.size].filter(Boolean).join(" / ") || null]
         .filter(Boolean)
         .join(" · "),
-      qty: Number(l.quantity),
-      amount: Number(l.line_total),
-    })),
+      qty: p ? Number(p.qty) : Number(l.quantity),
+      amount: p ? Number(p.amount) : Number(l.line_total),
+      tags_verified: p ? p.epcs.length : 0,
+      };
+    }),
   };
 }

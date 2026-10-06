@@ -46,10 +46,20 @@ export function RFIDScanModal({
   onAdd,
   readerState,
   cartEpcs,
+  returnEpcs,
+  returnLabel,
+  onReturn,
 }: {
   open: boolean;
   onClose: () => void;
   onAdd: (items: RfidResolvedItem[]) => void;
+  /** Tags sold on the receipt being returned (still returnable). A scanned
+   *  sold tag in this list is a verified return, not a blocked tag. */
+  returnEpcs?: string[];
+  /** e.g. "#110000001005" — shown on the matched-returns box. */
+  returnLabel?: string;
+  /** Called with the verified return tags when the cashier confirms. */
+  onReturn?: (epcs: string[]) => void;
   readerState: ReaderUiState;
   /** EPCs already in the cart. Seeded into the de-dup set on open so
    *  a tag the cashier added in a previous scan session won't reappear
@@ -67,6 +77,10 @@ export function RFIDScanModal({
   const [blocked, setBlocked] = useState<Array<{ epc: string; status: string }>>(
     [],
   );
+  // Sold tags from the receipt being returned are verified returns.
+  const returnSet = new Set((returnEpcs ?? []).map((e) => e.toUpperCase()));
+  const returnMatched = blocked.filter((b) => returnSet.has(b.epc.toUpperCase()));
+  const otherBlocked = blocked.filter((b) => !returnSet.has(b.epc.toUpperCase()));
   const [streamErr, setStreamErr] = useState<string | null>(null);
   // RSSI proximity threshold (negative dBm). The slider sets it; reads weaker
   // (farther) than this are filtered out of the scan list. Held in a ref too so
@@ -375,17 +389,33 @@ export function RFIDScanModal({
             </ul>
           )}
         </div>
-        {blocked.length > 0 && (
+        {returnMatched.length > 0 && (
+          <div className="mt-3 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm">
+            <p className="font-semibold text-emerald-800">
+              {returnMatched.length} returned item{returnMatched.length === 1 ? "" : "s"} matched to
+              receipt {returnLabel ?? ""} ✓
+            </p>
+            <p className="text-xs text-emerald-700">
+              These tags were sold on that receipt — they&apos;ll be returned and go back in stock.
+            </p>
+          </div>
+        )}
+        {otherBlocked.length > 0 && (
           <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm">
             <p className="font-semibold text-red-800 mb-1">
-              Needs supervisor — {blocked.length} tag{blocked.length === 1 ? "" : "s"} blocked
+              {returnEpcs
+                ? `${otherBlocked.length} tag${otherBlocked.length === 1 ? "" : "s"} not on this receipt`
+                : `Needs supervisor — ${otherBlocked.length} tag${otherBlocked.length === 1 ? "" : "s"} blocked`}
             </p>
             <ul className="text-xs text-red-700 space-y-0.5 max-h-24 overflow-auto">
-              {blocked.slice(0, 8).map((b) => (
-                <li key={b.epc}>{b.status}</li>
+              {otherBlocked.slice(0, 8).map((b) => (
+                <li key={b.epc}>
+                  {b.status}
+                  {returnEpcs && b.status.toUpperCase() === "SOLD" ? " — sold on a different sale" : ""}
+                </li>
               ))}
-              {blocked.length > 8 && (
-                <li className="italic">+ {blocked.length - 8} more</li>
+              {otherBlocked.length > 8 && (
+                <li className="italic">+ {otherBlocked.length - 8} more</li>
               )}
             </ul>
           </div>
@@ -422,15 +452,23 @@ export function RFIDScanModal({
                 const toAdd = selectionMode
                   ? visible.filter((it) => selected.has(it.epc))
                   : visible;
-                onAdd(toAdd);
+                if (toAdd.length) onAdd(toAdd);
+                if (returnMatched.length && onReturn) onReturn(returnMatched.map((b) => b.epc));
                 onClose();
               }}
               disabled={
-                visible.length === 0 || (selectionMode && selected.size === 0)
+                returnMatched.length === 0 &&
+                (visible.length === 0 || (selectionMode && selected.size === 0))
               }
               className="tap rounded-xl bg-[var(--color-pos-accent)] text-white px-3 sm:px-5 font-semibold disabled:opacity-50 flex-1 sm:flex-none whitespace-nowrap"
             >
-              Add {selectionMode ? selected.size : visible.length} to cart
+              {returnMatched.length > 0
+                ? `Return ${returnMatched.length}${
+                    (selectionMode ? selected.size : visible.length) > 0
+                      ? ` · Add ${selectionMode ? selected.size : visible.length}`
+                      : ""
+                  }`
+                : `Add ${selectionMode ? selected.size : visible.length} to cart`}
             </button>
           </div>
         </div>

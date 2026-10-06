@@ -61,10 +61,12 @@ export function TotalPanel({
   onCancelPhonePrompt,
   onResendPhonePrompt,
   mode = "all",
-  exchangeCredit = 0,
+  returnMode = "none",
 }: {
-  /** Credit from items returned on an exchange; reduces what's due. */
-  exchangeCredit?: number;
+  /** Cart has return lines: 'refund' = returns only (money back),
+   *  'exchange' = returns + new items (difference due, or leftover to
+   *  store credit — never money back). */
+  returnMode?: "none" | "exchange" | "refund";
   /** Lets the sell screen split the panel on mobile: the customer block
    *  pinned ABOVE the cart, and totals + payment buttons stacked BELOW
    *  the cart. Desktop keeps "all" in the right sidebar.
@@ -211,21 +213,16 @@ export function TotalPanel({
             {formatMoney(totals.total)}
           </span>
         </div>
-        {exchangeCredit > 0 && (
-          <>
-            <div className="flex justify-between text-emerald-700 font-semibold">
-              <span>Exchange credit</span>
-              <span className="tabular-nums">−{formatMoney(exchangeCredit)}</span>
-            </div>
-            <div className="flex justify-between items-end pt-1">
-              <span className="text-lg font-bold">
-                {exchangeCredit > totals.total ? "Give back" : "Due"}
-              </span>
-              <span className="total-display text-3xl">
-                {formatMoney(Math.abs(totals.total - exchangeCredit))}
-              </span>
-            </div>
-          </>
+        {returnMode !== "none" && totals.total <= 0 && (
+          <div className="flex justify-between items-end pt-1 text-emerald-800">
+            <span className="text-lg font-bold">
+              {returnMode === "refund" ? "Refund" : "To store credit"}
+            </span>
+            <span className="total-display text-3xl">{formatMoney(Math.abs(totals.total))}</span>
+          </div>
+        )}
+        {returnMode === "exchange" && totals.total > 0 && (
+          <p className="text-sm text-carbon-text-muted">Customer pays the difference.</p>
         )}
       </div>
 
@@ -242,7 +239,7 @@ export function TotalPanel({
           </span>
           Apply Discount to Sale
         </button>
-        {exchangeCredit > 0 && exchangeCredit + 0.005 >= totals.total ? (
+        {returnMode !== "none" && totals.total <= 0.005 ? (
           <button
             type="button"
             onClick={onOtherPayment}
@@ -250,9 +247,9 @@ export function TotalPanel({
             className="w-full carbon-btn-primary tap-lg text-lg font-bold disabled:opacity-50 inline-flex items-center justify-center gap-2"
           >
             <span className="material-symbols-outlined text-[22px]" aria-hidden>
-              swap_horiz
+              {returnMode === "refund" ? "assignment_return" : "swap_horiz"}
             </span>
-            Complete Exchange
+            {returnMode === "refund" ? "Refund" : "Complete Exchange"}
           </button>
         ) : (
         <>

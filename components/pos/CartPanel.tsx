@@ -112,17 +112,30 @@ export function CartPanel({
                         : ""
                   }`
                 : null;
-            const subtitle = [
-              ...idParts,
-              ...miscMeta,
-              discountSuffix,
-            ]
-              .filter(Boolean)
-              .join(" · ");
+            const isReturn = line.line_type === "return";
+            const awaitingTag = isReturn && !!line.return_ref?.needs_tag && !line.return_ref?.epc;
+            const subtitle = isReturn
+              ? [
+                  `Return from #${line.return_ref?.sale_number ?? ""}`,
+                  line.return_ref?.needs_tag
+                    ? line.return_ref?.epc
+                      ? "tag verified ✓"
+                      : "⚠ scan its tag to verify"
+                    : "no tag (sold manually)",
+                ].join(" · ")
+              : [
+                  ...idParts,
+                  ...miscMeta,
+                  discountSuffix,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
             return (
               <li
                 key={line.cart_id}
-                className="border-b border-[var(--carbon-border-soft)] last:border-b-0"
+                className={`border-b border-[var(--carbon-border-soft)] last:border-b-0 ${
+                  isReturn ? (awaitingTag ? "bg-amber-50" : "bg-red-50") : ""
+                }`}
               >
               <div
                 role="button"
@@ -185,7 +198,11 @@ export function CartPanel({
                     {line.description}
                   </h3>
                   {subtitle && (
-                    <p className="text-xs sm:text-sm text-carbon-text font-medium mt-0.5 sm:mt-1 truncate">
+                    <p
+                      className={`text-xs sm:text-sm font-medium mt-0.5 sm:mt-1 truncate ${
+                        awaitingTag ? "text-amber-800 font-bold" : isReturn ? "text-red-800" : "text-carbon-text"
+                      }`}
+                    >
                       {subtitle}
                     </p>
                   )}
@@ -254,11 +271,20 @@ export function CartPanel({
                         </button>
                       </div>
                     )
+                  ) : isReturn ? (
+                    <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-600 text-white uppercase tracking-wider font-bold">
+                      Return
+                    </span>
                   ) : (
                     <span className="text-[10px] sm:text-xs text-[var(--carbon-muted)] uppercase tracking-wider font-bold">
                       Misc
                     </span>
                   )}
+                  {isReturn ? (
+                    <span className="text-right w-16 sm:w-24 text-sm sm:text-base font-semibold tabular-nums text-red-700">
+                      −{formatMoney(Math.abs(lineTotal))}
+                    </span>
+                  ) : (
                   <button
                     type="button"
                     onClick={() => onEditDiscount(line.cart_id)}
@@ -267,6 +293,7 @@ export function CartPanel({
                   >
                     {formatMoney(lineTotal)}
                   </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onRemove(line.cart_id)}

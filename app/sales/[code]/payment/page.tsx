@@ -8,6 +8,7 @@ import { PaymentModal } from "@/components/pos/PaymentModal";
 import { SplitBuilder, type Tender } from "@/components/pos/SplitBuilder";
 import type { CartLine, CartTotals } from "@/types/pos";
 import { captureLines } from "@/lib/capture-payload";
+import { calculateTotals } from "@/lib/tax";
 
 type CartPayload = {
   lines: CartLine[];
@@ -19,14 +20,9 @@ type CartPayload = {
    *  Forwarded to /api/pos/payment/capture so the persisted sale row
    *  records who got commission credit. */
   attributedEmployeeId?: number | null;
-  /** Exchange in progress — returned items' credit pays part of this sale. */
-  exchange?: {
-    sale_id: number;
-    sale_number: string;
-    line_ids: number[];
-    credit: number;
-  } | null;
 };
+
+type Quote = { credit: number; sale_number: string; customer_id: number | null };
 
 type Method = "card" | "cash" | "other";
 
@@ -68,6 +64,33 @@ function PaymentInner() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Return lines (scanned back on the sell screen) → exact credit from
+  // the server, which re-checks every returned tag against the sale.
+  const returnLines = (cart?.lines ?? []).filter((l) => l.line_type === "return");
+  const returnSaleId = returnLines[0]?.return_ref?.sale_id ?? null;
+  const returnItems = returnLines.map((l) => ({
+    line_id: l.return_ref!.line_id,
+    epc: l.return_ref!.epc,
+    quantity: 1,
+  }));
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!returnSaleId) return;
+    fetch("/api/pos/returns/quote", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sale_id: returnSaleId, items: returnItems }),
+    })
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) setQuote(d as Quote);
+        else setQuoteError(d.message ?? "Couldn't price the returned items.");
+      })
+      .catch(() => setQuoteError("Couldn't price the returned items."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnSaleId]);
 
   useEffect(() => {
     fetch("/api/pos/sessions?current=1")
@@ -111,14 +134,18 @@ function PaymentInner() {
     );
   }
 
-  // With an exchange, tenders cover only what the credit doesn't.
-  const exchange = cart.exchange ?? null;
-  const saleTotal = cart.totals.total;
-  const total = round2(Math.max(0, saleTotal - (exchange?.credit ?? 0)));
-  const giveBack = round2(Math.max(0, (exchange?.credit ?? 0) - saleTotal));
+  // New items vs pieces coming back. Tenders cover only what the return
+  // credit doesn't; on an exchange any leftover goes to store credit.
+  const newLines = cart.lines.filter((l) => l.line_type !== "return");
+  const hasReturns = returnLines.length > 0;
+  const saleTotal = hasReturns ? calculateTotals(newLines, cart.taxRate).total : cart.totals.total;
+  const credit = quote?.credit ?? 0;
+  const total = round2(Math.max(0, saleTotal - credit));
+  const toStoreCredit = round2(Math.max(0, credit - saleTotal));
+  const returnCustomerId = quote?.customer_id ?? cart.customerId ?? null;
   const cashAmount = round2(Number(cashGiven || 0));
 
-  async function finishSale(payments: Tender[], payout?: "cash" | "store_credit") {
+  async function finishSale(payments: Tender[]) {
     if (!cart) return;
     if (!registerId) {
       setError("Your register isn't open. Go to the Register screen first.");
@@ -133,10 +160,10 @@ function PaymentInner() {
         register_id: registerId,
         customer_id: cart.customerId ?? null,
         attributed_employee_id: cart.attributedEmployeeId ?? null,
-        lines: captureLines(cart.lines),
+        lines: captureLines(newLines),
         payments,
-        exchange: exchange
-          ? { sale_id: exchange.sale_id, line_ids: exchange.line_ids, payout_method: payout }
+        exchange: hasReturns && returnSaleId
+          ? { sale_id: returnSaleId, items: returnItems }
           : undefined,
       }),
     });
@@ -150,28 +177,80 @@ function PaymentInner() {
     // Clear the persisted SellScreen cart so the next sale starts empty.
     try {
       window.localStorage.removeItem(`pos:cart:${code}`);
-      window.localStorage.removeItem(`pos:exchange:${code}`);
     } catch {
       /* ignore */
     }
     router.replace(`/sales/${code}/receipt?sale=${data.sale.id}`);
   }
 
-  // Exchange fully covered by the returned items: nothing to charge —
-  // complete it, giving back any difference as cash or store credit.
-  if (exchange && total === 0) {
+  async function refundOnly(method: "original_card" | "cash" | "store_credit", reason: string) {
+    if (!returnSaleId) return;
+    setSaving(true);
+    setError(null);
+    const res = await fetch("/api/pos/payment/refund", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sale_id: returnSaleId, items: returnItems, method, reason: reason || undefined }),
+    });
+    setSaving(false);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(d.message ?? "Couldn't refund. Try again.");
+      return;
+    }
+    try {
+      window.localStorage.removeItem(`pos:cart:${code}`);
+    } catch {
+      /* ignore */
+    }
+    router.replace(`/sales/${code}/refund/receipt?refund=${d.refund.id}`);
+  }
+
+  if (hasReturns && !quote) {
     return (
       <main className="min-h-screen p-4 sm:p-6 max-w-xl mx-auto">
-        <button
-          onClick={() => router.back()}
-          className="tap text-[var(--color-pos-muted)] underline px-3 mb-4"
-        >
+        <button onClick={() => router.back()} className="tap text-[var(--color-pos-muted)] underline px-3 mb-4">
+          ← Back to cart
+        </button>
+        <div className="carbon-card p-6">
+          {quoteError ? (
+            <p className="text-[var(--color-pos-danger)] font-semibold">{quoteError}</p>
+          ) : (
+            <p className="text-carbon-text-muted">Checking the returned items…</p>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  // Returns only → a refund (the only time money goes back).
+  if (hasReturns && newLines.length === 0 && quote) {
+    return (
+      <RefundCheckout
+        amount={quote.credit}
+        saleNumber={quote.sale_number}
+        pieces={returnLines.length}
+        hasCustomer={quote.customer_id != null}
+        saving={saving}
+        error={error}
+        onBack={() => router.back()}
+        onRefund={refundOnly}
+      />
+    );
+  }
+
+  // Exchange the returns fully cover: nothing to charge; any leftover
+  // goes to the customer's store credit (never money back on exchange).
+  if (hasReturns && total === 0 && quote) {
+    return (
+      <main className="min-h-screen p-4 sm:p-6 max-w-xl mx-auto">
+        <button onClick={() => router.back()} className="tap text-[var(--color-pos-muted)] underline px-3 mb-4">
           ← Back to cart
         </button>
         <div className="carbon-card p-6">
           <h1 className="text-2xl font-bold">Complete exchange</h1>
           <p className="text-sm text-carbon-text-muted mt-1">
-            Returning items from sale #{exchange.sale_number}.
+            {returnLines.length} item{returnLines.length === 1 ? "" : "s"} back from receipt #{quote.sale_number} (tags verified).
           </p>
           <div className="mt-4 space-y-1 text-base">
             <div className="flex justify-between">
@@ -179,45 +258,31 @@ function PaymentInner() {
               <span className="tabular-nums">{formatMoney(saleTotal)}</span>
             </div>
             <div className="flex justify-between text-emerald-700 font-semibold">
-              <span>Exchange credit</span>
-              <span className="tabular-nums">−{formatMoney(exchange.credit)}</span>
+              <span>Returned items</span>
+              <span className="tabular-nums">−{formatMoney(credit)}</span>
             </div>
             <div className="flex justify-between font-bold text-xl border-t border-carbon-border-soft pt-2">
-              <span>{giveBack > 0 ? "Give back to customer" : "Nothing to pay"}</span>
-              <span className="tabular-nums">{formatMoney(giveBack)}</span>
+              <span>{toStoreCredit > 0 ? "To customer's store credit" : "Nothing to pay"}</span>
+              <span className="tabular-nums">{formatMoney(toStoreCredit)}</span>
             </div>
           </div>
-          {giveBack > 0 ? (
-            <div className="grid grid-cols-2 gap-3 mt-6">
-              <button
-                disabled={saving}
-                onClick={() => finishSale([], "cash")}
-                className="carbon-btn-primary tap-lg font-bold disabled:opacity-50"
-              >
-                {formatMoney(giveBack)} in cash
-              </button>
-              <button
-                disabled={saving || !cart.customerId}
-                onClick={() => finishSale([], "store_credit")}
-                className="carbon-btn-secondary tap-lg font-bold disabled:opacity-50"
-                title={cart.customerId ? "" : "Attach the customer to use store credit"}
-              >
-                {formatMoney(giveBack)} to store credit
-              </button>
-            </div>
+          {toStoreCredit > 0 && !returnCustomerId ? (
+            <p className="mt-6 text-[var(--color-pos-danger)] font-semibold">
+              An exchange never gives money back — the {formatMoney(toStoreCredit)} difference goes
+              to the customer&apos;s store credit. Go back and attach the customer.
+            </p>
           ) : (
             <button
               disabled={saving}
               onClick={() => finishSale([])}
               className="carbon-btn-primary tap-lg w-full font-bold mt-6 disabled:opacity-50"
             >
-              {saving ? "Completing…" : "Complete exchange"}
+              {saving
+                ? "Completing…"
+                : toStoreCredit > 0
+                  ? `Complete — ${formatMoney(toStoreCredit)} to store credit`
+                  : "Complete exchange"}
             </button>
-          )}
-          {!cart.customerId && giveBack > 0 && (
-            <p className="text-xs text-carbon-text-muted mt-2">
-              Store credit needs a customer on the sale.
-            </p>
           )}
           {error && <p className="mt-4 text-[var(--color-pos-danger)]">{error}</p>}
         </div>
@@ -237,9 +302,9 @@ function PaymentInner() {
         <div className="text-right">
           <p className="text-[var(--color-pos-muted)] text-sm">Amount due</p>
           <p className="total-display text-3xl">{formatMoney(total)}</p>
-          {exchange && (
+          {hasReturns && (
             <p className="text-xs text-emerald-700 font-semibold">
-              {formatMoney(saleTotal)} − {formatMoney(exchange.credit)} exchange credit
+              {formatMoney(saleTotal)} − {formatMoney(credit)} returned items
             </p>
           )}
         </div>
@@ -537,5 +602,82 @@ function OtherSection({
         </button>
       </div>
     </div>
+  );
+}
+
+function RefundCheckout({
+  amount,
+  saleNumber,
+  pieces,
+  hasCustomer,
+  saving,
+  error,
+  onBack,
+  onRefund,
+}: {
+  amount: number;
+  saleNumber: string;
+  pieces: number;
+  hasCustomer: boolean;
+  saving: boolean;
+  error: string | null;
+  onBack: () => void;
+  onRefund: (method: "original_card" | "cash" | "store_credit", reason: string) => void;
+}) {
+  const [method, setMethod] = useState<"original_card" | "cash" | "store_credit">("original_card");
+  const [reason, setReason] = useState("");
+  return (
+    <main className="min-h-screen p-4 sm:p-6 max-w-xl mx-auto">
+      <button onClick={onBack} className="tap text-[var(--color-pos-muted)] underline px-3 mb-4">
+        ← Back to cart
+      </button>
+      <div className="carbon-card p-6">
+        <h1 className="text-2xl font-bold">Refund</h1>
+        <p className="text-sm text-carbon-text-muted mt-1">
+          {pieces} item{pieces === 1 ? "" : "s"} back from receipt #{saleNumber} — tags verified,
+          they go back in stock.
+        </p>
+        <p className="total-display text-4xl mt-4">{formatMoney(amount)}</p>
+        <p className="text-sm font-semibold mt-4 mb-1">Refund to</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              ["original_card", "Original card"],
+              ["cash", "Cash"],
+              ["store_credit", "Store credit"],
+            ] as const
+          ).map(([m, label]) => (
+            <button
+              key={m}
+              onClick={() => setMethod(m)}
+              disabled={m === "store_credit" && !hasCustomer}
+              className={`tap font-semibold disabled:opacity-40 ${
+                method === m ? "bg-[var(--color-pos-ink)] text-white" : "bg-white border border-[var(--color-pos-border)]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {!hasCustomer && (
+          <p className="text-xs text-carbon-text-muted mt-1">Store credit needs a customer on the original sale.</p>
+        )}
+        <input
+          type="text"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Reason (optional) — e.g. wrong size"
+          className="tap w-full border border-[var(--color-pos-border)] px-3 mt-3"
+        />
+        <button
+          disabled={saving}
+          onClick={() => onRefund(method, reason.trim())}
+          className="carbon-btn-primary tap-lg w-full font-bold mt-5 disabled:opacity-50"
+        >
+          {saving ? "Refunding…" : `Refund ${formatMoney(amount)}`}
+        </button>
+        {error && <p className="mt-4 text-[var(--color-pos-danger)]">{error}</p>}
+      </div>
+    </main>
   );
 }
