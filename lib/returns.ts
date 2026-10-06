@@ -120,7 +120,9 @@ export async function loadReturnable(
         epcs,
         returned_epcs: returnedEpcs,
         returned_qty: Math.min(qty, returnedQty),
-        available_qty: Math.max(0, qty - returnedQty),
+        // Nothing left to refund on the sale (e.g. fully refunded before
+        // per-piece tracking) → nothing is returnable.
+        available_qty: total - refunded <= 0.005 ? 0 : Math.max(0, qty - returnedQty),
         unit_value: qty > 0 ? r2(Number(l.line_total) / qty) : 0,
       };
     }),
