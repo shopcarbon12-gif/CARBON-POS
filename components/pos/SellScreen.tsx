@@ -78,6 +78,14 @@ export function SellScreen({
   // Arrived from the Exchange / Refund buttons: prompt for the receipt.
   useEffect(() => {
     const mode = searchParams.get("returns");
+    // From the order screen's Exchange / Refund buttons: receipt preloaded.
+    const receipt = searchParams.get("receipt");
+    if (mode && receipt) {
+      void loadReceipt(receipt).then((ok) => {
+        if (!ok) setOfflineNotice(`Couldn't load receipt #${receipt}. Scan it in the search box instead.`);
+      });
+      return;
+    }
     if (mode) {
       setOfflineNotice(
         `${mode === "refund" ? "Refund" : "Exchange"}: scan the receipt barcode (or type the receipt number) in the search box and press Enter.`,
