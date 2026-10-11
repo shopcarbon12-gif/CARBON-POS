@@ -91,5 +91,6 @@ export async function POST(req: Request) {
       { status: 502 },
     );
   }
-  return NextResponse.json({ request_id: ins.rows[0].id, sent_to: approver });
+  // BIGSERIAL comes back from pg as a string — send a number.
+  return NextResponse.json({ request_id: Number(ins.rows[0].id), sent_to: approver });
 }

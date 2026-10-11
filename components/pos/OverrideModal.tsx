@@ -75,9 +75,9 @@ export function OverrideModal({
       body: JSON.stringify({ kind, ref: refId, detail }),
     }).catch(() => null);
     setBusy(false);
-    const d = (await r?.json().catch(() => ({}))) as { request_id?: number; sent_to?: string; message?: string };
+    const d = (await r?.json().catch(() => ({}))) as { request_id?: number | string; sent_to?: string; message?: string };
     if (r?.ok && d.request_id) {
-      setRequestId(d.request_id);
+      setRequestId(Number(d.request_id));
       setSentTo(d.sent_to ?? null);
     } else {
       setError(d?.message ?? "Couldn't send the code.");

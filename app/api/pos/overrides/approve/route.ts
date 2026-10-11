@@ -11,7 +11,7 @@ const schema = z.object({
   /** Admin PIN typed on the register… */
   pin: z.string().regex(/^\d{4}$/).optional(),
   /** …or the emailed one-time code for this request. */
-  request_id: z.number().int().positive().optional(),
+  request_id: z.coerce.number().int().positive().optional(),
   code: z.string().regex(/^\d{6}$/).optional(),
 });
 
@@ -25,7 +25,12 @@ export async function POST(req: Request) {
   const cashier = await currentCashier();
   if (!cashier) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "invalid_request", message: "Couldn't read that approval — try again." },
+      { status: 400 },
+    );
+  }
   const { kind, ref, pin, request_id, code } = parsed.data;
   const pool = getPool();
   const name = (r: { first_name?: string | null; last_name?: string | null; email: string }) =>
