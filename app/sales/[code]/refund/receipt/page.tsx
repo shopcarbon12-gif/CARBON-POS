@@ -77,15 +77,17 @@ function RefundReceiptInner() {
         bytesToHex(
           concatBytes(
             escPosInit(),
+            // Drawer opens before the paper prints.
+            ...(kick ? [escPosKickDrawer()] : []),
             canvasToEscPosRaster(await rasterizeElement(el as HTMLElement)),
             escPosFeed(3),
             escPosCut(),
-            ...(kick ? [escPosKickDrawer()] : []),
           ),
         );
+      const cash = data.refund.method === "cash";
       await deliverPrint([
-        ...(merchantMain ? [await job(merchantMain, false)] : []),
-        await job(customerMain, data.refund.method === "cash"),
+        ...(merchantMain ? [await job(merchantMain, cash)] : []),
+        await job(customerMain, cash && !merchantMain),
       ]);
       setState("done");
     } catch (err) {

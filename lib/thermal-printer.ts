@@ -158,15 +158,16 @@ export async function printSaleReceipt({
   // for signatures while the customer copy is still feeding out. Two
   // separate execute() calls so each TCP write stays well below the
   // printer's input-buffer ceiling.
+  // Cash drawer opens first, before any paper prints.
+  if (process.env.CASH_DRAWER_KICK !== "0") {
+    printer.openCashDrawer();
+  }
   await printSaleCopy(printer, sale, lines, payments, loyalty, "merchant");
   printer.cut();
   await printer.execute();
 
   await printSaleCopy(printer, sale, lines, payments, loyalty, "customer");
   printer.cut();
-  if (process.env.CASH_DRAWER_KICK !== "0") {
-    printer.openCashDrawer();
-  }
   await printer.execute();
   return { ok: true };
 }
@@ -214,8 +215,12 @@ export async function buildSaleReceiptPayload({
 
   const copies: { variant: CopyVariant; hex: string }[] = [];
 
-  // Merchant first — same order the server-side path uses.
+  // Merchant first — same order the server-side path uses. The drawer
+  // kick leads the first copy so the till opens before paper prints.
   printer.clear();
+  if (process.env.CASH_DRAWER_KICK !== "0") {
+    printer.openCashDrawer();
+  }
   await printSaleCopy(printer, sale, lines, payments, loyalty, "merchant");
   printer.cut();
   copies.push({
@@ -223,14 +228,10 @@ export async function buildSaleReceiptPayload({
     hex: bufferToHex(printer.getBuffer()),
   });
 
-  // Customer second, with drawer kick on the tail so the till opens
-  // exactly once per sale (matching the server-side behavior).
+  // Customer second.
   printer.clear();
   await printSaleCopy(printer, sale, lines, payments, loyalty, "customer");
   printer.cut();
-  if (process.env.CASH_DRAWER_KICK !== "0") {
-    printer.openCashDrawer();
-  }
   copies.push({
     variant: "customer",
     hex: bufferToHex(printer.getBuffer()),

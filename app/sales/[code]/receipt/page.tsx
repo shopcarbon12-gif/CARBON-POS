@@ -134,9 +134,12 @@ function ReceiptInner() {
         customerMain as HTMLElement,
       );
 
+      // The cash drawer opens FIRST — before any paper prints — so the
+      // kick goes at the very start of the first job.
       const merchantJob = merchantCanvas
         ? concatBytes(
             escPosInit(),
+            escPosKickDrawer(),
             canvasToEscPosRaster(merchantCanvas),
             escPosFeed(3),
             escPosCut(),
@@ -144,10 +147,10 @@ function ReceiptInner() {
         : null;
       const customerJob = concatBytes(
         escPosInit(),
+        ...(merchantJob ? [] : [escPosKickDrawer()]),
         canvasToEscPosRaster(customerCanvas),
         escPosFeed(3),
         escPosCut(),
-        escPosKickDrawer(),
       );
 
       // Store print agent when online, else browser → printer.

@@ -67,7 +67,7 @@ async function waitForAgent(ids: number[], online: boolean): Promise<void> {
 
 /**
  * Rasterize an on-screen element and print it as one cut ticket.
- * `kickDrawer` pops the cash drawer after the cut.
+ * `kickDrawer` pops the cash drawer first, before the paper prints.
  */
 export async function printElement(
   el: HTMLElement,
@@ -76,10 +76,10 @@ export async function printElement(
   const canvas = await rasterizeElement(el);
   const job = concatBytes(
     escPosInit(),
+    ...(opts.kickDrawer ? [escPosKickDrawer()] : []), // drawer first, then print
     canvasToEscPosRaster(canvas),
     escPosFeed(3),
     escPosCut(),
-    ...(opts.kickDrawer ? [escPosKickDrawer()] : []),
   );
   await deliverPrint([bytesToHex(job)]);
 }
