@@ -76,7 +76,9 @@ export default async function AdminSaleDetailPage({
               sl.unit_price::text, sl.discount_amount::text, sl.tax_amount::text,
               sl.line_total::text,
               COALESCE((SELECT sum(ri.quantity) FROM pos_refund_items ri
-                         WHERE ri.sale_line_id = sl.id), 0)::int AS returned_qty
+                         WHERE ri.sale_line_id = sl.id), 0)::int AS returned_qty,
+              COALESCE((SELECT sum(ri.quantity) FROM pos_refund_items ri
+                         WHERE ri.sale_line_id = sl.id AND ri.damaged), 0)::int AS damaged_qty
          FROM pos_sale_lines sl
         WHERE sl.sale_id = $1
         ORDER BY sl.id`,

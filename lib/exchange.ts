@@ -136,6 +136,7 @@ export async function recordExchangeReturn(
   }
   await restockEpcs(client, {
     epcs: locked.epcs,
+    damagedEpcs: locked.damagedEpcs,
     tenantId: a.cashier.tid,
     userId: a.cashier.user_id,
     reason: "pos_exchange",

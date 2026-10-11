@@ -32,6 +32,7 @@ const schema = z.object({
         epc: z.string().max(64).nullable().optional(),
         quantity: z.number().int().positive().optional(),
         override_token: z.string().max(2000).nullable().optional(),
+        damaged: z.boolean().optional(),
       }),
     )
     .max(500)
@@ -287,6 +288,7 @@ export async function POST(req: Request) {
       if (quote) {
         await restockEpcs(client, {
           epcs: quote.epcs,
+          damagedEpcs: quote.damagedEpcs,
           tenantId: cashier.tid,
           userId: cashier.user_id,
           reason: "pos_refund",

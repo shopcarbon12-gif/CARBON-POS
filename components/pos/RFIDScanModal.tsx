@@ -451,7 +451,7 @@ export function RFIDScanModal({
               receipt {returnLabel ?? ""} ✓
             </p>
             <p className="text-xs text-emerald-700">
-              These tags were sold on that receipt — they&apos;ll be returned and go back in stock.
+              These tags were sold on that receipt — they&apos;ll be returned to the store (mark any damaged ones in the cart).
             </p>
           </div>
         )}

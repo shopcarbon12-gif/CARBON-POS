@@ -253,6 +253,8 @@ export type CartLine = {
     /** Admin override to take this RFID piece back without its tag. */
     override_token?: string | null;
     override_by?: string | null;
+    /** Came back damaged — restocked as 'damaged', not sellable. */
+    damaged?: boolean;
   } | null;
   /** Admin override to sell this RFID item without scanning its tag. */
   override_token?: string | null;

@@ -21,6 +21,7 @@ export function CartPanel({
   saleAttributedEmployeeId,
   onChangeSaleEmployee,
   onChangeLineEmployee,
+  onToggleDamaged,
 }: {
   lines: CartLine[];
   onChangeQty: (cartId: string, next: number) => void;
@@ -42,6 +43,8 @@ export function CartPanel({
   onChangeSaleEmployee: (employeeId: number) => void;
   /** Per-row dropdown handler. */
   onChangeLineEmployee: (cartId: string, employeeId: number) => void;
+  /** Return rows: flag the piece as damaged (restocked as not sellable). */
+  onToggleDamaged?: (cartId: string) => void;
 }) {
   // Which row is currently expanded — at most one at a time. Tapping a
   // row toggles; tapping interactive children (qty, price, trash, employee)
@@ -128,7 +131,10 @@ export function CartPanel({
                         ? "tag verified ✓"
                         : "⚠ scan its tag to verify"
                       : "no tag (sold manually)",
-                ].join(" · ")
+                  line.return_ref?.damaged ? "DAMAGED — not for resale" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
               : [
                   ...idParts,
                   ...miscMeta,
@@ -279,8 +285,31 @@ export function CartPanel({
                       </div>
                     )
                   ) : isReturn ? (
-                    <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-600 text-white uppercase tracking-wider font-bold">
-                      Return
+                    <span className="inline-flex items-center gap-2">
+                      {onToggleDamaged && (
+                        <button
+                          type="button"
+                          onClick={() => onToggleDamaged(line.cart_id)}
+                          title={
+                            line.return_ref?.damaged
+                              ? "Damaged — goes back as not sellable. Tap to mark as good."
+                              : "Tap if this piece came back damaged (not sellable)."
+                          }
+                          className={`text-[10px] sm:text-xs px-2 py-0.5 uppercase tracking-wider font-bold border inline-flex items-center gap-1 ${
+                            line.return_ref?.damaged
+                              ? "bg-amber-500 border-amber-600 text-white"
+                              : "bg-white border-[var(--carbon-border)] text-carbon-text-muted hover:border-amber-500 hover:text-amber-700"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[14px]" aria-hidden>
+                            {line.return_ref?.damaged ? "check_box" : "check_box_outline_blank"}
+                          </span>
+                          Damaged
+                        </button>
+                      )}
+                      <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-600 text-white uppercase tracking-wider font-bold">
+                        Return
+                      </span>
                     </span>
                   ) : (
                     <span className="text-[10px] sm:text-xs text-[var(--carbon-muted)] uppercase tracking-wider font-bold">

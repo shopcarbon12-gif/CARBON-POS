@@ -1741,6 +1741,15 @@ export function SellScreen({
             saleAttributedEmployeeId={saleAttributedEmployeeId}
             onChangeSaleEmployee={setSaleAttribution}
             onChangeLineEmployee={setLineAttribution}
+            onToggleDamaged={(cartId) =>
+              setLines((prev) =>
+                prev.map((l) =>
+                  l.cart_id === cartId && l.return_ref
+                    ? { ...l, return_ref: { ...l.return_ref, damaged: !l.return_ref.damaged } }
+                    : l,
+                ),
+              )
+            }
           />
 
           {/* Three secondary actions — flex-wrap so they reflow to 2+1 or

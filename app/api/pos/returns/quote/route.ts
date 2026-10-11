@@ -23,6 +23,7 @@ const schema = z.object({
         epc: z.string().max(64).nullable().optional(),
         quantity: z.number().int().positive().optional(),
         override_token: z.string().max(2000).nullable().optional(),
+        damaged: z.boolean().optional(),
       }),
     )
     .min(1)

@@ -20,6 +20,8 @@ export type ReturnItemInput = {
   /** Admin-approved override (lib/override, kind rfid_return, ref = sale
    *  id) to take back an RFID piece without scanning its tag. */
   override_token?: string | null;
+  /** Came back damaged: restocked as 'damaged', not sellable. */
+  damaged?: boolean;
 };
 
 export type { ReturnableLine, ReturnableSale } from "@/lib/returns-types";
@@ -145,6 +147,7 @@ export type ReturnEntry = {
   tax: number;
   /** Approver when an RFID piece came back without its tag scanned. */
   override_by?: string | null;
+  damaged?: boolean;
 };
 
 export type ReturnQuote = {
@@ -156,6 +159,8 @@ export type ReturnQuote = {
   entries: ReturnEntry[];
   lineIds: number[];
   epcs: string[];
+  /** Scanned tags flagged damaged (subset of epcs). */
+  damagedEpcs: string[];
   /** Credit for the returned pieces, capped at what's still refundable. */
   credit: number;
   tax: number;
@@ -196,7 +201,7 @@ export async function priceReturn(
         if (!by) {
           throw new ReturnError(`Scan the tag of "${line.description}" — RFID items must be scanned coming back (or get an admin override).`);
         }
-        entries.push({ line_id: line.id, epc: null, quantity: 1, amount: 0, tax: 0, override_by: by });
+        entries.push({ line_id: line.id, epc: null, quantity: 1, amount: 0, tax: 0, override_by: by, damaged: !!it.damaged });
         qtyPerLine.set(line.id, (qtyPerLine.get(line.id) ?? 0) + 1);
         continue;
       }
@@ -207,7 +212,7 @@ export async function priceReturn(
         throw new ReturnError(`That "${line.description}" was already returned.`);
       }
       seenEpc.add(epc);
-      entries.push({ line_id: line.id, epc, quantity: 1, amount: 0, tax: 0 });
+      entries.push({ line_id: line.id, epc, quantity: 1, amount: 0, tax: 0, damaged: !!it.damaged });
       qtyPerLine.set(line.id, (qtyPerLine.get(line.id) ?? 0) + 1);
     } else {
       const q = Math.max(1, Math.floor(it.quantity ?? 1));
@@ -216,7 +221,7 @@ export async function priceReturn(
         throw new ReturnError(`Only ${line.available_qty} of "${line.description}" left to return.`);
       }
       qtyPerLine.set(line.id, used);
-      entries.push({ line_id: line.id, epc: null, quantity: q, amount: 0, tax: 0 });
+      entries.push({ line_id: line.id, epc: null, quantity: q, amount: 0, tax: 0, damaged: !!it.damaged });
     }
   }
   for (const [lineId, q] of qtyPerLine) {
@@ -251,6 +256,7 @@ export async function priceReturn(
     entries,
     lineIds: [...new Set(entries.map((e) => e.line_id))],
     epcs: entries.map((e) => e.epc).filter((x): x is string => !!x),
+    damagedEpcs: entries.filter((e) => e.damaged && e.epc).map((e) => e.epc as string),
     credit,
     tax: r2(entries.reduce((s, e) => s + e.tax, 0)),
     fullyRefunded: credit >= sale.remaining - 0.005,
@@ -261,40 +267,55 @@ export async function priceReturn(
 export async function recordReturnItems(client: PoolClient, refundId: number, entries: ReturnEntry[]) {
   for (const e of entries) {
     await client.query(
-      `INSERT INTO pos_refund_items (refund_id, sale_line_id, epc, quantity, amount, tax_amount, override_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [refundId, e.line_id, e.epc, e.quantity, e.amount, e.tax, e.override_by ?? null],
+      `INSERT INTO pos_refund_items (refund_id, sale_line_id, epc, quantity, amount, tax_amount, override_by, damaged)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [refundId, e.line_id, e.epc, e.quantity, e.amount, e.tax, e.override_by ?? null, !!e.damaged],
     );
   }
 }
 
 /**
- * Put exactly the scanned tags back in stock. Only tags still 'sold'
- * flip; one STATUS_CHANGE audit row per flipped EPC, mirroring capture.
+ * Put exactly the scanned tags back in the store. Only tags still 'sold'
+ * flip — to 'in-stock', or 'damaged' for pieces the cashier flagged as
+ * not fit to sell. One STATUS_CHANGE audit row per flipped EPC.
  */
 export async function restockEpcs(
   client: PoolClient,
-  a: { epcs: string[]; tenantId: string; userId: string; reason: "pos_refund" | "pos_exchange" },
+  a: {
+    epcs: string[];
+    damagedEpcs?: string[];
+    tenantId: string;
+    userId: string;
+    reason: "pos_refund" | "pos_exchange";
+  },
 ): Promise<number> {
   if (a.epcs.length === 0) return 0;
-  const flipped = await client.query<{ epc: string; old_status: string }>(
+  const damaged = (a.damagedEpcs ?? []).map((e) => e.toUpperCase());
+  const flipped = await client.query<{ epc: string; old_status: string; new_status: string }>(
     `WITH prev AS (
        SELECT epc, status AS old_status FROM items WHERE epc = ANY($1::text[])
      )
      UPDATE items i
-        SET status = 'in-stock'
+        SET status = CASE WHEN upper(i.epc) = ANY($2::text[]) THEN 'damaged' ELSE 'in-stock' END
        FROM prev p
       WHERE i.epc = p.epc AND i.status = 'sold'
-     RETURNING i.epc, p.old_status`,
-    [a.epcs],
+     RETURNING i.epc, p.old_status, i.status AS new_status`,
+    [a.epcs, damaged],
   );
   for (const r of flipped.rows) {
     await client.query(
       `INSERT INTO inventory_audit_logs
          (tenant_id, log_type, entity_type, entity_reference,
           old_value, new_value, reason, user_id, user_uuid)
-       VALUES ($1::uuid, 'STATUS_CHANGE', 'EPC', $2, $3, 'in-stock', $4, NULL, $5::uuid)`,
-      [a.tenantId, r.epc, r.old_status, a.reason, a.userId],
+       VALUES ($1::uuid, 'STATUS_CHANGE', 'EPC', $2, $3, $4, $5, NULL, $6::uuid)`,
+      [
+        a.tenantId,
+        r.epc,
+        r.old_status,
+        r.new_status,
+        r.new_status === "damaged" ? `${a.reason}_damaged` : a.reason,
+        a.userId,
+      ],
     );
   }
   return flipped.rows.length;

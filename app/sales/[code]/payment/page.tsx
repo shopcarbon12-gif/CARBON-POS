@@ -83,6 +83,7 @@ function PaymentInner() {
     epc: l.return_ref!.epc,
     quantity: 1,
     override_token: l.return_ref!.override_token ?? null,
+    damaged: !!l.return_ref!.damaged,
   }));
   // Exchange difference to the original payment (admin override).
   const [payoutAsk, setPayoutAsk] = useState(false);
@@ -263,6 +264,7 @@ function PaymentInner() {
         amount={quote.credit}
         saleNumber={quote.sale_number}
         pieces={returnLines.length}
+        damaged={returnLines.filter((l) => l.return_ref?.damaged).length}
         hasCustomer={quote.customer_id != null}
         payments={quote.payments ?? []}
         saving={saving}
@@ -731,6 +733,7 @@ function RefundCheckout({
   amount,
   saleNumber,
   pieces,
+  damaged,
   hasCustomer,
   payments,
   saving,
@@ -745,6 +748,8 @@ function RefundCheckout({
   amount: number;
   saleNumber: string;
   pieces: number;
+  /** Pieces flagged damaged — restocked as not sellable. */
+  damaged: number;
   hasCustomer: boolean;
   /** How the original sale was paid. */
   payments: OrigPayment[];
@@ -775,8 +780,12 @@ function RefundCheckout({
       <div className="carbon-card p-6">
         <h1 className="text-2xl font-bold">Refund</h1>
         <p className="text-sm text-carbon-text-muted mt-1">
-          {pieces} item{pieces === 1 ? "" : "s"} back from receipt #{saleNumber} — tags verified,
-          they go back in stock.
+          {pieces} item{pieces === 1 ? "" : "s"} back from receipt #{saleNumber} — tags verified.{" "}
+          {damaged === 0
+            ? "They go back in stock."
+            : damaged === pieces
+              ? "Marked damaged — back in the store but not for sale."
+              : `${pieces - damaged} go back in stock; ${damaged} marked damaged (not for sale).`}
         </p>
         <p className="total-display text-4xl mt-4">{formatMoney(amount)}</p>
         {payments.length > 0 && (

@@ -16,6 +16,7 @@ export type SaleLineRow = {
   tax_amount: string;
   line_total: string;
   returned_qty: number;
+  damaged_qty: number;
 };
 
 /**
@@ -61,6 +62,11 @@ export function SaleLines({ code, lines }: { code: string; lines: SaleLineRow[] 
                   {l.returned_qty > 0 && (
                     <span className="ml-2 px-2 py-0.5 text-xs font-semibold bg-amber-50 text-amber-800">
                       {l.returned_qty >= l.quantity ? "Returned" : `${l.returned_qty} returned`}
+                    </span>
+                  )}
+                  {l.damaged_qty > 0 && (
+                    <span className="ml-2 px-2 py-0.5 text-xs font-semibold bg-red-50 text-red-800">
+                      {l.damaged_qty === 1 && l.quantity === 1 ? "Damaged" : `${l.damaged_qty} damaged`}
                     </span>
                   )}
                   {tags.map((t) => (
