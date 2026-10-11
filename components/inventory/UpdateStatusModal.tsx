@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RssiFilterSlider, RSSI_DEFAULT } from "@/components/pos/RssiFilterSlider";
 
 /**
@@ -16,9 +16,10 @@ import { RssiFilterSlider, RSSI_DEFAULT } from "@/components/pos/RssiFilterSlide
  *     POSTs to /api/pos/inventory/bulk-status which proxies to WMS's
  *     bulk-status endpoint — WMS owns role gates + audit writes
  *     (STATUS_CHANGE rows in inventory_audit_logs).
- *   - No "add to cart". No selection mode — Apply hits everything in
- *     the scanned list (a misclick is reversible via WMS for non-LIVE
- *     locked statuses by a Super Admin).
+ *   - No "add to cart". Tick the rows to change (or Select all); Apply
+ *     only touches ticked rows that are inside the proximity range.
+ *   - Proximity works like the cart scan: every read is kept with its
+ *     strongest signal, and the slider hides/shows rows live.
  */
 
 type LookupItem = {
@@ -69,11 +70,40 @@ export function UpdateStatusModal({
   // RSSI proximity threshold (negative dBm) — slider sets it; weaker reads are
   // filtered out. Ref mirror so the long-lived EventSource reads the latest.
   const [rssiThreshold, setRssiThreshold] = useState<number>(RSSI_DEFAULT);
-  const rssiThresholdRef = useRef<number>(RSSI_DEFAULT);
-  useEffect(() => {
-    rssiThresholdRef.current = rssiThreshold;
-  }, [rssiThreshold]);
+  // Strongest signal seen per tag (closer = higher). Copied into state every
+  // 400 ms so the list re-filters as items move without a render per read.
+  const epcRssiRef = useRef<Map<string, number>>(new Map());
+  const [rssiByEpc, setRssiByEpc] = useState<Map<string, number>>(new Map());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const seenRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!open) return;
+    const t = setInterval(() => {
+      setRssiByEpc((prev) => {
+        const cur = epcRssiRef.current;
+        if (prev.size === cur.size && [...cur].every(([k, v]) => prev.get(k) === v)) return prev;
+        return new Map(cur);
+      });
+    }, 400);
+    return () => clearInterval(t);
+  }, [open]);
+  const visible = useMemo(
+    () =>
+      scanned.filter((it) => {
+        const r = rssiByEpc.get(it.epc);
+        return r == null || r >= rssiThreshold;
+      }),
+    [scanned, rssiByEpc, rssiThreshold],
+  );
+  const toApply = visible.filter((it) => selected.has(it.epc));
+  const allTicked = visible.length > 0 && visible.every((it) => selected.has(it.epc));
+  const toggle = (epc: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(epc)) next.delete(epc);
+      else next.add(epc);
+      return next;
+    });
 
   // SSE → batched lookup. Same shape as RFIDScanModal but using the
   // status-update lookup endpoint so any-status items can show up.
@@ -84,7 +114,10 @@ export function UpdateStatusModal({
       setStreamErr(null);
       setResult(null);
       setConfirmingRisky(false);
+      setSelected(new Set());
       seenRef.current.clear();
+      epcRssiRef.current.clear();
+      setRssiByEpc(new Map());
       return;
     }
     // Same wake path the SellScreen fires on mount — clears scan_paused_at
@@ -145,10 +178,13 @@ export function UpdateStatusModal({
         };
         const epc = payload.epc?.toUpperCase();
         if (!epc) return;
-        // Proximity filter (reader is constant 33 dBm) — drop far tags before
-        // dedup. Drag the slider to "far" to scan a wide area.
+        // Keep the strongest signal per tag; the slider filters the list
+        // live against it (nothing is dropped here).
         const rssi = typeof payload.rssi === "number" ? payload.rssi : null;
-        if (rssi !== null && rssi < rssiThresholdRef.current) return;
+        if (rssi !== null) {
+          const prev = epcRssiRef.current.get(epc);
+          if (prev === undefined || rssi > prev) epcRssiRef.current.set(epc, rssi);
+        }
         if (seenRef.current.has(epc)) return;
         seenRef.current.add(epc);
         buffer.push(epc);
@@ -178,16 +214,25 @@ export function UpdateStatusModal({
 
   const removeItem = (epc: string) => {
     setScanned((prev) => prev.filter((it) => it.epc !== epc));
+    setSelected((prev) => {
+      if (!prev.has(epc)) return prev;
+      const next = new Set(prev);
+      next.delete(epc);
+      return next;
+    });
   };
   const rescan = () => {
     setScanned([]);
     setUnknownCount(0);
     setResult(null);
+    setSelected(new Set());
     seenRef.current.clear();
+    epcRssiRef.current.clear();
+    setRssiByEpc(new Map());
   };
 
   const onApplyClick = () => {
-    if (scanned.length === 0 || applying) return;
+    if (toApply.length === 0 || applying) return;
     if (RISKY_TARGETS.has(target)) {
       setConfirmingRisky(true);
       return;
@@ -199,7 +244,8 @@ export function UpdateStatusModal({
     setConfirmingRisky(false);
     setApplying(true);
     setResult(null);
-    const epcs = scanned.map((s) => s.epc);
+    const epcs = toApply.map((s) => s.epc);
+    const applied = new Set(epcs);
     try {
       const r = await fetch("/api/pos/inventory/bulk-status", {
         method: "POST",
@@ -216,12 +262,17 @@ export function UpdateStatusModal({
         setResult({ kind: "ok", updated: j.updated ?? 0, attempted: epcs.length });
         // Reflect new status in the visible rows.
         setScanned((prev) =>
-          prev.map((it) => ({
-            ...it,
-            current_status: target,
-            current_status_label: TARGETS.find((t) => t.value === target)?.label ?? null,
-          })),
+          prev.map((it) =>
+            applied.has(it.epc)
+              ? {
+                  ...it,
+                  current_status: target,
+                  current_status_label: TARGETS.find((t) => t.value === target)?.label ?? null,
+                }
+              : it,
+          ),
         );
+        setSelected(new Set());
       } else {
         const msg =
           j.code === "SUPER_ADMIN_LOCKED"
@@ -256,7 +307,8 @@ export function UpdateStatusModal({
           </button>
         </div>
         <p className="text-[var(--color-pos-muted)] mb-3">
-          Wave each item near the reader, choose the target status, then apply.
+          Wave each item near the reader, tick the ones to change, choose the
+          target status, then apply.
         </p>
 
         <div className="mb-3">
@@ -290,19 +342,47 @@ export function UpdateStatusModal({
         )}
 
         <div className="flex-1 overflow-auto rounded-xl border border-[var(--color-pos-border)]">
-          {scanned.length === 0 ? (
+          {visible.length === 0 ? (
             <div className="p-6 text-center text-[var(--color-pos-muted)]">
-              Waiting for tags…
+              {scanned.length === 0
+                ? "Waiting for tags…"
+                : "No tags within range — drag the slider toward “far” to show more."}
             </div>
           ) : (
             <ul>
-              {scanned.map((it) => {
+              <li className="flex items-center gap-3 px-4 py-2 border-b border-[var(--color-pos-border)] bg-[var(--color-pos-bg)] sticky top-0">
+                <label className="flex items-center gap-3 text-sm font-semibold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-5 h-5"
+                    checked={allTicked}
+                    onChange={() =>
+                      setSelected(allTicked ? new Set() : new Set(visible.map((it) => it.epc)))
+                    }
+                  />
+                  Select all ({visible.length})
+                </label>
+              </li>
+              {visible.map((it) => {
                 const meta = [it.sku, it.color, it.size].filter(Boolean);
+                const ticked = selected.has(it.epc);
+                const rssi = rssiByEpc.get(it.epc);
                 return (
                   <li
                     key={it.epc}
-                    className="flex items-center justify-between gap-3 px-4 py-2 border-b border-[var(--color-pos-border)] last:border-b-0"
+                    onClick={() => toggle(it.epc)}
+                    className={`flex items-center justify-between gap-3 px-4 py-2 border-b border-[var(--color-pos-border)] last:border-b-0 cursor-pointer ${
+                      ticked ? "bg-emerald-50" : "hover:bg-[var(--color-pos-bg)]"
+                    }`}
                   >
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 shrink-0"
+                      checked={ticked}
+                      onChange={() => toggle(it.epc)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label="Select"
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm leading-tight">
                         <span className="font-semibold text-carbon-text">
@@ -327,11 +407,17 @@ export function UpdateStatusModal({
                         {!it.is_at_this_location && (
                           <span className="ml-2 text-amber-700">· other store</span>
                         )}
+                        {rssi != null && (
+                          <span className="ml-2 font-mono">· {rssi} dBm</span>
+                        )}
                       </p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => removeItem(it.epc)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeItem(it.epc);
+                      }}
                       aria-label="Remove from list"
                       title="Remove from list"
                       className="shrink-0 w-9 h-9 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -369,7 +455,7 @@ export function UpdateStatusModal({
 
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-[var(--color-pos-muted)]">
-            {scanned.length} ready to update
+            {toApply.length} of {visible.length} selected
           </p>
           <div className="flex gap-2">
             <button
@@ -392,10 +478,14 @@ export function UpdateStatusModal({
             </button>
             <button
               onClick={onApplyClick}
-              disabled={scanned.length === 0 || applying}
+              disabled={toApply.length === 0 || applying}
               className="tap rounded-xl bg-[var(--color-pos-accent)] text-white px-5 font-semibold disabled:opacity-50"
             >
-              {applying ? "Applying…" : `Apply Bulk Status`}
+              {applying
+                ? "Applying…"
+                : toApply.length > 0
+                  ? `Apply to ${toApply.length}`
+                  : "Select items"}
             </button>
           </div>
         </div>
@@ -416,8 +506,8 @@ export function UpdateStatusModal({
             <p className="text-sm text-carbon-text mb-4">
               Once an item is set to <strong>{targetLabel}</strong>, only a
               Super Admin can flip it back to LIVE. You are about to do this
-              to <strong>{scanned.length}</strong> tag
-              {scanned.length === 1 ? "" : "s"}.
+              to <strong>{toApply.length}</strong> tag
+              {toApply.length === 1 ? "" : "s"}.
             </p>
             <p className="text-sm text-carbon-text-muted mb-4">
               Are you sure you want to proceed?
