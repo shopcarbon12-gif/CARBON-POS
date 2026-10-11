@@ -115,28 +115,33 @@ function ReceiptInner() {
     // The ref wraps ReceiptView, which renders <div page><main receipt>.
     // Only the inner <main> (the white 80mm card) is the design — the
     // outer page wrapper is gray screen padding we don't want to print.
-    const merchantMain = merchantRef.current?.querySelector("main");
+    // The merchant (signature) copy is only for card payments; cash and
+    // other sales print just the customer copy.
+    const needsMerchant = !!data?.payments.some((p) => p.method === "card");
+    const merchantMain = needsMerchant ? merchantRef.current?.querySelector("main") : null;
     const customerMain = customerRef.current?.querySelector("main");
-    if (!merchantMain || !customerMain) {
+    if ((needsMerchant && !merchantMain) || !customerMain) {
       setErrorMsg("Receipt isn't rendered yet — wait a moment and retry.");
       setPrintState("error");
       return;
     }
 
     try {
-      const merchantCanvas = await rasterizeElement(
-        merchantMain as HTMLElement,
-      );
+      const merchantCanvas = merchantMain
+        ? await rasterizeElement(merchantMain as HTMLElement)
+        : null;
       const customerCanvas = await rasterizeElement(
         customerMain as HTMLElement,
       );
 
-      const merchantJob = concatBytes(
-        escPosInit(),
-        canvasToEscPosRaster(merchantCanvas),
-        escPosFeed(3),
-        escPosCut(),
-      );
+      const merchantJob = merchantCanvas
+        ? concatBytes(
+            escPosInit(),
+            canvasToEscPosRaster(merchantCanvas),
+            escPosFeed(3),
+            escPosCut(),
+          )
+        : null;
       const customerJob = concatBytes(
         escPosInit(),
         canvasToEscPosRaster(customerCanvas),
@@ -146,7 +151,10 @@ function ReceiptInner() {
       );
 
       // Store print agent when online, else browser → printer.
-      await deliverPrint([bytesToHex(merchantJob), bytesToHex(customerJob)]);
+      await deliverPrint([
+        ...(merchantJob ? [bytesToHex(merchantJob)] : []),
+        bytesToHex(customerJob),
+      ]);
       setPrintState("done");
     } catch (err) {
       console.error("[print] rasterize / print failed", err);
@@ -221,15 +229,17 @@ function ReceiptInner() {
         className="rounded-2xl border border-[var(--color-pos-border)] overflow-y-auto bg-[#e9e9e9]"
         style={{ maxHeight: "60vh" }}
       >
-        <div ref={merchantRef}>
-          <ReceiptView
-            sale={data.sale}
-            lines={data.lines}
-            payments={data.payments}
-            loyalty={data.loyalty}
-            variant="merchant"
-          />
-        </div>
+        {data.payments.some((p) => p.method === "card") && (
+          <div ref={merchantRef}>
+            <ReceiptView
+              sale={data.sale}
+              lines={data.lines}
+              payments={data.payments}
+              loyalty={data.loyalty}
+              variant="merchant"
+            />
+          </div>
+        )}
         <div ref={customerRef}>
           <ReceiptView
             sale={data.sale}

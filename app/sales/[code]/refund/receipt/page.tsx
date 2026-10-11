@@ -62,9 +62,12 @@ function RefundReceiptInner() {
     if (!data) return;
     setState("printing");
     setErrorMsg(null);
-    const merchantMain = merchantRef.current?.querySelector("main");
+    // Store (signature) copy only for card refunds; cash / store credit
+    // print just the customer copy.
+    const needsMerchant = data.refund.method === "original_card";
+    const merchantMain = needsMerchant ? merchantRef.current?.querySelector("main") : null;
     const customerMain = customerRef.current?.querySelector("main");
-    if (!merchantMain || !customerMain) {
+    if ((needsMerchant && !merchantMain) || !customerMain) {
       setErrorMsg("Receipt isn't rendered yet — wait a moment and retry.");
       setState("error");
       return;
@@ -81,7 +84,7 @@ function RefundReceiptInner() {
           ),
         );
       await deliverPrint([
-        await job(merchantMain, false),
+        ...(merchantMain ? [await job(merchantMain, false)] : []),
         await job(customerMain, data.refund.method === "cash"),
       ]);
       setState("done");
@@ -129,9 +132,11 @@ function RefundReceiptInner() {
         className="rounded-2xl border border-[var(--color-pos-border)] overflow-y-auto bg-[#e9e9e9]"
         style={{ maxHeight: "60vh" }}
       >
-        <div ref={merchantRef}>
-          <RefundReceiptView data={data} variant="merchant" />
-        </div>
+        {data.refund.method === "original_card" && (
+          <div ref={merchantRef}>
+            <RefundReceiptView data={data} variant="merchant" />
+          </div>
+        )}
         <div ref={customerRef}>
           <RefundReceiptView data={data} variant="customer" />
         </div>
