@@ -119,15 +119,12 @@ export async function GET(req: Request) {
   let inTransit = 0;
   if (skuId) {
     const t = await pool.query<{ c: string }>(
-      `SELECT COALESCE((
-         SELECT count(*)::text FROM transfer_records tr
-           JOIN transfer_record_items tri ON tri.transfer_record_id = tr.id
-          WHERE tri.custom_sku_id = $1::uuid
-            AND tr.destination_location_id = $2::uuid
-            AND tr.state IN ('in-transit','partially_received')
-       ), '0') AS c
-       WHERE to_regclass('public.transfer_records') IS NOT NULL
-         AND to_regclass('public.transfer_record_items') IS NOT NULL`,
+      `SELECT count(*)::text AS c
+         FROM items i
+         JOIN transfer_records tr ON tr.id = i.transfer_id
+        WHERE i.custom_sku_id = $1::uuid
+          AND tr.destination_location_id = $2::uuid
+          AND tr.state IN ('in-transit','partially_received')`,
       [skuId, lid],
     );
     inTransit = Number(t.rows[0]?.c ?? 0);
