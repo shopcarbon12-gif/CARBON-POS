@@ -14,6 +14,7 @@ import {
   rasterizeElement,
 } from "@/lib/receipt-raster";
 import { deliverPrint, PrintError } from "@/lib/epos-print";
+import { claimAutoPrint } from "@/lib/print-once";
 
 type SaleDetail = {
   sale: {
@@ -56,7 +57,9 @@ type SaleDetail = {
     method: "card" | "cash" | "check" | "store_credit";
     amount: string;
     change_given: string | null;
+    cash_given?: string | null;
   }>;
+  exchange_payouts?: Array<{ method: string; amount: number }>;
   loyalty?: {
     is_member: boolean;
     points: number;
@@ -90,6 +93,16 @@ function ReceiptInner() {
         if (d?.sale?.customer_email) setEmailValue(d.sale.customer_email);
       });
   }, [saleId]);
+
+  // Print automatically when the receipt opens (once per sale on this
+  // device — reprints via the button).
+  useEffect(() => {
+    if (!data || !Number.isFinite(saleId)) return;
+    if (!claimAutoPrint(`sale:${saleId}`)) return;
+    const t = setTimeout(() => void print(), 500); // let the logo/barcode load
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, saleId]);
 
   async function print() {
     setPrintState("printing");
@@ -169,8 +182,41 @@ function ReceiptInner() {
       </main>
     );
   }
+  // Cash to hand over: change on a cash sale, or an exchange difference
+  // paid back in cash.
+  const cashPay = data.payments.filter((p) => p.method === "cash");
+  const changeDue = cashPay.reduce((s, p) => s + Number(p.change_given ?? 0), 0);
+  const cashGiven = cashPay.reduce((s, p) => s + Number(p.cash_given ?? 0), 0);
+  const cashBack = (data.exchange_payouts ?? []).filter((p) => p.method === "cash").reduce((s, p) => s + p.amount, 0);
+  const cardBack = (data.exchange_payouts ?? []).filter((p) => p.method === "original_card").reduce((s, p) => s + p.amount, 0);
+  const money = (n: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-3xl mx-auto">
+      {changeDue > 0.004 && (
+        <div className="mb-4 border-4 border-emerald-600 bg-emerald-50 p-4 text-center">
+          <p className="text-sm font-bold uppercase tracking-wider text-emerald-800">Give change</p>
+          <p className="total-display text-5xl text-emerald-800">{money(changeDue)}</p>
+          {cashGiven > 0 && (
+            <p className="text-sm text-emerald-900 mt-1">
+              Cash given {money(cashGiven)} · Total {money(Number(data.sale.total_amount))}
+            </p>
+          )}
+        </div>
+      )}
+      {cashBack > 0.004 && (
+        <div className="mb-4 border-4 border-amber-500 bg-amber-50 p-4 text-center">
+          <p className="text-sm font-bold uppercase tracking-wider text-amber-800">Give the customer cash</p>
+          <p className="total-display text-5xl text-amber-800">{money(cashBack)}</p>
+          <p className="text-sm text-amber-900 mt-1">Exchange difference (approved override)</p>
+        </div>
+      )}
+      {cardBack > 0.004 && (
+        <div className="mb-4 border-2 border-carbon-border bg-white p-3 text-center text-sm">
+          {money(cardBack)} exchange difference refunded to the customer&apos;s card.
+        </div>
+      )}
       <div
         className="rounded-2xl border border-[var(--color-pos-border)] overflow-y-auto bg-[#e9e9e9]"
         style={{ maxHeight: "60vh" }}

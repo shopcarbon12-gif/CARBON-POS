@@ -49,6 +49,7 @@ type PaymentRow = {
   method: "card" | "cash" | "check" | "store_credit" | string;
   amount: string;
   change_given?: string | null;
+  cash_given?: string | null;
 };
 
 type LoyaltyFooter = {
@@ -215,6 +216,9 @@ export function ReceiptView({
             {payments.map((p) => (
               <div key={p.id}>
                 <Row label={humanMethod(p.method)} value={formatMoney(p.amount)} />
+                {p.method === "cash" && Number(p.cash_given || 0) > 0 ? (
+                  <Row label="Tendered" value={formatMoney(p.cash_given)} muted />
+                ) : null}
                 {p.method === "cash" && Number(p.change_given || 0) > 0 ? (
                   <Row
                     label="Change"

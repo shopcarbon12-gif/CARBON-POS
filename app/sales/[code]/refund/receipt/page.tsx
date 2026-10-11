@@ -17,6 +17,7 @@ import {
   rasterizeElement,
 } from "@/lib/receipt-raster";
 import { deliverPrint, PrintError } from "@/lib/epos-print";
+import { claimAutoPrint } from "@/lib/print-once";
 
 /**
  * Refund receipt screen (?refund=<pos_refunds.id>). Shown right after a
@@ -47,6 +48,15 @@ function RefundReceiptInner() {
       .then(setData)
       .catch(() => setLoadError("Couldn't load this refund."));
   }, [refundId]);
+
+  // Print automatically when it opens (once per refund on this device).
+  useEffect(() => {
+    if (!data) return;
+    if (!claimAutoPrint(`refund:${refundId}`)) return;
+    const t = setTimeout(() => void print(), 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, refundId]);
 
   async function print() {
     if (!data) return;
@@ -99,6 +109,14 @@ function RefundReceiptInner() {
 
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-3xl mx-auto">
+      {data.refund.method === "cash" && (
+        <div className="mb-4 border-4 border-amber-500 bg-amber-50 p-4 text-center">
+          <p className="text-sm font-bold uppercase tracking-wider text-amber-800">Give the customer cash</p>
+          <p className="total-display text-5xl text-amber-800">
+            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(data.refund.amount)}
+          </p>
+        </div>
+      )}
       <div className="text-center mb-4">
         <p className="text-[var(--color-pos-muted)]">Refunded to {data.refund.method_label}</p>
         <p className="total-display text-4xl mt-1">

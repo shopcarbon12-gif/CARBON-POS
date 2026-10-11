@@ -66,6 +66,13 @@ export async function GET(
       [saleId],
     ),
   ]);
+  // Exchange differences paid back (admin override) — the receipt screen
+  // tells the cashier to hand over cash.
+  const payouts = await pool.query<{ method: string; amount: string }>(
+    `SELECT method, amount FROM pos_refunds
+      WHERE exchange_sale_id = $1 AND method IN ('cash','original_card','store_credit')`,
+    [saleId],
+  );
   const refundedTotal = await pool.query<{ total: string }>(
     `SELECT COALESCE(SUM(amount),0) AS total FROM pos_refunds WHERE original_sale_id = $1`,
     [saleId],
@@ -94,6 +101,7 @@ export async function GET(
     payments: paymentsRes.rows,
     returned_line_ids: returnedRes.rows.map((r) => Number(r.id)),
     refunded_total: Number(refundedTotal.rows[0]?.total ?? 0),
+    exchange_payouts: payouts.rows.map((r) => ({ method: r.method, amount: Number(r.amount) })),
     loyalty: {
       is_member: isMember,
       points: earn.points,

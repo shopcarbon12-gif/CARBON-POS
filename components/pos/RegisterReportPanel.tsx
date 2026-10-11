@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RegisterReportView } from "@/components/pos/RegisterReportView";
 import { PrintError, printElement } from "@/lib/epos-print";
+import { claimAutoPrint } from "@/lib/print-once";
 import type { RegisterReport } from "@/lib/register-report-types";
 
 type Kind = "open" | "eod";
@@ -71,6 +72,7 @@ export function RegisterReportPanel({
   useEffect(() => {
     if (!autoPrint || !report || autoDone.current) return;
     autoDone.current = true;
+    if (!claimAutoPrint(`register:${sessionId}:${kinds[0]}`)) return;
     // Let the logo image finish loading before rasterizing.
     const t = setTimeout(() => void print(kinds[0]), 400);
     return () => clearTimeout(t);
