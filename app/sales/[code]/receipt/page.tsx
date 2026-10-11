@@ -94,16 +94,19 @@ function ReceiptInner() {
       });
   }, [saleId]);
 
+  const printRef = useRef<() => Promise<void>>(async () => {});
   // Print automatically when the receipt opens (once per sale on this
   // device — reprints via the button).
   useEffect(() => {
     if (!data || !Number.isFinite(saleId)) return;
     if (!claimAutoPrint(`sale:${saleId}`)) return;
-    const t = setTimeout(() => void print(), 500); // let the logo/barcode load
-    return () => clearTimeout(t);
+    // Not cancelled on re-render (a refresh would otherwise eat the
+    // one-and-only auto print); reads the latest print() via a ref.
+    setTimeout(() => void printRef.current(), 700); // let the logo/barcode load
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, saleId]);
 
+  printRef.current = () => print();
   async function print() {
     setPrintState("printing");
     setErrorMsg(null);

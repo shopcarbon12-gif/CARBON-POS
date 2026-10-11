@@ -49,15 +49,18 @@ function RefundReceiptInner() {
       .catch(() => setLoadError("Couldn't load this refund."));
   }, [refundId]);
 
+  const printRef = useRef<() => Promise<void>>(async () => {});
   // Print automatically when it opens (once per refund on this device).
   useEffect(() => {
     if (!data) return;
     if (!claimAutoPrint(`refund:${refundId}`)) return;
-    const t = setTimeout(() => void print(), 500);
-    return () => clearTimeout(t);
+    // Not cancelled on re-render (a refresh would otherwise eat the
+    // one-and-only auto print); reads the latest print() via a ref.
+    setTimeout(() => void printRef.current(), 700); // let the logo/barcode load
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, refundId]);
 
+  printRef.current = () => print();
   async function print() {
     if (!data) return;
     setState("printing");

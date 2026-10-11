@@ -69,14 +69,21 @@ export function RegisterReportPanel({
     [report],
   );
 
+  // Auto-print once the report renders. The open/close flow lands here
+  // with router.replace + router.refresh(); the refresh re-renders the page
+  // and used to cancel the pending print (the effect's cleanup cleared the
+  // timer) — so the timer is NOT tied to re-renders, and the latest print
+  // function is read through a ref.
+  const printRef = useRef(print);
+  printRef.current = print;
+  const firstKind = kinds[0];
   useEffect(() => {
     if (!autoPrint || !report || autoDone.current) return;
     autoDone.current = true;
-    if (!claimAutoPrint(`register:${sessionId}:${kinds[0]}`)) return;
+    if (!claimAutoPrint(`register:${sessionId}:${firstKind}`)) return;
     // Let the logo image finish loading before rasterizing.
-    const t = setTimeout(() => void print(kinds[0]), 400);
-    return () => clearTimeout(t);
-  }, [autoPrint, report, kinds, print]);
+    setTimeout(() => void printRef.current(firstKind), 800);
+  }, [autoPrint, report, sessionId, firstKind]);
 
   if (loadError) {
     return <p className="text-carbon-danger">{loadError}</p>;
