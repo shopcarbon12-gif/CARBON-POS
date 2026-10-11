@@ -49,6 +49,8 @@ export function RFIDScanModal({
   returnEpcs,
   returnLabel,
   onReturn,
+  returnOnly = false,
+  returnNames,
 }: {
   open: boolean;
   onClose: () => void;
@@ -60,6 +62,11 @@ export function RFIDScanModal({
   returnLabel?: string;
   /** Called with the verified return tags when the cashier confirms. */
   onReturn?: (epcs: string[]) => void;
+  /** Return-verify mode: list ONLY tags matched to the receipt, ignore
+   *  every other tag, and never add anything to the cart. */
+  returnOnly?: boolean;
+  /** EPC (upper-case) → item description, for the matched-return rows. */
+  returnNames?: Record<string, string>;
   readerState: ReaderUiState;
   /** EPCs already in the cart. Seeded into the de-dup set on open so
    *  a tag the cashier added in a previous scan session won't reappear
@@ -295,7 +302,9 @@ export function RFIDScanModal({
       <div className="bg-white w-full sm:max-w-2xl rounded-2xl p-4 sm:p-6 shadow-lg max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between mb-2 gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <h2 className="text-xl font-bold shrink-0">RFID Scan</h2>
+            <h2 className="text-xl font-bold shrink-0">
+              {returnOnly ? "Scan Returned Items" : "RFID Scan"}
+            </h2>
             <ReaderStatusBadge state={readerState} />
           </div>
           <button
@@ -307,19 +316,65 @@ export function RFIDScanModal({
           </button>
         </div>
         <p className="text-[var(--color-pos-muted)] mb-3">
-          Wave each item near the reader. The list below grows as tags are
-          picked up.
+          {returnOnly
+            ? `Wave each returned item near the reader. Only tags sold on receipt ${returnLabel ?? ""} show up here — everything else is ignored.`
+            : "Wave each item near the reader. The list below grows as tags are picked up."}
         </p>
-        <div className="mb-3">
-          <RssiFilterSlider value={rssiThreshold} onChange={setRssiThreshold} />
-        </div>
+        {!returnOnly && (
+          <div className="mb-3">
+            <RssiFilterSlider value={rssiThreshold} onChange={setRssiThreshold} />
+          </div>
+        )}
         {streamErr && (
           <p className="text-sm text-[var(--color-pos-danger)] mb-2">
             {streamErr} You can keep scanning once it reconnects.
           </p>
         )}
         <div className="flex-1 overflow-auto rounded-xl border border-[var(--color-pos-border)]">
-          {visible.length === 0 ? (
+          {returnOnly ? (
+            returnMatched.length === 0 ? (
+              <div className="p-6 text-center text-[var(--color-pos-muted)]">
+                Waiting for returned items…
+              </div>
+            ) : (
+              <ul>
+                {returnMatched.map((b) => (
+                  <li
+                    key={b.epc}
+                    className="flex items-center justify-between gap-3 px-4 py-2 border-b border-[var(--color-pos-border)] last:border-b-0 bg-emerald-50"
+                  >
+                    <div className="min-w-0 flex-1 flex items-center gap-2">
+                      <span
+                        className="material-symbols-outlined text-[18px] text-emerald-700 shrink-0"
+                        aria-hidden
+                      >
+                        check_circle
+                      </span>
+                      <p className="text-sm leading-tight min-w-0 break-words">
+                        <span className="font-semibold text-emerald-900">
+                          {returnNames?.[b.epc.toUpperCase()] ?? "Returned item"}
+                        </span>
+                        <span className="ml-1.5 text-emerald-800">
+                          matched to receipt {returnLabel ?? ""}
+                        </span>
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setBlocked((prev) => prev.filter((x) => x.epc !== b.epc))}
+                      aria-label="Remove from list"
+                      title="Remove from list"
+                      className="shrink-0 w-9 h-9 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[20px]" aria-hidden>
+                        delete
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : visible.length === 0 ? (
             <div className="p-6 text-center text-[var(--color-pos-muted)]">
               {scanned.length === 0
                 ? "Waiting for tags…"
@@ -389,7 +444,7 @@ export function RFIDScanModal({
             </ul>
           )}
         </div>
-        {returnMatched.length > 0 && (
+        {!returnOnly && returnMatched.length > 0 && (
           <div className="mt-3 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm">
             <p className="font-semibold text-emerald-800">
               {returnMatched.length} returned item{returnMatched.length === 1 ? "" : "s"} matched to
@@ -400,7 +455,7 @@ export function RFIDScanModal({
             </p>
           </div>
         )}
-        {otherBlocked.length > 0 && (
+        {!returnOnly && otherBlocked.length > 0 && (
           <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm">
             <p className="font-semibold text-red-800 mb-1">
               {returnEpcs
@@ -424,9 +479,11 @@ export function RFIDScanModal({
             side-by-side from sm+ so the buttons don't squish/wrap. */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-3">
           <p className="text-sm text-[var(--color-pos-muted)]">
-            {selectionMode
-              ? `${selected.size} of ${visible.length} selected`
-              : `${visible.length} ready to add`}
+            {returnOnly
+              ? `${returnMatched.length} ready to return`
+              : selectionMode
+                ? `${selected.size} of ${visible.length} selected`
+                : `${visible.length} ready to add`}
           </p>
           <div className="flex gap-2 w-full sm:w-auto">
             <button
@@ -449,6 +506,11 @@ export function RFIDScanModal({
             </button>
             <button
               onClick={() => {
+                if (returnOnly) {
+                  if (returnMatched.length && onReturn) onReturn(returnMatched.map((b) => b.epc));
+                  onClose();
+                  return;
+                }
                 const toAdd = selectionMode
                   ? visible.filter((it) => selected.has(it.epc))
                   : visible;
@@ -457,12 +519,15 @@ export function RFIDScanModal({
                 onClose();
               }}
               disabled={
+                returnOnly ? returnMatched.length === 0 :
                 returnMatched.length === 0 &&
                 (visible.length === 0 || (selectionMode && selected.size === 0))
               }
               className="tap rounded-xl bg-[var(--color-pos-accent)] text-white px-3 sm:px-5 font-semibold disabled:opacity-50 flex-1 sm:flex-none whitespace-nowrap"
             >
-              {returnMatched.length > 0
+              {returnOnly
+                ? `Return ${returnMatched.length}`
+                : returnMatched.length > 0
                 ? `Return ${returnMatched.length}${
                     (selectionMode ? selected.size : visible.length) > 0
                       ? ` · Add ${selectionMode ? selected.size : visible.length}`

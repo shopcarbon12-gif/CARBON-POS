@@ -25,7 +25,13 @@ type CartPayload = {
   attributedEmployeeId?: number | null;
 };
 
-type Quote = { credit: number; sale_number: string; customer_id: number | null };
+type OrigPayment = { method: string; label: string; amount: number };
+type Quote = {
+  credit: number;
+  sale_number: string;
+  customer_id: number | null;
+  payments?: OrigPayment[];
+};
 
 type Method = "card" | "cash" | "other";
 
@@ -258,6 +264,7 @@ function PaymentInner() {
         saleNumber={quote.sale_number}
         pieces={returnLines.length}
         hasCustomer={quote.customer_id != null}
+        payments={quote.payments ?? []}
         saving={saving}
         error={error}
         onBack={() => router.back()}
@@ -725,6 +732,7 @@ function RefundCheckout({
   saleNumber,
   pieces,
   hasCustomer,
+  payments,
   saving,
   error,
   onBack,
@@ -738,6 +746,8 @@ function RefundCheckout({
   saleNumber: string;
   pieces: number;
   hasCustomer: boolean;
+  /** How the original sale was paid. */
+  payments: OrigPayment[];
   saving: boolean;
   error: string | null;
   onBack: () => void;
@@ -747,7 +757,11 @@ function RefundCheckout({
     approval: string,
   ) => void;
 }) {
-  const [method, setMethod] = useState<"original_card" | "cash" | "store_credit">("original_card");
+  const paidByCard = payments.some((p) => p.method === "card");
+  // Default to how the customer paid: card → back to the card, otherwise cash.
+  const [method, setMethod] = useState<"original_card" | "cash" | "store_credit">(
+    paidByCard || payments.length === 0 ? "original_card" : "cash",
+  );
   const [reason, setReason] = useState("");
   // Refunds need the super admin's approval (auto for the admin).
   const [askApproval, setAskApproval] = useState(false);
@@ -765,6 +779,19 @@ function RefundCheckout({
           they go back in stock.
         </p>
         <p className="total-display text-4xl mt-4">{formatMoney(amount)}</p>
+        {payments.length > 0 && (
+          <div className="mt-4 border border-carbon-border-soft bg-[var(--color-pos-bg)] p-3">
+            <p className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted mb-1">
+              Original payment · #{saleNumber}
+            </p>
+            {payments.map((p, i) => (
+              <div key={i} className="flex justify-between text-sm">
+                <span className="font-semibold">{p.label}</span>
+                <span>{formatMoney(p.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
         <p className="text-sm font-semibold mt-4 mb-1">Refund to</p>
         <div className="grid grid-cols-3 gap-2">
           {(
@@ -777,7 +804,10 @@ function RefundCheckout({
             <button
               key={m}
               onClick={() => setMethod(m)}
-              disabled={m === "store_credit" && !hasCustomer}
+              disabled={
+                (m === "store_credit" && !hasCustomer) ||
+                (m === "original_card" && payments.length > 0 && !paidByCard)
+              }
               className={`tap font-semibold disabled:opacity-40 ${
                 method === m ? "bg-[var(--color-pos-ink)] text-white" : "bg-white border border-[var(--color-pos-border)]"
               }`}

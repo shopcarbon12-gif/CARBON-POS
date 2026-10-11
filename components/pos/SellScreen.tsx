@@ -185,6 +185,12 @@ export function SellScreen({
     setReturnPanelOpen(false);
   }
 
+  // Opened from the Return panel → the scan modal verifies returns only.
+  const [rfidReturnOnly, setRfidReturnOnly] = useState(false);
+  const returnEpcNames: Record<string, string> = {};
+  for (const l of returnSale?.lines ?? []) {
+    for (const e of l.epcs) returnEpcNames[e.toUpperCase()] = l.description;
+  }
   /** Tags on the receipt still returnable and not yet scanned into the cart. */
   const returnableEpcs = returnSale
     ? returnSale.lines
@@ -1608,6 +1614,7 @@ export function SellScreen({
           onScanTags={() => {
             markActivity();
             if (readerState === "off") void startReader();
+            setRfidReturnOnly(true);
             setShowRfid(true);
           }}
           onClose={() => setReturnPanelOpen(false)}
@@ -1894,8 +1901,13 @@ export function SellScreen({
 
       <RFIDScanModal
         open={showRfid}
-        onClose={() => setShowRfid(false)}
+        onClose={() => {
+          setShowRfid(false);
+          setRfidReturnOnly(false);
+        }}
         onAdd={addRfidItems}
+        returnOnly={rfidReturnOnly && !!returnSale}
+        returnNames={returnEpcNames}
         returnEpcs={returnSale ? returnableEpcs : undefined}
         returnLabel={returnSale ? `#${returnSale.sale_number}` : undefined}
         onReturn={applyReturnTags}
