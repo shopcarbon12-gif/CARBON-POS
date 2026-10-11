@@ -6,6 +6,7 @@ import { withTransaction } from "@/lib/db";
 import { queueLoyaltyCall } from "@/lib/loyalty-client";
 import { currentCashier } from "@/lib/session";
 import { moveStoreCredit } from "@/lib/store-credit-ledger";
+import { verifyOverride } from "@/lib/override";
 import {
   priceReturn,
   recordReturnItems,
@@ -34,6 +35,9 @@ const schema = z.object({
     )
     .max(500)
     .optional(),
+  /** Super admin approval (lib/override, kind 'refund', ref = sale id)
+   *  — required unless the super admin is the one refunding. */
+  refund_approval: z.string().max(2000).nullable().optional(),
   /** Old whole-line returns — no longer accepted (items must be scanned). */
   line_ids: z.array(z.number().int().positive()).max(200).optional(),
 });
@@ -49,6 +53,8 @@ const schema = z.object({
  *   - For 'cash': no Stripe call; we just record the row.
  *   - For 'store_credit': adds the amount to the sale customer's balance
  *     (pos_store_credit_ledger); rejected when the sale has no customer.
+ *   - Needs the super admin's approval (refund_approval token: admin PIN
+ *     or emailed code) unless the super admin is refunding.
  *   - Returned goods come as `items`: every RFID piece by the EPC scanned
  *     coming back (verified against the tags sold on that line, once
  *     only), untagged pieces by quantity. The server prices them
@@ -93,6 +99,21 @@ export async function POST(req: Request) {
         { status: 422 },
       );
     }
+  }
+  // Every refund needs the super admin's OK (admin PIN or emailed code),
+  // unless the super admin is doing it.
+  const approvedBy =
+    cashier.role === "admin"
+      ? null
+      : verifyOverride(parsed.data.refund_approval, "refund", String(sale_id), cashier.lid);
+  if (cashier.role !== "admin" && !approvedBy) {
+    return NextResponse.json(
+      {
+        error: "refund_approval_required",
+        message: "Refunds need the super admin's approval (admin PIN or emailed code).",
+      },
+      { status: 403 },
+    );
   }
   let amount = parsed.data.amount ?? 0;
   let quote: ReturnQuote | null = null;
@@ -195,8 +216,8 @@ export async function POST(req: Request) {
       const ins = await client.query(
         `INSERT INTO pos_refunds
            (original_sale_id, amount, reason, method, stripe_refund_id,
-            refunded_by, register_session_id, line_ids, tax_amount)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
+            refunded_by, register_session_id, line_ids, override_by, tax_amount)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$10,
                  COALESCE($9::numeric,
                    (SELECT CASE WHEN s.total_amount > 0
                                 THEN ROUND($2::numeric * s.tax_amount / s.total_amount, 2)
@@ -217,6 +238,7 @@ export async function POST(req: Request) {
               ? Math.round(((quote.tax * amount) / itemsValue) * 100) / 100
               : quote.tax
             : null,
+          approvedBy,
         ],
       );
       if (quote) await recordReturnItems(client, ins.rows[0].id, quote.entries);

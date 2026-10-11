@@ -188,14 +188,24 @@ function PaymentInner() {
     router.replace(`/sales/${code}/receipt?sale=${data.sale.id}`);
   }
 
-  async function refundOnly(method: "original_card" | "cash" | "store_credit", reason: string) {
+  async function refundOnly(
+    method: "original_card" | "cash" | "store_credit",
+    reason: string,
+    approval: string,
+  ) {
     if (!returnSaleId) return;
     setSaving(true);
     setError(null);
     const res = await fetch("/api/pos/payment/refund", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sale_id: returnSaleId, items: returnItems, method, reason: reason || undefined }),
+      body: JSON.stringify({
+        sale_id: returnSaleId,
+        items: returnItems,
+        method,
+        reason: reason || undefined,
+        refund_approval: approval,
+      }),
     });
     setSaving(false);
     const d = await res.json().catch(() => ({}));
@@ -232,6 +242,8 @@ function PaymentInner() {
   if (hasReturns && newLines.length === 0 && quote) {
     return (
       <RefundCheckout
+        saleId={returnSaleId!}
+        items={returnLines.map((l) => l.description.replace(/^Return · /, ""))}
         amount={quote.credit}
         saleNumber={quote.sale_number}
         pieces={returnLines.length}
@@ -634,6 +646,8 @@ function OtherSection({
 }
 
 function RefundCheckout({
+  saleId,
+  items,
   amount,
   saleNumber,
   pieces,
@@ -643,6 +657,8 @@ function RefundCheckout({
   onBack,
   onRefund,
 }: {
+  saleId: number;
+  items: string[];
   amount: number;
   saleNumber: string;
   pieces: number;
@@ -650,10 +666,18 @@ function RefundCheckout({
   saving: boolean;
   error: string | null;
   onBack: () => void;
-  onRefund: (method: "original_card" | "cash" | "store_credit", reason: string) => void;
+  onRefund: (
+    method: "original_card" | "cash" | "store_credit",
+    reason: string,
+    approval: string,
+  ) => void;
 }) {
   const [method, setMethod] = useState<"original_card" | "cash" | "store_credit">("original_card");
   const [reason, setReason] = useState("");
+  // Refunds need the super admin's approval (auto for the admin).
+  const [askApproval, setAskApproval] = useState(false);
+  const methodLabel =
+    method === "original_card" ? "the original card" : method === "cash" ? "cash" : "store credit";
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-xl mx-auto">
       <button onClick={onBack} className="tap text-[var(--color-pos-muted)] underline px-3 mb-4">
@@ -699,11 +723,27 @@ function RefundCheckout({
         />
         <button
           disabled={saving}
-          onClick={() => onRefund(method, reason.trim())}
+          onClick={() => setAskApproval(true)}
           className="carbon-btn-primary tap-lg w-full font-bold mt-5 disabled:opacity-50"
         >
           {saving ? "Refunding…" : `Refund ${formatMoney(amount)}`}
         </button>
+        <p className="text-xs text-carbon-text-muted mt-2 text-center">
+          Refunds need the super admin&apos;s approval (admin PIN or emailed code).
+        </p>
+        {askApproval && (
+          <OverrideModal
+            kind="refund"
+            refId={String(saleId)}
+            title={`Approve a ${formatMoney(amount)} refund?`}
+            detail={`Refund ${formatMoney(amount)} to ${methodLabel} for receipt #${saleNumber}: ${items.join(", ")}${reason.trim() ? ` — reason: ${reason.trim()}` : ""}.`}
+            onCancel={() => setAskApproval(false)}
+            onApproved={(token) => {
+              setAskApproval(false);
+              onRefund(method, reason.trim(), token);
+            }}
+          />
+        )}
         {error && <p className="mt-4 text-[var(--color-pos-danger)]">{error}</p>}
       </div>
     </main>
