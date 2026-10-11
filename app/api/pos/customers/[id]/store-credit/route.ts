@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { getPool, withTransaction } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
 import { isStoreCreditApprover } from "@/lib/store-credit";
+import { permissionMode } from "@/lib/pos-permissions";
 
 const schema = z.object({
   /** Positive = grant credit; negative = redeem/deduct credit.
@@ -47,6 +48,14 @@ export async function POST(
     return NextResponse.json({ error: "bad_id" }, { status: 400 });
   }
   const body = await req.json().catch(() => ({}));
+  // Role permission: Customers → Adjust store credit. "Hide" blocks it;
+  // otherwise the existing emailed-code approval below applies.
+  if ((await permissionMode(cashier, "pos_customers.store_credit")) === "hide") {
+    return NextResponse.json(
+      { error: "not_allowed", message: "Your role isn't allowed to adjust store credit." },
+      { status: 403 },
+    );
+  }
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(

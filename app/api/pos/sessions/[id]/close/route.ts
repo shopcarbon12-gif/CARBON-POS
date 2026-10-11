@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPool, withTransaction } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { guardPermission } from "@/lib/pos-permissions";
 
 const closeSchema = z.object({
   closing_cash_counted: z.number().nonnegative(),
@@ -56,6 +57,10 @@ export async function POST(
       { status: 400 },
     );
   }
+
+  // Role permission: Register → Close register.
+  const denied = await guardPermission(cashier, "pos_register.close_register", (body as { approval?: { token?: string; nonce?: string } }).approval);
+  if (denied) return denied;
 
   try {
     const closed = await withTransaction(async (client) => {

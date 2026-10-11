@@ -7,7 +7,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
  * carries it; the capture / refund routes verify it.
  */
 
-export const OVERRIDE_KINDS = ["rfid_sale", "rfid_return", "exchange_payout", "refund"] as const;
+export const OVERRIDE_KINDS = ["rfid_sale", "rfid_return", "exchange_payout", "refund", "permission"] as const;
 export type OverrideKind = (typeof OVERRIDE_KINDS)[number];
 
 export const OVERRIDE_LABEL: Record<OverrideKind, string> = {
@@ -15,6 +15,7 @@ export const OVERRIDE_LABEL: Record<OverrideKind, string> = {
   rfid_return: "Return an RFID item without scanning its tag",
   exchange_payout: "Pay an exchange difference back to the original payment (not store credit)",
   refund: "Refund money to a customer",
+  permission: "Approve an action this employee's role needs approval for",
 };
 
 /** Who receives emailed approval codes. */

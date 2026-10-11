@@ -62,7 +62,12 @@ export function TotalPanel({
   onResendPhonePrompt,
   mode = "all",
   returnMode = "none",
+  canDiscount = true,
+  canRedeem = true,
 }: {
+  /** POS role allows discounts / points redemption (WMS POS roles). */
+  canDiscount?: boolean;
+  canRedeem?: boolean;
   /** Cart has return lines: 'refund' = returns only (money back),
    *  'exchange' = returns + new items (difference due, or leftover to
    *  store credit — never money back). */
@@ -143,7 +148,7 @@ export function TotalPanel({
                 </span>
                 {redeemPaused ? (
                   <span className="text-xs text-carbon-text-muted">Rewards paused</span>
-                ) : (
+                ) : !canRedeem ? null : (
                   <button
                     type="button"
                     onClick={onRedeemPoints}
@@ -228,6 +233,7 @@ export function TotalPanel({
 
       {/* Payment buttons */}
       <div className="p-4 sm:p-6 space-y-3 sm:space-y-4 bg-[var(--carbon-surface-soft)] border-t border-[var(--carbon-border-soft)]">
+        {canDiscount && (
         <button
           type="button"
           onClick={onApplyDiscount}
@@ -239,6 +245,7 @@ export function TotalPanel({
           </span>
           Apply Discount to Sale
         </button>
+        )}
         {returnMode !== "none" && totals.total <= 0.005 ? (
           <button
             type="button"

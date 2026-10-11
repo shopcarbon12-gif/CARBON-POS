@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useApproval } from "@/components/pos/useApproval";
+import { usePermissions } from "@/lib/use-permissions";
 
 type MovementType = "drop" | "payout" | "add";
 
@@ -26,6 +28,7 @@ export function RegisterActionsClient({
   );
 
   const canSwitch = registerCount >= 2;
+  const perms = usePermissions();
 
   return (
     <>
@@ -44,21 +47,27 @@ export function RegisterActionsClient({
           label="Switch Register"
           icon="swap_horizontal_circle"
         />
-        <ActionButtonLink
-          href={`/sales/${code}/register/close`}
-          label="Close Register"
-          icon="logout"
-        />
-        <ActionButton
-          onClick={() => setOpenMovement("menu")}
-          label="Payout / Drop"
-          icon="payments"
-        />
-        <ActionButton
-          onClick={() => setOpenMovement("add")}
-          label="Add Amount"
-          icon="add_card"
-        />
+        {perms.allowed("pos_register.close_register") && (
+          <ActionButtonLink
+            href={`/sales/${code}/register/close`}
+            label="Close Register"
+            icon="logout"
+          />
+        )}
+        {perms.allowed("pos_register.cash_drop") && (
+          <ActionButton
+            onClick={() => setOpenMovement("menu")}
+            label="Payout / Drop"
+            icon="payments"
+          />
+        )}
+        {perms.allowed("pos_register.add_amount") && (
+          <ActionButton
+            onClick={() => setOpenMovement("add")}
+            label="Add Amount"
+            icon="add_card"
+          />
+        )}
       </div>
 
       {openMovement === "menu" ? (
@@ -208,6 +217,8 @@ function CashMovementModal({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const perms = usePermissions();
+  const { gate, modal } = useApproval();
 
   async function submit() {
     const n = Number(amount);
@@ -215,12 +226,19 @@ function CashMovementModal({
       setError("Enter an amount greater than zero.");
       return;
     }
+    const key = type === "add" ? "pos_register.add_amount" : "pos_register.cash_drop";
+    const approval = await gate(
+      key,
+      perms.mode(key),
+      `${type === "add" ? "Add" : type === "drop" ? "Cash drop of" : "Payout of"} $${n.toFixed(2)}${reason ? ` — ${reason}` : ""}.`,
+    );
+    if (approval === null) return;
     setBusy(true);
     setError(null);
     const res = await fetch(`/api/pos/sessions/${sessionId}/cash-movement`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type, amount: n, reason }),
+      body: JSON.stringify({ type, amount: n, reason, approval }),
     });
     setBusy(false);
     if (!res.ok) {
@@ -264,6 +282,7 @@ function CashMovementModal({
 
   return (
     <Modal title={config.title} onClose={onCancel}>
+      {modal}
       <p className="text-sm text-carbon-text-muted">{config.blurb}</p>
       <label className="block mt-4 text-sm font-semibold text-carbon-text">
         Amount

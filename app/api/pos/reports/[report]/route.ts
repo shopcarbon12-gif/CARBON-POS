@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { currentCashier } from "@/lib/session";
 import { toCsv } from "@/lib/csv";
+import { REPORT_PERMISSION } from "@/lib/permission-keys";
+import { permissionMode } from "@/lib/pos-permissions";
 import { cellOf, csvCell, REPORTS, reportContext } from "@/lib/reports";
 
 /**
@@ -18,6 +20,10 @@ export async function GET(
   }
   const def = REPORTS[(await ctx.params).report];
   if (!def) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const key = REPORT_PERMISSION[def.slug];
+  if (key && (await permissionMode(cashier, key)) === "hide") {
+    return NextResponse.json({ error: "not_allowed" }, { status: 403 });
+  }
   const sp = new URL(req.url).searchParams;
   const c = await reportContext(def, cashier.lcode ?? "", cashier.lid, {
     from: sp.get("from"),

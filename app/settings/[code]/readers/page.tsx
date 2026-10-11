@@ -12,7 +12,7 @@ export default async function ReadersSettingsPage({
   const cashier = await pageGuard(code, {
     tab: "settings",
     from: `/settings/${code}/readers`,
-  }, { requireRole: ["manager", "admin"] });
+  }, { requireRole: ["manager", "admin"], permission: "pos_settings.readers" });
   return (
     <AdminShell email={cashier.email} active="settings" code={code}>
       <header className="border-b border-[var(--color-pos-border)] px-6 py-4">

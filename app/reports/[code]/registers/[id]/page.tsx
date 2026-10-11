@@ -20,7 +20,7 @@ export default async function RegisterReportDetailPage({
   const cashier = await pageGuard(code, {
     tab: "reports",
     from: `/reports/${code}/registers/${id}`,
-  }, { requireRole: ["manager", "admin"] });
+  }, { requireRole: ["manager", "admin"], permission: "pos_reports.cash_drawer" });
   const kinds: Array<"open" | "eod"> =
     type === "open" ? ["open"] : type === "eod" ? ["eod"] : ["open", "eod"];
 

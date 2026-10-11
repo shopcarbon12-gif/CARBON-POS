@@ -3,6 +3,8 @@ import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { formatMoney } from "@/lib/utils";
 import { storeToday } from "@/lib/reports";
+import { loadPermissions } from "@/lib/pos-permissions";
+import type { PermKey } from "@/lib/permission-keys";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { RegisterActionsClient } from "@/components/sales/RegisterActionsClient";
 import { OpenRegisterButton } from "@/components/sales/OpenRegisterButton";
@@ -39,6 +41,8 @@ export default async function SalesPage({
     from: `/sales/${code}`,
   });
   const sp = await searchParams;
+  const perms = await loadPermissions(cashier);
+  const can = (k: PermKey) => perms[k] !== "hide";
   const pool = getPool();
   const locR = await pool.query(
     `SELECT id, COALESCE(timezone, 'America/New_York') AS tz
@@ -291,22 +295,28 @@ export default async function SalesPage({
           </h2>
           {isRegisterOpen ? (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <ActionButton
-                href={`/sales/${code}/new`}
-                label="New Sale"
-                icon="point_of_sale"
-                primary
-              />
-              <ActionButton
-                href={`/sales/${code}/exchange`}
-                label="Exchange"
-                icon="swap_horiz"
-              />
-              <ActionButton
-                href={`/sales/${code}/refund`}
-                label="Refund"
-                icon="assignment_return"
-              />
+              {can("pos_sales.new_sale") && (
+                <ActionButton
+                  href={`/sales/${code}/new`}
+                  label="New Sale"
+                  icon="point_of_sale"
+                  primary
+                />
+              )}
+              {can("pos_sales.exchange") && (
+                <ActionButton
+                  href={`/sales/${code}/exchange`}
+                  label="Exchange"
+                  icon="swap_horiz"
+                />
+              )}
+              {can("pos_sales.refund") && (
+                <ActionButton
+                  href={`/sales/${code}/refund`}
+                  label="Refund"
+                  icon="assignment_return"
+                />
+              )}
               <ActionButton
                 href={`/sales/${code}/lookup`}
                 label="Lookup"
@@ -371,6 +381,8 @@ export default async function SalesPage({
           </div>
         ) : null}
 
+        {can("pos_sales.sales_history") ? (
+        <>
         <form className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-5 items-end">
           <Field label="From">
             <input
@@ -548,6 +560,8 @@ export default async function SalesPage({
           200). Use tighter filters or the Reports tab for date-range CSV
           exports.
         </p>
+        </>
+        ) : null}
       </section>
     </AdminShell>
   );

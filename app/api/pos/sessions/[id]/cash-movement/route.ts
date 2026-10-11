@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { guardPermission } from "@/lib/pos-permissions";
 
 const schema = z.object({
   type: z.enum(["drop", "payout", "add"]),
@@ -36,6 +37,14 @@ export async function POST(
       { status: 400 },
     );
   }
+
+  // Role permission: Register → Cash drop / payout, or Add amount.
+  const denied = await guardPermission(
+    cashier,
+    parsed.data.type === "add" ? "pos_register.add_amount" : "pos_register.cash_drop",
+    (body as { approval?: { token?: string; nonce?: string } }).approval,
+  );
+  if (denied) return denied;
   const pool = getPool();
   // Confirm the session is open before allowing a movement.
   const sessionRes = await pool.query(

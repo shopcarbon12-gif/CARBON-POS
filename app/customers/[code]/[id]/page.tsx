@@ -8,6 +8,7 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { CustomerForm, type CustomerFormInitial } from "@/components/admin/CustomerForm";
 import { StoreCreditAdjuster } from "./StoreCreditAdjuster";
 import { isStoreCreditApprover } from "@/lib/store-credit";
+import { permissionMode } from "@/lib/pos-permissions";
 
 /**
  * Customer detail / edit page. Uses the same shared CustomerForm as the
@@ -68,6 +69,7 @@ export default async function CustomerDetailPage({
   ]);
   const customer = c.rows[0];
   if (!customer) notFound();
+  const canAdjustCredit = (await permissionMode(cashier, "pos_customers.store_credit")) !== "hide";
 
   const initial: CustomerFormInitial = {
     id: customer.id,
@@ -133,10 +135,12 @@ export default async function CustomerDetailPage({
             <p className="total-display text-3xl mt-1 break-words">
               {formatMoney(customer.store_credit_balance)}
             </p>
-            <StoreCreditAdjuster
-              customerId={cid}
-              isApprover={isStoreCreditApprover(cashier.email)}
-            />
+            {canAdjustCredit && (
+              <StoreCreditAdjuster
+                customerId={cid}
+                isApprover={isStoreCreditApprover(cashier.email)}
+              />
+            )}
             {creditLog.rows.length > 0 && (
               <div className="mt-4 border-t border-carbon-border-soft pt-3">
                 <p className="text-xs uppercase tracking-wider font-bold text-carbon-text-muted mb-2">

@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { currentCashier } from "@/lib/session";
+import { permissionMode } from "@/lib/pos-permissions";
+import type { PermKey } from "@/lib/permission-keys";
 
 /**
  * Standard page guard for every authenticated /<tab>/[code] page. Returns
@@ -17,7 +19,11 @@ import { currentCashier } from "@/lib/session";
 export async function pageGuard(
   code: string,
   current: { tab: string; from?: string },
-  options?: { requireRole?: Array<"cashier" | "supervisor" | "manager" | "admin"> },
+  options?: {
+    requireRole?: Array<"cashier" | "supervisor" | "manager" | "admin">;
+    /** POS role permission (WMS POS roles) — "Hide" sends them away. */
+    permission?: PermKey;
+  },
 ) {
   const cashier = await currentCashier();
   if (!cashier) {
@@ -27,6 +33,9 @@ export async function pageGuard(
     redirect(`/${current.tab}/${cashier.lcode}`);
   }
   if (options?.requireRole && !options.requireRole.includes(cashier.role)) {
+    redirect(`/dashboard/${cashier.lcode}`);
+  }
+  if (options?.permission && (await permissionMode(cashier, options.permission)) === "hide") {
     redirect(`/dashboard/${cashier.lcode}`);
   }
   return cashier;

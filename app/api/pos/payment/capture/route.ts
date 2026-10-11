@@ -9,6 +9,8 @@ import { markdownFraction, needsManagerApproval } from "@/lib/discount-policy";
 import { verifyApproval } from "@/lib/approval-token";
 import { evaluatePromotions } from "@/lib/promotions";
 import { verifyOverride } from "@/lib/override";
+import { loadPermissions } from "@/lib/pos-permissions";
+import { PERM_LABEL, type PermKey } from "@/lib/permission-keys";
 import {
   ExchangeError,
   quoteExchange,
@@ -104,6 +106,10 @@ const schema = z.object({
   /** Client-generated id — a retried send returns the existing sale
    *  instead of creating a duplicate (offline queue, flaky network). */
   client_uuid: z.string().uuid().optional(),
+  /** Super admin approval for this sale (override kind 'permission', ref
+   *  "sale:<client_uuid>") — covers every role permission set to "Needs
+   *  approval" that this sale uses (exchange, discount, points…). */
+  sale_approval: z.string().max(2000).nullable().optional(),
   /** When the sale was actually rung up while the register was offline. */
   offline_recorded_at: z.string().datetime().optional(),
   /** Exchange: items coming back from an earlier sale pay for this one. */
@@ -192,6 +198,39 @@ export async function POST(req: Request) {
       );
     }
     offlineAt = t;
+  }
+
+  // Role permissions (WMS → POS roles) for what this sale does. Checked
+  // before any card is captured.
+  {
+    const perms = await loadPermissions(cashier);
+    const used: PermKey[] = ["pos_sales.new_sale"];
+    if (data.exchange) used.push("pos_sales.exchange");
+    if (data.lines.some((l) => l.line_type !== "loyalty_redemption" && l.discount_amount > 0 && !l.promo_rule_id)) {
+      used.push("pos_sales.discount_at_checkout");
+    }
+    if (data.lines.some((l) => l.line_type === "loyalty_redemption")) used.push("pos_sales.loyalty_redeem");
+    const hidden = used.filter((k) => perms[k] === "hide");
+    if (hidden.length) {
+      return NextResponse.json(
+        { error: "not_allowed", message: `Your role isn't allowed to ${hidden.map((k) => PERM_LABEL[k]).join(" or ")}.` },
+        { status: 403 },
+      );
+    }
+    const needApproval = used.filter((k) => perms[k] === "approval");
+    if (
+      needApproval.length &&
+      !(data.client_uuid && verifyOverride(data.sale_approval, "permission", `sale:${data.client_uuid}`, cashier.lid))
+    ) {
+      return NextResponse.json(
+        {
+          error: "approval_required",
+          permissions: needApproval,
+          message: `This sale needs the super admin's approval to ${needApproval.map((k) => PERM_LABEL[k]).join(", ")}.`,
+        },
+        { status: 403 },
+      );
+    }
   }
 
   if (data.payments.length === 0 && !data.exchange) {

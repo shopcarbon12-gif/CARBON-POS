@@ -21,7 +21,7 @@ export default async function RegisterReportsPage({
   const cashier = await pageGuard(code, {
     tab: "reports",
     from: `/reports/${code}/registers`,
-  }, { requireRole: ["manager", "admin"] });
+  }, { requireRole: ["manager", "admin"], permission: "pos_reports.cash_drawer" });
   const sp = await searchParams;
   const pool = getPool();
   const tzR = await pool.query(

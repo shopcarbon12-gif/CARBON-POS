@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatMoney } from "@/lib/utils";
 import { ShiftReview } from "@/components/pos/ShiftReview";
+import { useApproval } from "@/components/pos/useApproval";
+import { usePermissions } from "@/lib/use-permissions";
 
 /**
  * Bill denominations shown for the cash row. Per spec we omit cents
@@ -49,6 +51,8 @@ export function CloseRegisterClient({
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const perms = usePermissions();
+  const { gate, modal } = useApproval();
 
   const cashCounted = useMemo(() => {
     return DENOMS.reduce((sum, d) => sum + (counts[d.value] ?? 0) * d.value, 0);
@@ -100,6 +104,12 @@ export function CloseRegisterClient({
   }, [summaryRows]);
 
   async function saveCounts() {
+    const approval = await gate(
+      "pos_register.close_register",
+      perms.mode("pos_register.close_register"),
+      `Close the register — counted ${formatMoney(cashCounted)} cash.`,
+    );
+    if (approval === null) return;
     setBusy(true);
     setError(null);
     try {
@@ -107,6 +117,7 @@ export function CloseRegisterClient({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          approval,
           closing_cash_counted: Math.round(cashCounted * 100) / 100,
           closing_denoms: Object.fromEntries(
             DENOMS.map((d) => [String(d.value), counts[d.value] ?? 0]),
@@ -131,23 +142,36 @@ export function CloseRegisterClient({
 
   async function openDrawer() {
     setError(null);
-    await fetch("/api/pos/cash-drawer/kick", { method: "POST" }).catch(
-      () => undefined,
+    const approval = await gate(
+      "pos_register.no_sale_open_drawer",
+      perms.mode("pos_register.no_sale_open_drawer"),
+      "Open the cash drawer (no sale) to count it at close.",
     );
+    if (approval === null) return;
+    await fetch("/api/pos/cash-drawer/kick", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ approval }),
+    }).catch(() => undefined);
   }
 
   if (step === "review") {
     return (
+      <>
+      {modal}
       <ShiftReview
         sessionId={sessionId}
         code={code}
         onApprove={() => setStep("count")}
       />
+      </>
     );
   }
 
   if (step === "summary") {
     return (
+      <>
+      {modal}
       <SummaryView
         rows={summaryRows}
         totals={summaryTotals}
@@ -161,11 +185,13 @@ export function CloseRegisterClient({
         }}
         onSave={() => void saveCounts()}
       />
+      </>
     );
   }
 
   return (
     <>
+      {modal}
       <div className="overflow-x-auto carbon-card">
         <table className="w-full min-w-[900px] text-base text-carbon-text">
           <thead>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { pageGuard } from "@/lib/page-guard";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { REPORT_PERMISSION } from "@/lib/permission-keys";
 import { PrintButton } from "@/components/admin/PrintButton";
 import {
   cellOf,
@@ -29,7 +30,7 @@ export default async function ReportPage({
   const cashier = await pageGuard(
     code,
     { tab: "reports", from: `/reports/${code}/${report}` },
-    { requireRole: ["manager", "admin"] },
+    { requireRole: ["manager", "admin"], permission: REPORT_PERMISSION[report] },
   );
   const sp = await searchParams;
   const c = await reportContext(def, code, cashier.lid, sp);

@@ -7,6 +7,7 @@ import { queueLoyaltyCall } from "@/lib/loyalty-client";
 import { currentCashier } from "@/lib/session";
 import { moveStoreCredit } from "@/lib/store-credit-ledger";
 import { verifyOverride } from "@/lib/override";
+import { permissionMode } from "@/lib/pos-permissions";
 import {
   priceReturn,
   recordReturnItems,
@@ -53,8 +54,9 @@ const schema = z.object({
  *   - For 'cash': no Stripe call; we just record the row.
  *   - For 'store_credit': adds the amount to the sale customer's balance
  *     (pos_store_credit_ledger); rejected when the sale has no customer.
- *   - Needs the super admin's approval (refund_approval token: admin PIN
- *     or emailed code) unless the super admin is refunding.
+ *   - Role permission pos_sales.refund: hide = refused; approval = needs
+ *     the super admin's approval (refund_approval token: admin PIN or
+ *     emailed code); the super admin always may.
  *   - Returned goods come as `items`: every RFID piece by the EPC scanned
  *     coming back (verified against the tags sold on that line, once
  *     only), untagged pieces by quantity. The server prices them
@@ -100,17 +102,24 @@ export async function POST(req: Request) {
       );
     }
   }
-  // Every refund needs the super admin's OK (admin PIN or emailed code),
-  // unless the super admin is doing it.
+  // Role permission (WMS POS roles → Sales → Refund): hide = not allowed,
+  // approval = the super admin approves (admin PIN or emailed code).
+  const refundMode = await permissionMode(cashier, "pos_sales.refund");
+  if (refundMode === "hide") {
+    return NextResponse.json(
+      { error: "not_allowed", message: "Your role isn't allowed to refund." },
+      { status: 403 },
+    );
+  }
   const approvedBy =
-    cashier.role === "admin"
-      ? null
-      : verifyOverride(parsed.data.refund_approval, "refund", String(sale_id), cashier.lid);
-  if (cashier.role !== "admin" && !approvedBy) {
+    refundMode === "approval"
+      ? verifyOverride(parsed.data.refund_approval, "refund", String(sale_id), cashier.lid)
+      : null;
+  if (refundMode === "approval" && !approvedBy) {
     return NextResponse.json(
       {
         error: "refund_approval_required",
-        message: "Refunds need the super admin's approval (admin PIN or emailed code).",
+        message: "Your role needs the super admin's approval to refund (admin PIN or emailed code).",
       },
       { status: 403 },
     );

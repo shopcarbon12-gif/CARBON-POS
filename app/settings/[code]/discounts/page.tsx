@@ -13,7 +13,7 @@ export default async function DiscountsSettingsPage({
   const cashier = await pageGuard(code, {
     tab: "settings",
     from: `/settings/${code}/discounts`,
-  }, { requireRole: ["manager", "admin"] });
+  }, { requireRole: ["manager", "admin"], permission: "pos_settings.discounts" });
   const pool = getPool();
   const r = await pool.query(
     `SELECT * FROM pos_discount_rules ORDER BY is_active DESC, name`,

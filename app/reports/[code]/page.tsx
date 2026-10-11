@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { pageGuard } from "@/lib/page-guard";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { loadPermissions } from "@/lib/pos-permissions";
+import { REPORT_PERMISSION, type PermKey } from "@/lib/permission-keys";
 
 export default async function ReportsHomePage({
   params,
@@ -64,11 +66,21 @@ export default async function ReportsHomePage({
       desc: "All refunds and voided sales, with reason and who actioned them.",
     },
   ];
+  // Hide reports this employee's POS role can't see.
+  const perms = await loadPermissions(cashier);
+  const permFor = (href: string): PermKey | undefined => {
+    const slug = href.split("/").pop() ?? "";
+    return slug === "registers" ? "pos_reports.cash_drawer" : REPORT_PERMISSION[slug];
+  };
+  const visible = cards.filter((c) => {
+    const k = permFor(c.href);
+    return !k || perms[k] !== "hide";
+  });
   return (
     <AdminShell email={cashier.email} active="reports" code={code}>
       <section className="p-3 sm:p-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl">
-          {cards.map((c) => (
+          {visible.map((c) => (
             <Link
               key={c.href}
               href={c.href}

@@ -10,6 +10,8 @@ import type { CartLine, CartTotals } from "@/types/pos";
 import { captureLines } from "@/lib/capture-payload";
 import { calculateTotals } from "@/lib/tax";
 import { OverrideModal } from "@/components/pos/OverrideModal";
+import { usePermissions } from "@/lib/use-permissions";
+import { PERM_LABEL, type PermKey, type PermMode } from "@/lib/permission-keys";
 
 type CartPayload = {
   lines: CartLine[];
@@ -78,6 +80,11 @@ function PaymentInner() {
   }));
   // Exchange difference to the original payment (admin override).
   const [payoutAsk, setPayoutAsk] = useState(false);
+  // POS role permissions; one super admin approval covers this sale.
+  const perms = usePermissions();
+  const [clientUuid] = useState(() => crypto.randomUUID());
+  const [saleApproval, setSaleApproval] = useState<string | null>(null);
+  const [askSaleApproval, setAskSaleApproval] = useState(false);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   useEffect(() => {
@@ -166,6 +173,8 @@ function PaymentInner() {
         attributed_employee_id: cart.attributedEmployeeId ?? null,
         lines: captureLines(newLines),
         payments,
+        client_uuid: clientUuid,
+        sale_approval: saleApproval,
         exchange: hasReturns && returnSaleId
           ? { sale_id: returnSaleId, items: returnItems, payout_override: payoutOverride ?? null }
           : undefined,
@@ -242,6 +251,7 @@ function PaymentInner() {
   if (hasReturns && newLines.length === 0 && quote) {
     return (
       <RefundCheckout
+        mode={perms.mode("pos_sales.refund")}
         saleId={returnSaleId!}
         items={returnLines.map((l) => l.description.replace(/^Return · /, ""))}
         amount={quote.credit}
@@ -253,6 +263,68 @@ function PaymentInner() {
         onBack={() => router.back()}
         onRefund={refundOnly}
       />
+    );
+  }
+
+  // What this sale does, per POS role: hidden → blocked; "Needs
+  // approval" → one super admin approval for the whole sale, before any
+  // card is touched (the server checks it against this sale's id).
+  const salePerms: PermKey[] = [];
+  if (newLines.length) salePerms.push("pos_sales.new_sale");
+  if (hasReturns && newLines.length) salePerms.push("pos_sales.exchange");
+  if (newLines.some((l) => l.line_type !== "loyalty_redemption" && l.discount_amount > 0 && l.discount_source !== "promo")) {
+    salePerms.push("pos_sales.discount_at_checkout");
+  }
+  if (newLines.some((l) => l.line_type === "loyalty_redemption")) salePerms.push("pos_sales.loyalty_redeem");
+  const blocked = salePerms.filter((k) => perms.mode(k) === "hide");
+  const needApproval = salePerms.filter((k) => perms.mode(k) === "approval");
+  if (perms.ready && (blocked.length || (needApproval.length && !saleApproval))) {
+    return (
+      <main className="min-h-screen p-4 sm:p-6 max-w-xl mx-auto">
+        <button onClick={() => router.back()} className="tap text-[var(--color-pos-muted)] underline px-3 mb-4">
+          ← Back to cart
+        </button>
+        <div className="carbon-card p-6">
+          {blocked.length ? (
+            <>
+              <h1 className="text-2xl font-bold">Not allowed</h1>
+              <p className="mt-2">
+                Your role isn&apos;t allowed to {blocked.map((k) => PERM_LABEL[k]).join(" or ")}. Go back and
+                change the cart, or ask a manager.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold">Approval needed</h1>
+              <p className="mt-2">
+                Your role needs the super admin&apos;s approval to {needApproval.map((k) => PERM_LABEL[k]).join(", ")} on this
+                sale ({formatMoney(saleTotal)}).
+              </p>
+              <button
+                onClick={() => setAskSaleApproval(true)}
+                className="carbon-btn-primary tap-lg w-full font-bold mt-5"
+              >
+                Get approval
+              </button>
+              {askSaleApproval && (
+                <OverrideModal
+                  kind="permission"
+                  refId={`sale:${clientUuid}`}
+                  title="Approve this sale?"
+                  detail={`Sale of ${formatMoney(saleTotal)} (${newLines.length} line${newLines.length === 1 ? "" : "s"}${
+                    hasReturns ? `, exchange from receipt #${quote?.sale_number ?? ""}` : ""
+                  }) needs approval to ${needApproval.map((k) => PERM_LABEL[k]).join(", ")}.`}
+                  onCancel={() => setAskSaleApproval(false)}
+                  onApproved={(token) => {
+                    setAskSaleApproval(false);
+                    setSaleApproval(token);
+                  }}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </main>
     );
   }
 
@@ -646,6 +718,7 @@ function OtherSection({
 }
 
 function RefundCheckout({
+  mode,
   saleId,
   items,
   amount,
@@ -657,6 +730,8 @@ function RefundCheckout({
   onBack,
   onRefund,
 }: {
+  /** POS role permission for refunds: view / approval / hide. */
+  mode: PermMode;
   saleId: number;
   items: string[];
   amount: number;
@@ -722,15 +797,22 @@ function RefundCheckout({
           className="tap w-full border border-[var(--color-pos-border)] px-3 mt-3"
         />
         <button
-          disabled={saving}
-          onClick={() => setAskApproval(true)}
+          disabled={saving || mode === "hide"}
+          onClick={() => (mode === "approval" ? setAskApproval(true) : onRefund(method, reason.trim(), ""))}
           className="carbon-btn-primary tap-lg w-full font-bold mt-5 disabled:opacity-50"
         >
           {saving ? "Refunding…" : `Refund ${formatMoney(amount)}`}
         </button>
-        <p className="text-xs text-carbon-text-muted mt-2 text-center">
-          Refunds need the super admin&apos;s approval (admin PIN or emailed code).
-        </p>
+        {mode === "approval" && (
+          <p className="text-xs text-carbon-text-muted mt-2 text-center">
+            Your role needs the super admin&apos;s approval to refund (admin PIN or emailed code).
+          </p>
+        )}
+        {mode === "hide" && (
+          <p className="text-sm text-[var(--color-pos-danger)] mt-2 text-center">
+            Your role isn&apos;t allowed to refund.
+          </p>
+        )}
         {askApproval && (
           <OverrideModal
             kind="refund"

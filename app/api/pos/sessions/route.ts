@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
 import { currentSessionWhere } from "@/lib/current-session";
+import { guardPermission } from "@/lib/pos-permissions";
 
 const openSchema = z.object({
   register_id: z.number().int().positive(),
@@ -56,6 +57,10 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+
+  // Role permission: Register → Open register.
+  const denied = await guardPermission(cashier, "pos_register.open_register", (body as { approval?: { token?: string; nonce?: string } }).approval);
+  if (denied) return denied;
   const pool = getPool();
   try {
     const result = await pool.query(

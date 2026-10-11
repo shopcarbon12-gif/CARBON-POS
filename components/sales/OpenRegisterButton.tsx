@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { formatMoney } from "@/lib/utils";
+import { useApproval } from "@/components/pos/useApproval";
+import { usePermissions } from "@/lib/use-permissions";
 
 type Register = {
   id: number;
@@ -130,6 +132,8 @@ function OpenRegisterDialog({
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const perms = usePermissions();
+  const { gate, modal } = useApproval();
 
   const total = useMemo(() => {
     const denomTotal = DENOMS.reduce(
@@ -140,6 +144,12 @@ function OpenRegisterDialog({
   }, [counts]);
 
   async function submit() {
+    const approval = await gate(
+      "pos_register.open_register",
+      perms.mode("pos_register.open_register"),
+      `Open ${register.name} with ${formatMoney(total)} in the drawer.`,
+    );
+    if (approval === null) return;
     setBusy(true);
     setError(null);
     try {
@@ -147,6 +157,7 @@ function OpenRegisterDialog({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          approval,
           register_id: register.id,
           opening_cash: total,
           opening_denoms: Object.fromEntries(
@@ -169,13 +180,22 @@ function OpenRegisterDialog({
   }
 
   async function openDrawer() {
-    await fetch("/api/pos/cash-drawer/kick", { method: "POST" }).catch(
-      () => undefined,
+    const approval = await gate(
+      "pos_register.no_sale_open_drawer",
+      perms.mode("pos_register.no_sale_open_drawer"),
+      `Open the cash drawer (no sale) while opening ${register.name}.`,
     );
+    if (approval === null) return;
+    await fetch("/api/pos/cash-drawer/kick", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ approval }),
+    }).catch(() => undefined);
   }
 
   return (
     <Modal title={`Open Register: ${register.name}`} onClose={onCancel}>
+      {modal}
       <p className="text-sm text-carbon-text-muted mb-4">
         Count what's already in the drawer at{" "}
         <span className="font-semibold text-carbon-text">

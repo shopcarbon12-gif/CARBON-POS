@@ -9,6 +9,8 @@ import { RedeemPointsModal } from "./RedeemPointsModal";
 import { RFIDScanModal, type RfidResolvedItem } from "./RFIDScanModal";
 import { CashKeypad } from "./CashKeypad";
 import { OverrideModal, type OverrideKind } from "./OverrideModal";
+import { useApproval } from "./useApproval";
+import { usePermissions } from "@/lib/use-permissions";
 import { captureLines } from "@/lib/capture-payload";
 import { enqueueOfflineSale, serverReachable } from "@/lib/offline-queue";
 import type { ReturnableLine, ReturnableSale } from "@/lib/returns-types";
@@ -226,6 +228,12 @@ export function SellScreen({
       window.removeEventListener("offline", off);
     };
   }, [code]);
+  // POS role permissions (WMS → POS roles).
+  const perms = usePermissions();
+  const { gate, modal: approvalModal } = useApproval();
+  const canDiscount = perms.allowed("pos_sales.discount_at_checkout");
+  const canRedeem = perms.allowed("pos_sales.loyalty_redeem");
+  const canReturn = perms.allowed("pos_sales.refund") || perms.allowed("pos_sales.exchange");
   // Admin override in progress (RFID sale / RFID return).
   const [overrideReq, setOverrideReq] = useState<{
     kind: OverrideKind;
@@ -1438,10 +1446,16 @@ export function SellScreen({
   /** Park the current cart server-side and start a fresh one. */
   async function holdCurrent(label: string | null): Promise<boolean> {
     if (lines.length === 0) return true;
+    const approval = await gate(
+      "pos_sales.park_sale",
+      perms.mode("pos_sales.park_sale"),
+      `Hold a ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(totals.total)} sale${label ? ` (${label})` : ""}.`,
+    );
+    if (approval === null) return false;
     const r = await fetch("/api/pos/held-sales", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ label, customer, lines, total: totals.total }),
+      body: JSON.stringify({ label, customer, lines, total: totals.total, approval }),
     }).catch(() => null);
     if (!r?.ok) return false;
     setLines([]);
@@ -1642,6 +1656,8 @@ export function SellScreen({
           }}
           onRedeemPoints={() => setShowRedeem(true)}
           onApplyDiscount={() => setDiscountFor("sale")}
+          canDiscount={canDiscount}
+          canRedeem={canRedeem}
           onChargeCard={() => startCheckout("card")}
           onTakeCash={() => startCheckout("cash")}
           onOtherPayment={() => startCheckout("other")}
@@ -1677,7 +1693,7 @@ export function SellScreen({
               wide to be useful), side-by-side from sm+. */}
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
             <div className="flex-1 min-w-0">
-              <ItemSearch onPick={addProduct} onReceipt={loadReceipt} />
+              <ItemSearch onPick={addProduct} onReceipt={canReturn ? loadReceipt : undefined} />
             </div>
             <button
               onClick={() => {
@@ -1702,7 +1718,7 @@ export function SellScreen({
             lines={lines}
             onChangeQty={changeQty}
             onRemove={removeLine}
-            onEditDiscount={(id) => setDiscountFor(id)}
+            onEditDiscount={(id) => (canDiscount ? setDiscountFor(id) : undefined)}
             saleNumberPreview={saleNumberPreview}
             employees={employees}
             saleAttributedEmployeeId={saleAttributedEmployeeId}
@@ -1785,6 +1801,8 @@ export function SellScreen({
               }}
               onRedeemPoints={() => setShowRedeem(true)}
               onApplyDiscount={() => setDiscountFor("sale")}
+              canDiscount={canDiscount}
+              canRedeem={canRedeem}
               onChargeCard={() => startCheckout("card")}
               onTakeCash={() => startCheckout("cash")}
               onOtherPayment={() => startCheckout("other")}
@@ -1830,6 +1848,8 @@ export function SellScreen({
               }}
               onRedeemPoints={() => setShowRedeem(true)}
               onApplyDiscount={() => setDiscountFor("sale")}
+              canDiscount={canDiscount}
+              canRedeem={canRedeem}
               onChargeCard={() => startCheckout("card")}
               onTakeCash={() => startCheckout("cash")}
               onOtherPayment={() => startCheckout("other")}
@@ -1969,6 +1989,7 @@ export function SellScreen({
           onCancel={() => setRfidConfirmItem(null)}
         />
       )}
+      {approvalModal}
       {overrideReq && (
         <OverrideModal
           kind={overrideReq.kind}

@@ -14,7 +14,7 @@ export default async function EmployeesPage({
   const cashier = await pageGuard(code, {
     tab: "settings",
     from: `/employees/${code}`,
-  }, { requireRole: ["manager", "admin"] });
+  }, { requireRole: ["manager", "admin"], permission: "pos_employees.view" });
   const isSuperAdmin = cashier.role === "admin";
   const pool = getPool();
   const r = await pool.query(

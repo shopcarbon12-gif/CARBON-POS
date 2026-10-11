@@ -4,6 +4,7 @@ import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { EmployeeEditor } from "./EmployeeEditor";
 import { ClockHistory } from "./ClockHistory";
+import { permissionMode } from "@/lib/pos-permissions";
 
 export default async function EmployeeDetailPage({
   params,
@@ -14,11 +15,12 @@ export default async function EmployeeDetailPage({
   const cashier = await pageGuard(code, {
     tab: "employees",
     from: `/employees/${code}/${id}`,
-  }, { requireRole: ["manager", "admin"] });
+  }, { requireRole: ["manager", "admin"], permission: "pos_employees.view" });
   const isSuperAdmin = cashier.role === "admin";
   const eid = Number(id);
   if (!Number.isFinite(eid)) notFound();
   const pool = getPool();
+  const showTimecards = (await permissionMode(cashier, "pos_employees.view_timecards")) !== "hide";
   const tzR = await getPool().query(
     `SELECT COALESCE(timezone, 'America/New_York') AS tz
        FROM pos_locations WHERE wms_location_id = $1::uuid LIMIT 1`,
@@ -82,6 +84,7 @@ export default async function EmployeeDetailPage({
             }}
           />
         </section>
+        {showTimecards && (
         <aside className="bg-white border border-[var(--color-pos-border)] rounded-2xl p-4">
           <h2 className="font-semibold mb-2">Recent clock activity</h2>
           <p className="text-xs text-[var(--color-pos-muted)] mb-2">
@@ -96,6 +99,7 @@ export default async function EmployeeDetailPage({
             }))}
           />
         </aside>
+        )}
       </div>
     </main>
   );

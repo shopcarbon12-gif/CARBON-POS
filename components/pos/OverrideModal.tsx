@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export type OverrideKind = "rfid_sale" | "rfid_return" | "exchange_payout" | "refund";
+export type OverrideKind = "rfid_sale" | "rfid_return" | "exchange_payout" | "refund" | "permission";
 
 /**
  * Admin approval for an override. Two ways:

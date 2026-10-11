@@ -13,7 +13,7 @@ export default async function LocationsSettingsPage({
   const cashier = await pageGuard(code, {
     tab: "settings",
     from: `/settings/${code}/locations`,
-  }, { requireRole: ["manager", "admin"] });
+  }, { requireRole: ["manager", "admin"], permission: "pos_settings.locations" });
   const pool = getPool();
   const [locs, avail] = await Promise.all([
     pool.query(

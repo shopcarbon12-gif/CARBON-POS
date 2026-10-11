@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { printer as Printer, types as PrinterTypes } from "node-thermal-printer";
 import { currentCashier } from "@/lib/session";
 import { enqueuePrintJobs, locationPrintTarget } from "@/lib/print-queue";
+import { guardPermission } from "@/lib/pos-permissions";
 
 /**
  * POST /api/pos/cash-drawer/kick
@@ -10,11 +11,15 @@ import { enqueuePrintJobs, locationPrintTarget } from "@/lib/print-queue";
  * THERMAL_PRINTER_HOST env printer. Returns { skipped: true } when
  * neither is available so the UI can stay silent in dev.
  */
-export async function POST() {
+export async function POST(req: Request) {
   const cashier = await currentCashier();
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // Role permission: Register → No-sale open drawer.
+  const body = (await req.json().catch(() => ({}))) as { approval?: { token?: string; nonce?: string } };
+  const denied = await guardPermission(cashier, "pos_register.no_sale_open_drawer", body.approval);
+  if (denied) return denied;
   const target = await locationPrintTarget(cashier.lid);
   if (target?.agent_online && target.printer_host) {
     // ESC @, then ESC p 0 50 250 — same bytes as lib/receipt-raster.

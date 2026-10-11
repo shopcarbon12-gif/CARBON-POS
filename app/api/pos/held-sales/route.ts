@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { guardPermission } from "@/lib/pos-permissions";
 
 /**
  * GET  /api/pos/held-sales — parked carts at this store, newest first.
@@ -39,8 +40,12 @@ const schema = z.object({
 export async function POST(req: Request) {
   const cashier = await currentCashier();
   if (!cashier) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const parsed = schema.safeParse(await req.json().catch(() => ({})));
+  const body = (await req.json().catch(() => ({}))) as { approval?: { token?: string; nonce?: string } };
+  const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+  // Role permission: Sales → Park / resume sale.
+  const denied = await guardPermission(cashier, "pos_sales.park_sale", body.approval);
+  if (denied) return denied;
   const { label, customer, lines, total } = parsed.data;
   const itemCount = lines.reduce(
     (s, l) => s + (l.line_type === "loyalty_redemption" ? 0 : Number(l.quantity ?? 0)),
