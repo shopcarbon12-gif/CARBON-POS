@@ -30,7 +30,7 @@ export default async function RegisterReportPrintPage({
       code={code}
       title={kind === "open" ? "Register Opened" : "Register Closed"}
     >
-      <section className="p-6 max-w-3xl mx-auto">
+      <section className="p-6 max-w-6xl mx-auto">
         <RegisterReportPanel
           sessionId={Number(id)}
           kinds={[kind]}

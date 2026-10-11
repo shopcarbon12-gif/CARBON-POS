@@ -116,7 +116,10 @@ function RefundReceiptInner() {
   }
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 max-w-3xl mx-auto">
+    <main className="min-h-screen p-4 sm:p-6 flex justify-center">
+      {/* Actions on the left, receipt preview on the right — centered. */}
+      <div className="w-full max-w-5xl flex flex-col lg:flex-row gap-6 justify-center items-start">
+        <div className="w-full lg:w-96 shrink-0 lg:sticky lg:top-6">
       {data.refund.method === "cash" && (
         <div className="mb-4 border-4 border-amber-500 bg-amber-50 p-4 text-center">
           <p className="text-sm font-bold uppercase tracking-wider text-amber-800">Give the customer cash</p>
@@ -133,20 +136,6 @@ function RefundReceiptInner() {
           )}
         </p>
       </div>
-      <div
-        className="rounded-2xl border border-[var(--color-pos-border)] overflow-y-auto bg-[#e9e9e9]"
-        style={{ maxHeight: "60vh" }}
-      >
-        {data.refund.method === "original_card" && (
-          <div ref={merchantRef}>
-            <RefundReceiptView data={data} variant="merchant" />
-          </div>
-        )}
-        <div ref={customerRef}>
-          <RefundReceiptView data={data} variant="customer" />
-        </div>
-      </div>
-
       <button
         onClick={() => void print()}
         disabled={state === "printing"}
@@ -169,6 +158,24 @@ function RefundReceiptInner() {
       >
         Done
       </button>
+        </div>
+        <div className="w-full lg:w-auto">
+      <div
+        className="rounded-2xl border border-[var(--color-pos-border)] overflow-y-auto bg-[#e9e9e9]"
+        style={{ maxHeight: "calc(100vh - 3rem)" }}
+      >
+        {data.refund.method === "original_card" && (
+          <div ref={merchantRef}>
+            <RefundReceiptView data={data} variant="merchant" />
+          </div>
+        )}
+        <div ref={customerRef}>
+          <RefundReceiptView data={data} variant="customer" />
+        </div>
+      </div>
+
+        </div>
+      </div>
     </main>
   );
 }

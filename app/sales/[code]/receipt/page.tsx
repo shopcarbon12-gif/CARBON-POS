@@ -207,7 +207,10 @@ function ReceiptInner() {
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 max-w-3xl mx-auto">
+    <main className="min-h-screen p-4 sm:p-6 flex justify-center">
+      {/* Actions on the left, receipt preview on the right — centered. */}
+      <div className="w-full max-w-5xl flex flex-col lg:flex-row gap-6 justify-center items-start">
+        <div className="w-full lg:w-96 shrink-0 lg:sticky lg:top-6">
       {changeDue > 0.004 && (
         <div className="mb-4 border-4 border-emerald-600 bg-emerald-50 p-4 text-center">
           <p className="text-sm font-bold uppercase tracking-wider text-emerald-800">Give change</p>
@@ -231,33 +234,7 @@ function ReceiptInner() {
           {money(cardBack)} exchange difference refunded to the customer&apos;s card.
         </div>
       )}
-      <div
-        className="rounded-2xl border border-[var(--color-pos-border)] overflow-y-auto bg-[#e9e9e9]"
-        style={{ maxHeight: "60vh" }}
-      >
-        {data.payments.some((p) => p.method === "card") && (
-          <div ref={merchantRef}>
-            <ReceiptView
-              sale={data.sale}
-              lines={data.lines}
-              payments={data.payments}
-              loyalty={data.loyalty}
-              variant="merchant"
-            />
-          </div>
-        )}
-        <div ref={customerRef}>
-          <ReceiptView
-            sale={data.sale}
-            lines={data.lines}
-            payments={data.payments}
-            loyalty={data.loyalty}
-            variant="customer"
-          />
-        </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <button
           onClick={print}
           disabled={printState === "printing"}
@@ -311,6 +288,36 @@ function ReceiptInner() {
       >
         New Sale
       </button>
+        </div>
+        <div className="w-full lg:w-auto">
+      <div
+        className="rounded-2xl border border-[var(--color-pos-border)] overflow-y-auto bg-[#e9e9e9]"
+        style={{ maxHeight: "calc(100vh - 3rem)" }}
+      >
+        {data.payments.some((p) => p.method === "card") && (
+          <div ref={merchantRef}>
+            <ReceiptView
+              sale={data.sale}
+              lines={data.lines}
+              payments={data.payments}
+              loyalty={data.loyalty}
+              variant="merchant"
+            />
+          </div>
+        )}
+        <div ref={customerRef}>
+          <ReceiptView
+            sale={data.sale}
+            lines={data.lines}
+            payments={data.payments}
+            loyalty={data.loyalty}
+            variant="customer"
+          />
+        </div>
+      </div>
+
+        </div>
+      </div>
     </main>
   );
 }

@@ -97,53 +97,52 @@ export function RegisterReportPanel({
   );
 
   return (
-    <div>
-      <div
-        className={`grid gap-6 ${visible.length > 1 ? "lg:grid-cols-2" : ""}`}
-      >
+    // Actions on the left, report preview(s) on the right — centered.
+    <div className="flex flex-col lg:flex-row gap-6 justify-center items-start">
+      <div className="w-full lg:w-80 shrink-0 lg:sticky lg:top-6 flex flex-col gap-3">
         {visible.map((k) => (
-          <div key={k} className="flex flex-col gap-3">
-            <div
-              ref={(el) => {
-                refs.current[k] = el;
-              }}
-              className="border border-carbon-border-soft overflow-y-auto bg-[#e9e9e9]"
-              style={{ maxHeight: "70vh" }}
-            >
-              <RegisterReportView report={report} kind={k} />
-            </div>
-            <button
-              type="button"
-              onClick={() => void print(k)}
-              disabled={state[k] === "printing"}
-              className="carbon-btn-secondary tap px-5 font-semibold text-base inline-flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-base">print</span>
-              {state[k] === "printing"
-                ? "Printing…"
-                : state[k] === "done"
-                  ? "Printed ✓ — Print again"
-                  : k === "open"
-                    ? "Print Open Report"
-                    : "Print End of Day Report"}
-            </button>
+          <button
+            key={k}
+            type="button"
+            onClick={() => void print(k)}
+            disabled={state[k] === "printing"}
+            className="carbon-btn-secondary tap-lg px-5 font-semibold text-base inline-flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-base">print</span>
+            {state[k] === "printing"
+              ? "Printing…"
+              : state[k] === "done"
+                ? "Printed ✓ — Print again"
+                : k === "open"
+                  ? "Print Open Report"
+                  : "Print End of Day Report"}
+          </button>
+        ))}
+        {printError ? <p className="text-carbon-danger text-base">{printError}</p> : null}
+        {continueHref ? (
+          <Link
+            href={continueHref}
+            replace
+            className="carbon-btn-primary tap-lg w-full flex items-center justify-center text-lg font-semibold"
+          >
+            {continueLabel}
+          </Link>
+        ) : null}
+      </div>
+      <div className={`w-full lg:w-auto grid gap-6 ${visible.length > 1 ? "xl:grid-cols-2" : ""}`}>
+        {visible.map((k) => (
+          <div
+            key={k}
+            ref={(el) => {
+              refs.current[k] = el;
+            }}
+            className="border border-carbon-border-soft overflow-y-auto bg-[#e9e9e9]"
+            style={{ maxHeight: "calc(100vh - 8rem)" }}
+          >
+            <RegisterReportView report={report} kind={k} />
           </div>
         ))}
       </div>
-
-      {printError ? (
-        <p className="text-carbon-danger mt-4 text-base">{printError}</p>
-      ) : null}
-
-      {continueHref ? (
-        <Link
-          href={continueHref}
-          replace
-          className="carbon-btn-primary tap-lg mt-6 w-full flex items-center justify-center text-lg font-semibold"
-        >
-          {continueLabel}
-        </Link>
-      ) : null}
     </div>
   );
 }
