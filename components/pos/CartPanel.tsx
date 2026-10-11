@@ -55,7 +55,7 @@ export function CartPanel({
     : "Cart";
   if (lines.length === 0) {
     return (
-      <div className="carbon-card flex-1 flex flex-col min-h-[200px]">
+      <div className="carbon-card flex-1 flex flex-col min-h-[200px] lg:min-h-0">
         <CartHeader
           label={headerLabel}
           employees={employees}
@@ -71,7 +71,7 @@ export function CartPanel({
     );
   }
   return (
-    <div className="carbon-card overflow-hidden flex-1 flex flex-col">
+    <div className="carbon-card overflow-hidden flex-1 flex flex-col min-h-[240px] lg:min-h-0">
       <CartHeader
         label={headerLabel}
         employees={employees}

@@ -1569,7 +1569,9 @@ export function SellScreen({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 sm:p-6 flex flex-col space-y-4 sm:space-y-6">
+    // On lg+ the screen is pinned to the window: search, action buttons and
+    // the checkout column stay put; only the cart list scrolls.
+    <div className="flex-1 overflow-y-auto p-3 sm:p-6 flex flex-col space-y-4 sm:space-y-6 lg:flex-none lg:h-[calc(100dvh-var(--carbon-topbar-h))] lg:overflow-hidden">
       {offline && (
         <div className="border-2 border-amber-500 bg-amber-50 p-3 flex items-center gap-3">
           <span className="material-symbols-outlined text-amber-700" aria-hidden>cloud_off</span>
@@ -1702,7 +1704,7 @@ export function SellScreen({
           to lg (1024) so tablets in portrait get the stacked layout. */}
       <div className="flex flex-1 gap-4 sm:gap-6 min-h-0 flex-col lg:flex-row">
         {/* Left column — search + cart + bottom actions */}
-        <div className="flex-1 flex flex-col space-y-4 min-w-0">
+        <div className="flex-1 flex flex-col space-y-4 min-w-0 min-h-0">
           {/* Search row: stacks under the Scan-RFID button on tiny phones
               (the button needs ~140 px and the search needs at least that
               wide to be useful), side-by-side from sm+. */}
@@ -1743,7 +1745,7 @@ export function SellScreen({
 
           {/* Three secondary actions — flex-wrap so they reflow to 2+1 or
               stack on narrow widths instead of squishing the icons + labels. */}
-          <div className="flex flex-wrap gap-2 sm:gap-4 pt-2">
+          <div className="flex flex-wrap gap-2 sm:gap-4 pt-2 shrink-0">
             <button
               onClick={() => setShowMisc(true)}
               className="flex-1 min-w-[140px] carbon-btn-secondary tap font-semibold inline-flex items-center justify-center gap-2"
@@ -1794,7 +1796,7 @@ export function SellScreen({
             On mobile (<lg), customer already lives above the cart in
             the dedicated slot, so this slot renders summary-only
             (totals + payment buttons). */}
-        <div className="lg:w-[420px] flex-shrink-0">
+        <div className="lg:w-[420px] flex-shrink-0 lg:min-h-0 lg:overflow-y-auto">
           {/* Mobile: summary-only (customer already shown above the cart). */}
           <div className="lg:hidden">
             <TotalPanel
