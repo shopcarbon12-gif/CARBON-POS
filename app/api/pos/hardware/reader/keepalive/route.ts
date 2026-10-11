@@ -17,6 +17,6 @@ export async function POST() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   markReaderHeartbeat(cashier.user_id);
-  await armPosMonitor(cashier.user_id);
+  await armPosMonitor(cashier.user_id, cashier.lid);
   return NextResponse.json({ ok: true });
 }

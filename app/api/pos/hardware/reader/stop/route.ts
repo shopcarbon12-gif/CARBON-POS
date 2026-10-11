@@ -17,6 +17,6 @@ export async function POST() {
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  await setScanningActive(cashier.user_id, false);
+  await setScanningActive(cashier.user_id, cashier.lid, false);
   return NextResponse.json({ ok: true });
 }

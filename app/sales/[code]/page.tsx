@@ -6,6 +6,7 @@ import { storeToday } from "@/lib/reports";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { RegisterActionsClient } from "@/components/sales/RegisterActionsClient";
 import { OpenRegisterButton } from "@/components/sales/OpenRegisterButton";
+import { currentSessionWhere } from "@/lib/current-session";
 
 type Search = {
   from?: string;
@@ -186,14 +187,16 @@ export default async function SalesPage({
     pool.query(
       `SELECT s.id,
               r.name AS register_name,
-              l.name AS location_name
+              l.name AS location_name,
+              s.opened_at,
+              (s.opened_by = $1::uuid) AS mine,
+              (SELECT COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.email)
+                 FROM users u WHERE u.id = s.opened_by) AS opened_by_name
          FROM pos_register_sessions s
          JOIN pos_registers r ON r.id = s.register_id
          JOIN pos_locations pl ON pl.id = r.pos_location_id
          JOIN locations l      ON l.id  = pl.wms_location_id
-        WHERE s.opened_by = $1::uuid
-          AND s.status = 'open'
-          AND pl.wms_location_id = $2::uuid
+        WHERE ${currentSessionWhere("$1", "$2")}
         LIMIT 1`,
       [cashier.user_id, cashier.lid],
     ),
@@ -344,6 +347,21 @@ export default async function SalesPage({
                 &quot;{openLocationName ?? code}&quot;
               </span>
               .
+              {openSession.rows[0] && !openSession.rows[0].mine && (
+                <>
+                  {" "}Opened by{" "}
+                  <span className="font-semibold text-carbon-text">
+                    {openSession.rows[0].opened_by_name}
+                  </span>{" "}
+                  at{" "}
+                  {new Date(openSession.rows[0].opened_at).toLocaleTimeString("en-US", {
+                    timeZone: tz,
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}{" "}
+                  — the register is shared, so you can sell on it and close it.
+                </>
+              )}
             </p>
             <RegisterActionsClient
               code={code}

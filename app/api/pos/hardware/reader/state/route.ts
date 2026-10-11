@@ -26,7 +26,7 @@ export async function GET() {
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const info = await posReaderForCurrentSession(cashier.user_id);
+  const info = await posReaderForCurrentSession(cashier.user_id, cashier.lid);
   if (!info) {
     return NextResponse.json({ ok: true, skipped: true, reason: "no_agent" });
   }

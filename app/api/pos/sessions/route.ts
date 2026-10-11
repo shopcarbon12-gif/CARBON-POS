@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { currentSessionWhere } from "@/lib/current-session";
 
 const openSchema = z.object({
   register_id: z.number().int().positive(),
@@ -28,11 +29,9 @@ export async function GET(req: Request) {
       `SELECT s.*, r.name AS register_name, r.pos_location_id
          FROM pos_register_sessions s
          JOIN pos_registers r ON r.id = s.register_id
-        WHERE s.status = 'open'
-          AND s.opened_by = $1
-        ORDER BY s.opened_at DESC
+        WHERE ${currentSessionWhere("$1", "$2")}
         LIMIT 1`,
-      [cashier.user_id],
+      [cashier.user_id, cashier.lid],
     );
     return NextResponse.json({ session: r.rows[0] ?? null });
   }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { currentSessionWhere } from "@/lib/current-session";
 
 export const runtime = "nodejs";
 
@@ -14,14 +15,14 @@ export const runtime = "nodejs";
  * silently fails, leaving the welcome JPG stranded on the splash past
  * the 7-second dwell.
  */
-async function stripeReaderIdForCashier(userId: string): Promise<string | null> {
+async function stripeReaderIdForCashier(userId: string, lid: string): Promise<string | null> {
   const r = await getPool().query<{ stripe_reader_id: string | null }>(
     `SELECT reg.stripe_reader_id
        FROM pos_register_sessions s
        JOIN pos_registers reg ON reg.id = s.register_id
-      WHERE s.status = 'open' AND s.opened_by = $1
-      ORDER BY s.opened_at DESC LIMIT 1`,
-    [userId],
+      WHERE ${currentSessionWhere("$1", "$2")}
+      LIMIT 1`,
+    [userId, lid],
   );
   return r.rows[0]?.stripe_reader_id ?? null;
 }
@@ -126,7 +127,7 @@ export async function POST(req: Request) {
   // We resolve the second one. setSplashTo() hits the account-wide
   // Configuration object and does NOT need any reader id, so it
   // works even when no terminal is paired to this register.
-  const readerId = await stripeReaderIdForCashier(cashier.user_id);
+  const readerId = await stripeReaderIdForCashier(cashier.user_id, cashier.lid);
   if (!readerId) {
     return NextResponse.json({ ok: true, skipped: true, reason: "no_reader" });
   }

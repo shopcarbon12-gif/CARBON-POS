@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/db";
+import { currentSessionWhere } from "@/lib/current-session";
 
 /**
  * Reader-control helpers — scoped to the cashier's POS-dedicated reader
@@ -43,6 +44,7 @@ export type PosReaderInfo = {
  */
 export async function posReaderForCurrentSession(
   userId: string,
+  lid: string,
 ): Promise<PosReaderInfo | null> {
   const r = await getPool().query<PosReaderInfo>(
     `SELECT d.id::text                              AS reader_id,
@@ -61,10 +63,9 @@ export async function posReaderForCurrentSession(
                               AND d.device_type IN
                                   ('fixed_reader','transaction_reader','door_reader')
                               AND d.is_pos_dedicated = TRUE
-      WHERE s.status = 'open' AND s.opened_by = $1
-      ORDER BY s.opened_at DESC
+      WHERE ${currentSessionWhere("$1", "$2")}
       LIMIT 1`,
-    [userId],
+    [userId, lid],
   );
   return r.rows[0] ?? null;
 }
@@ -131,12 +132,12 @@ export function markReaderHeartbeat(userId: string): void {
  * anymore (that teardown wedged the chip), the per-reader schedule governs its
  * open hours.
  */
-export async function armPosMonitor(userId: string): Promise<void> {
+export async function armPosMonitor(userId: string, lid: string): Promise<void> {
   await getPool().query(
-    `UPDATE pos_register_sessions
+    `UPDATE pos_register_sessions s
         SET monitor_armed_at = now()
-      WHERE status = 'open' AND opened_by = $1::uuid`,
-    [userId],
+      WHERE ${currentSessionWhere("$1", "$2")}`,
+    [userId, lid],
   );
 }
 
@@ -148,13 +149,14 @@ export async function armPosMonitor(userId: string): Promise<void> {
  */
 export async function setScanningActive(
   userId: string,
+  lid: string,
   active: boolean,
 ): Promise<void> {
   await getPool().query(
-    `UPDATE pos_register_sessions
+    `UPDATE pos_register_sessions s
         SET scanning_active_at = ${active ? "now()" : "NULL"}
-      WHERE status = 'open' AND opened_by = $1::uuid`,
-    [userId],
+      WHERE ${currentSessionWhere("$1", "$2")}`,
+    [userId, lid],
   );
 }
 

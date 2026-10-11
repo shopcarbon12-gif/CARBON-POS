@@ -4,6 +4,7 @@ import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { CloseRegisterClient } from "./CloseRegisterClient";
+import { currentSessionWhere } from "@/lib/current-session";
 
 /**
  * Close Register page. Layout follows the supplied screenshot:
@@ -49,10 +50,7 @@ export default async function CloseRegisterPage({
        JOIN pos_registers   r  ON r.id = s.register_id
        JOIN pos_locations   pl ON pl.id = r.pos_location_id
        JOIN locations       l  ON l.id = pl.wms_location_id
-      WHERE s.opened_by = $1::uuid
-        AND s.status = 'open'
-        AND pl.wms_location_id = $2::uuid
-      ORDER BY s.opened_at DESC
+      WHERE ${currentSessionWhere("$1", "$2")}
       LIMIT 1`,
     [cashier.user_id, cashier.lid],
   );

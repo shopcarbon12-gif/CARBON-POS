@@ -23,6 +23,6 @@ export async function POST(req: Request) {
   } catch {
     /* default active:true */
   }
-  await setScanningActive(cashier.user_id, active);
+  await setScanningActive(cashier.user_id, cashier.lid, active);
   return NextResponse.json({ ok: true });
 }

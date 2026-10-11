@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { currentSessionWhere } from "@/lib/current-session";
 
 /**
  * Loyalty phone prompt on the BBPOS WisePOS E.
@@ -14,14 +15,14 @@ import { currentCashier } from "@/lib/session";
  * Stripe's Node SDK (v17) doesn't expose collect_inputs as a typed method
  * yet, so we call the REST endpoint directly.
  */
-async function readerForCurrentSession(userId: string): Promise<string | null> {
+async function readerForCurrentSession(userId: string, lid: string): Promise<string | null> {
   const r = await getPool().query(
     `SELECT reg.stripe_reader_id
        FROM pos_register_sessions s
        JOIN pos_registers reg ON reg.id = s.register_id
-      WHERE s.status = 'open' AND s.opened_by = $1
-      ORDER BY s.opened_at DESC LIMIT 1`,
-    [userId],
+      WHERE ${currentSessionWhere("$1", "$2")}
+      LIMIT 1`,
+    [userId, lid],
   );
   return r.rows[0]?.stripe_reader_id ?? null;
 }
@@ -44,7 +45,7 @@ export async function POST() {
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const readerId = await readerForCurrentSession(cashier.user_id);
+  const readerId = await readerForCurrentSession(cashier.user_id, cashier.lid);
   if (!readerId) {
     return NextResponse.json({ error: "no_reader" }, { status: 409 });
   }
@@ -100,7 +101,7 @@ export async function DELETE() {
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const readerId = await readerForCurrentSession(cashier.user_id);
+  const readerId = await readerForCurrentSession(cashier.user_id, cashier.lid);
   if (!readerId) {
     return NextResponse.json({ ok: true, skipped: true });
   }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { stripe } from "@/lib/stripe-terminal";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { currentSessionWhere } from "@/lib/current-session";
 
 const lineSchema = z.object({
   description: z.string().min(1).max(100),
@@ -17,15 +18,15 @@ const cartSchema = z.object({
   tax_cents: z.number().int().nonnegative().optional(),
 });
 
-async function readerForCurrentSession(userId: string): Promise<string | null> {
+async function readerForCurrentSession(userId: string, lid: string): Promise<string | null> {
   const pool = getPool();
   const r = await pool.query(
     `SELECT reg.stripe_reader_id
        FROM pos_register_sessions s
        JOIN pos_registers reg ON reg.id = s.register_id
-      WHERE s.status = 'open' AND s.opened_by = $1
-      ORDER BY s.opened_at DESC LIMIT 1`,
-    [userId],
+      WHERE ${currentSessionWhere("$1", "$2")}
+      LIMIT 1`,
+    [userId, lid],
   );
   return r.rows[0]?.stripe_reader_id ?? null;
 }
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const readerId = await readerForCurrentSession(cashier.user_id);
+  const readerId = await readerForCurrentSession(cashier.user_id, cashier.lid);
   if (!readerId) {
     return NextResponse.json({ error: "no_reader" }, { status: 409 });
   }
@@ -75,7 +76,7 @@ export async function DELETE() {
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const readerId = await readerForCurrentSession(cashier.user_id);
+  const readerId = await readerForCurrentSession(cashier.user_id, cashier.lid);
   if (!readerId) {
     return NextResponse.json({ ok: true, skipped: true });
   }

@@ -59,7 +59,7 @@ export async function GET() {
   // the cashier's currently-open register session. We refuse to bridge any
   // EPCs if this is missing — better an empty stream than warehouse
   // cross-talk into the cart.
-  const posReader = await posReaderForCurrentSession(cashier.user_id).catch(
+  const posReader = await posReaderForCurrentSession(cashier.user_id, cashier.lid).catch(
     () => null,
   );
   if (!posReader) {

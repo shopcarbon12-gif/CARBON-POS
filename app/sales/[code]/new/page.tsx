@@ -3,6 +3,7 @@ import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { SellScreenWrapper } from "./SellScreenWrapper";
+import { currentSessionWhere } from "@/lib/current-session";
 
 /**
  * Point of Sale screen. Wraps the sell screen in the back-office shell so
@@ -35,10 +36,7 @@ export default async function PosHomePage({
        FROM pos_register_sessions s
        JOIN pos_registers   r  ON r.id = s.register_id
        JOIN pos_locations   pl ON pl.id = r.pos_location_id
-      WHERE s.status = 'open'
-        AND s.opened_by = $1::uuid
-        AND r.pos_location_id IN (SELECT id FROM pos_locations WHERE wms_location_id = $2::uuid)
-      ORDER BY s.opened_at DESC
+      WHERE ${currentSessionWhere("$1", "$2")}
       LIMIT 1`,
     [cashier.user_id, cashier.lid],
   );

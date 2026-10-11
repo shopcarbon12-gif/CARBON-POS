@@ -29,7 +29,7 @@ export async function POST() {
   if (!cashier) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const info = await posReaderForCurrentSession(cashier.user_id);
+  const info = await posReaderForCurrentSession(cashier.user_id, cashier.lid);
   if (!info) {
     return NextResponse.json({ ok: true, skipped: true, reason: "no_agent" });
   }
@@ -39,7 +39,7 @@ export async function POST() {
   await clearPosReaderPause(info.reader_id);
   // Arm the agent's recovery monitor: a cashier is present, so the reader must
   // self-heal aggressively (and cold-start if outside store hours).
-  await armPosMonitor(cashier.user_id);
+  await armPosMonitor(cashier.user_id, cashier.lid);
   markReaderHeartbeat(cashier.user_id);
   return NextResponse.json({
     ok: true,
