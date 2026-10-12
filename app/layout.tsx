@@ -2,6 +2,12 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { ORLANDO_TIME_PATCH } from "@/lib/orlando-time";
+
+// Server side too (API routes, PDFs, emails) — containers already run
+// TZ=America/New_York, this just makes it explicit and environment-proof.
+// eslint-disable-next-line no-new-func
+new Function(ORLANDO_TIME_PATCH)();
 
 const inter = Inter({
   subsets: ["latin"],
@@ -23,6 +29,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <head>
+        {/* Orlando time for every date shown, before any app code runs. */}
+        <script dangerouslySetInnerHTML={{ __html: ORLANDO_TIME_PATCH }} />
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap"
