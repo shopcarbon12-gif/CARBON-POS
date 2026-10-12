@@ -104,20 +104,50 @@ export function InventoryTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, sort, dir, page]);
 
-  async function load() {
-    setLoading(true);
+  // Only the newest request may update the table (a slow background
+  // refresh must not overwrite results for a newer search).
+  const reqSeq = useRef(0);
+  const viewRef = useRef({ q, sort, dir, page });
+  viewRef.current = { q, sort, dir, page };
+
+  async function load(silent = false) {
+    const seq = ++reqSeq.current;
+    if (!silent) setLoading(true);
+    const v = viewRef.current;
     const sp = new URLSearchParams();
-    if (q.trim()) sp.set("q", q.trim());
-    sp.set("sort", sort);
-    sp.set("dir", dir);
-    sp.set("page", String(page));
-    const res = await fetch(`/api/pos/inventory?${sp.toString()}`);
-    setLoading(false);
-    if (!res.ok) return;
+    if (v.q.trim()) sp.set("q", v.q.trim());
+    sp.set("sort", v.sort);
+    sp.set("dir", v.dir);
+    sp.set("page", String(v.page));
+    const res = await fetch(`/api/pos/inventory?${sp.toString()}`, { cache: "no-store" }).catch(() => null);
+    if (seq !== reqSeq.current) return;
+    if (!silent) setLoading(false);
+    if (!res?.ok) return;
     const data = (await res.json()) as { rows: Row[]; total: number };
+    if (seq !== reqSeq.current) return;
     setRows(data.rows ?? []);
     setTotal(data.total ?? 0);
   }
+
+  // Live sync with WMS: refresh quietly every 10 s while the tab is on
+  // screen, and right away when the cashier comes back to it.
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "visible") void load(true);
+    };
+    const t = window.setInterval(tick, 10_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const offset = (page - 1) * pageSize;
@@ -357,7 +387,11 @@ export function InventoryTable({
 
       <UpdateStatusModal
         open={statusModalOpen}
-        onClose={() => setStatusModalOpen(false)}
+        onClose={() => {
+          setStatusModalOpen(false);
+          // Status changes move stock — show the new counts right away.
+          void load(true);
+        }}
       />
     </>
   );
