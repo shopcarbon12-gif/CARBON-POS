@@ -87,6 +87,8 @@ export function InventoryTable({
   const [loading, setLoading] = useState(false);
   const [picked, setPicked] = useState<Row | null>(null);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
+  // Time of the last successful refresh from WMS (shown under the title).
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
   // Ignore the very first effect run — the server already did the first
   // paint, so re-fetching would just duplicate work.
@@ -127,6 +129,7 @@ export function InventoryTable({
     if (seq !== reqSeq.current) return;
     setRows(data.rows ?? []);
     setTotal(data.total ?? 0);
+    setSyncedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }));
   }
 
   // Live sync with WMS: refresh quietly every 10 s while the tab is on
@@ -174,8 +177,12 @@ export function InventoryTable({
             Product Management
           </h2>
           <p className="text-sm text-carbon-text-muted mt-1">
-            Live catalog view scoped to this location. Stock counts come from
-            RFID-tagged inventory in WMS.
+            Live catalog from WMS for this store. Stock = RFID tags in stock +
+            untagged counts.
+          </p>
+          <p className="text-xs text-carbon-text-muted mt-1 inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" aria-hidden />
+            Live from WMS{syncedAt ? ` · updated ${syncedAt}` : ""}
           </p>
         </div>
 

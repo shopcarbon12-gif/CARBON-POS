@@ -49,7 +49,14 @@ export async function listInventory(a: {
 }): Promise<{ rows: InventoryRow[]; total: number }> {
   const offset = (a.page - 1) * INVENTORY_PAGE_SIZE;
   const orderBy = `${SORT_SQL[a.sort]} ${a.dir.toUpperCase()} NULLS LAST, cs.sku ASC`;
-  const filters = ["COALESCE(cs.archived, FALSE) = FALSE"];
+  const filters = [
+    "COALESCE(cs.archived, FALSE) = FALSE",
+    // Hide non-physical Lightspeed lines (coupons, loyalty rewards,
+    // shipping / web fees): no price, no barcode, never tagged.
+    `NOT (COALESCE(cs.retail_price, 0) = 0 AND cs.upc IS NULL AND m.upc IS NULL
+          AND NOT EXISTS (SELECT 1 FROM items i0 WHERE i0.custom_sku_id = cs.id)
+          AND NOT EXISTS (SELECT 1 FROM manual_item_qty q0 WHERE q0.custom_sku_id = cs.id AND q0.current_qty <> 0))`,
+  ];
   const args: unknown[] = [a.lid];
   if (a.q.length > 0) {
     args.push(`%${a.q}%`);
