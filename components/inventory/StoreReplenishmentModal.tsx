@@ -9,7 +9,9 @@ import { useCallback, useEffect, useState } from "react";
  * stock was ticked on the handheld), grey = still open.
  *
  * Same details as the handheld: day, then per sale the number and
- * time · customer · employee, with the items sold on the right.
+ * time · customer · employee, with the items sold on the right. Tap a sale to
+ * see its items: replenished (green, with who and when), still to pick
+ * (grey) or out of stock (faded).
  * Today by default; pick a date range at the top. Refreshes every 15 s.
  */
 type Sale = {
@@ -25,7 +27,89 @@ type Sale = {
   complete: boolean;
 };
 
+type Line = {
+  lineId: number;
+  sku: string | null;
+  name: string;
+  color: string | null;
+  size: string | null;
+  bin: string | null;
+  soldQty: number;
+  inStock: number;
+  pickable: boolean;
+  picked: boolean;
+  pickedBy: string | null;
+  pickedAt: string | null;
+};
+
 const REFRESH_MS = 15_000;
+
+function SaleItems({ saleId, refreshTick }: { saleId: number; refreshTick: number }) {
+  const [lines, setLines] = useState<Line[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/pos/store-replenishment/${saleId}`, { cache: "no-store" })
+      .then(async (res) => {
+        const j = (await res.json().catch(() => ({}))) as { lines?: Line[]; error?: string };
+        if (!res.ok) throw new Error(j.error ?? "Could not load the items");
+        if (alive) {
+          setLines(j.lines ?? []);
+          setError(null);
+        }
+      })
+      .catch((e) => alive && setError(e instanceof Error ? e.message : "Could not load the items"));
+    return () => {
+      alive = false;
+    };
+  }, [saleId, refreshTick]);
+
+  if (error) return <p className="px-3 py-2 text-sm font-semibold text-red-600">{error}</p>;
+  if (!lines) return <p className="px-3 py-2 text-sm text-[var(--color-pos-muted)]">Loading items…</p>;
+  if (!lines.length) return <p className="px-3 py-2 text-sm text-[var(--color-pos-muted)]">No items on this sale.</p>;
+  return (
+    <ul className="divide-y divide-gray-200 border-t border-gray-200 bg-white">
+      {lines.map((l) => {
+        const tone = !l.pickable ? "opacity-50" : "";
+        const when = l.pickedAt
+          ? new Date(l.pickedAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" })
+          : null;
+        return (
+          <li key={l.lineId} className={`flex items-center gap-3 px-3 py-2 ${tone}`}>
+            <span
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-2 text-sm font-black ${
+                l.picked ? "border-green-600 bg-green-600 text-white" : "border-gray-400 bg-white text-transparent"
+              }`}
+              aria-label={l.picked ? "Replenished" : "Not replenished"}
+            >
+              ✓
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-mono text-sm font-bold">{l.sku ? `SKU ${l.sku}` : "No catalog item"}</div>
+              <div className="truncate text-sm font-semibold uppercase">
+                {[l.name, l.color, l.size].filter(Boolean).join(" · ")}
+              </div>
+              <div className="text-base font-black text-black">
+                BIN {l.bin ?? "—"} · SOLD {l.soldQty}
+              </div>
+              <div className={`text-xs font-bold uppercase tracking-wider ${l.picked ? "text-green-700" : "text-gray-500"}`}>
+                {!l.pickable
+                  ? "Out of stock — nothing to pick"
+                  : l.picked
+                    ? `Replenished${l.pickedBy ? ` by ${l.pickedBy}` : ""}${when ? ` · ${when}` : ""}`
+                    : "Not replenished yet"}
+              </div>
+            </div>
+            <div className="w-14 shrink-0 text-center">
+              <div className="text-xl font-black leading-none">{l.inStock}</div>
+              <div className="text-[10px] font-bold tracking-wider text-gray-500">IN STOCK</div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 export function StoreReplenishmentModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [fromDate, setFromDate] = useState("");
@@ -33,6 +117,8 @@ export function StoreReplenishmentModal({ open, onClose }: { open: boolean; onCl
   const [sales, setSales] = useState<Sale[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [openSale, setOpenSale] = useState<number | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,6 +131,7 @@ export function StoreReplenishmentModal({ open, onClose }: { open: boolean; onCl
       if (!res.ok) throw new Error(j.error ?? "Could not load replenishment");
       setSales(j.sales ?? []);
       setError(null);
+      setRefreshTick((t) => t + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load replenishment");
     } finally {
@@ -156,13 +243,25 @@ export function StoreReplenishmentModal({ open, onClose }: { open: boolean; onCl
                     return (
                       <li
                         key={s.id}
-                        className={`flex items-stretch overflow-hidden rounded-lg border ${
+                        className={`overflow-hidden rounded-lg border ${
                           s.complete ? "border-green-600 bg-green-50" : "border-gray-300 bg-gray-100"
                         }`}
                       >
+                        <button
+                          type="button"
+                          onClick={() => setOpenSale((cur) => (cur === s.id ? null : s.id))}
+                          aria-expanded={openSale === s.id}
+                          className="flex w-full items-stretch text-left"
+                          title={openSale === s.id ? "Hide items" : "Show items"}
+                        >
                         <div className={`w-1 shrink-0 ${s.complete ? "bg-green-600" : "bg-gray-400"}`} />
                         <div className="min-w-0 flex-1 px-3 py-2.5">
-                          <div className="font-mono text-lg font-bold">#{s.saleNumber}</div>
+                          <div className="font-mono text-lg font-bold">
+                            #{s.saleNumber}
+                            <span className="ml-2 align-middle font-sans text-xs font-bold text-gray-500">
+                              {openSale === s.id ? "▲ hide items" : "▼ items"}
+                            </span>
+                          </div>
                           <div className="text-sm font-bold uppercase">{people}</div>
                           <div className={`text-xs font-bold uppercase tracking-wider ${s.complete ? "text-green-700" : "text-gray-500"}`}>
                             {status}
@@ -176,6 +275,8 @@ export function StoreReplenishmentModal({ open, onClose }: { open: boolean; onCl
                           <span className="text-2xl font-black leading-none">{s.soldQty}</span>
                           <span className="mt-1 text-[10px] font-bold tracking-wider">SOLD</span>
                         </div>
+                        </button>
+                        {openSale === s.id ? <SaleItems saleId={s.id} refreshTick={refreshTick} /> : null}
                       </li>
                     );
                   })}
