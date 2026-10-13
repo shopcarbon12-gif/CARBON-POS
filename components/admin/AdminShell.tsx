@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import { ClockButton } from "./ClockButton";
 import { OfflineSync } from "./OfflineSync";
+import { shortStaffName } from "@/lib/staff-name";
 
 type Tab =
   | "dashboard"
@@ -395,7 +396,7 @@ function LocationUserMenu({
             {fullName ? (
               <>
                 <p className="text-sm font-semibold text-carbon-text truncate mt-0.5">
-                  {fullName}
+                  {shortStaffName(fullName)}
                 </p>
                 <p className="text-xs text-carbon-text-muted truncate">
                   {email ?? "—"}

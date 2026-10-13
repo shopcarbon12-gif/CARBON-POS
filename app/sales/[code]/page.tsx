@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { formatMoney } from "@/lib/utils";
+import { shortStaffName } from "@/lib/staff-name";
 import { storeToday } from "@/lib/reports";
 import { loadPermissions } from "@/lib/pos-permissions";
 import type { PermKey } from "@/lib/permission-keys";
@@ -361,7 +362,7 @@ export default async function SalesPage({
                 <>
                   {" "}Opened by{" "}
                   <span className="font-semibold text-carbon-text">
-                    {openSession.rows[0].opened_by_name}
+                    {shortStaffName(openSession.rows[0].opened_by_name)}
                   </span>{" "}
                   at{" "}
                   {new Date(openSession.rows[0].opened_at).toLocaleTimeString("en-US", {
@@ -422,8 +423,8 @@ export default async function SalesPage({
             >
               <option value="">All</option>
               {cashiers.rows.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+                <option key={c.id} value={c.id} title={c.name}>
+                  {shortStaffName(c.name)}
                 </option>
               ))}
             </select>
@@ -517,7 +518,7 @@ export default async function SalesPage({
                   </td>
                   <td className="px-3 py-2">{fmtWhen(r.at)}</td>
                   <td className="px-3 py-2">{r.register}</td>
-                  <td className="px-3 py-2">{r.cashier}</td>
+                  <td className="px-3 py-2">{shortStaffName(r.cashier)}</td>
                   <td className="px-3 py-2">{r.customer}</td>
                   <td className="px-3 py-2">
                     <span

@@ -1,3 +1,4 @@
+import { shortStaffName } from "@/lib/staff-name";
 import Link from "next/link";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
@@ -361,7 +362,7 @@ export default async function DashboardPage({
                           </div>
                           <div className="flex justify-between gap-3 text-xs text-carbon-text-muted">
                             <span className="truncate">
-                              {s.opened_by} · opened {timeIn(s.opened_at)}
+                              {shortStaffName(s.opened_by)} · opened {timeIn(s.opened_at)}
                             </span>
                             <span className="shrink-0">
                               {Number(s.sales_count)} sale{Number(s.sales_count) === 1 ? "" : "s"}

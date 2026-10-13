@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import { shortStaffName } from "@/lib/staff-name";
 import { currentCashier } from "@/lib/session";
 
 /**
@@ -209,7 +210,7 @@ export async function GET(req: Request) {
             : r.old_value || r.new_value
               ? `Bin: ${r.old_value || "—"} → ${r.new_value || "none"}`
               : "Inventory update",
-        detail: [r.reason?.replace(/_/g, " "), r.who].filter(Boolean).join(" · ") || null,
+        detail: [r.reason?.replace(/_/g, " "), shortStaffName(r.who)].filter(Boolean).join(" · ") || null,
       })),
     ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
     const row = t.rows[0];

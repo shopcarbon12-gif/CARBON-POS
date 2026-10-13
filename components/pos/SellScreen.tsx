@@ -17,6 +17,7 @@ import type { ReturnableLine, ReturnableSale } from "@/lib/returns-types";
 import { calculateTotals } from "@/lib/tax";
 import { markdownFraction, needsManagerApproval } from "@/lib/discount-policy";
 import { capitalizeName } from "@/lib/utils";
+import { shortStaffName } from "@/lib/staff-name";
 import type { CartLine, AttributionEmployee } from "@/types/pos";
 
 /**
@@ -2440,7 +2441,7 @@ function HeldSalesModal({
                   {h.item_count} item{h.item_count === 1 ? "" : "s"} ·{" "}
                   {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(h.total))}{" "}
                   · {ago(h.created_at)}
-                  {h.held_by ? ` · by ${h.held_by}` : ""}
+                  {h.held_by ? ` · by ${shortStaffName(h.held_by)}` : ""}
                 </p>
               </div>
               <button

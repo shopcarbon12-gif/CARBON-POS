@@ -4,6 +4,7 @@ import { randomInt } from "node:crypto";
 import { Resend } from "resend";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { shortStaffName } from "@/lib/staff-name";
 import {
   hashOverrideCode,
   OVERRIDE_KINDS,
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
        FROM users u WHERE u.id = $1::uuid`,
     [cashier.user_id, cashier.lid],
   );
-  const requester = who.rows[0]?.name ?? cashier.email ?? "An employee";
+  const requester = shortStaffName(who.rows[0]?.name ?? cashier.email ?? "An employee");
   const store = who.rows[0]?.store ?? "the store";
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const approver = overrideApproverEmail();

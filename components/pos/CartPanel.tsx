@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Trash2, Minus, Plus, Barcode, Radio, ChevronDown } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
+import { shortStaffName } from "@/lib/staff-name";
 import type { CartLine, AttributionEmployee } from "@/types/pos";
 import { ProductImagePreview } from "./ProductImagePreview";
 
@@ -107,7 +108,7 @@ export function CartPanel({
               : [];
             const overrideSuffix =
               line.line_type === "product" && line.override_by
-                ? `not scanned — override by ${line.override_by}`
+                ? `not scanned — override by ${shortStaffName(line.override_by)}`
                 : null;
             const discountSuffix =
               line.line_type === "product" && line.discount_amount > 0
@@ -115,7 +116,7 @@ export function CartPanel({
                     line.discount_source === "promo" && line.promo_name
                       ? ` (${line.promo_name})`
                       : line.discount_approved_by
-                        ? ` · approved by ${line.discount_approved_by}`
+                        ? ` · approved by ${shortStaffName(line.discount_approved_by)}`
                         : ""
                   }`
                 : null;
@@ -125,7 +126,7 @@ export function CartPanel({
               ? [
                   `Return from #${line.return_ref?.sale_number ?? ""}`,
                   line.return_ref?.override_by
-                    ? `no tag — override by ${line.return_ref.override_by}`
+                    ? `no tag — override by ${shortStaffName(line.return_ref.override_by)}`
                     : line.return_ref?.needs_tag
                       ? line.return_ref?.epc
                         ? "tag verified ✓"
@@ -455,7 +456,7 @@ function ExpandedDetails({
       ? { k: "Promotion", v: line.promo_name }
       : null,
     line.discount_approved_by
-      ? { k: "Approved by", v: line.discount_approved_by }
+      ? { k: "Approved by", v: shortStaffName(line.discount_approved_by) }
       : null,
     { k: "Line total", v: formatMoney(lineTotal) },
   ] as Array<DetailRow | null>).filter((r): r is DetailRow => r !== null);
@@ -599,8 +600,8 @@ function EmployeeSelect({
           <option value={value}>—</option>
         )}
         {employees.map((emp) => (
-          <option key={emp.id} value={emp.id}>
-            {emp.display_name || emp.email}
+          <option key={emp.id} value={emp.id} title={emp.display_name || emp.email}>
+            {shortStaffName(emp.display_name) || emp.email}
           </option>
         ))}
       </select>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { currentCashier } from "@/lib/session";
+import { shortStaffName } from "@/lib/staff-name";
 import { buildCashMovementSlip, printCashMovementSlip } from "@/lib/thermal-printer";
 import { enqueuePrintJobs, locationPrintTarget } from "@/lib/print-queue";
 
@@ -56,7 +57,7 @@ export async function POST(
     amount: slip.amount,
     reason: slip.reason,
     done_at: slip.done_at,
-    done_by_name: slip.done_by_name,
+    done_by_name: shortStaffName(slip.done_by_name),
     location_name: slip.location_name,
     register_name: slip.register_name,
     timezone: slip.timezone,

@@ -9,6 +9,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import { getPool } from "@/lib/db";
+import { shortStaffName } from "@/lib/staff-name";
 import { computeEarn } from "@/lib/loyalty-earn";
 import { renderBarcodePng } from "@/lib/barcode-node";
 import { stripe } from "@/lib/stripe-terminal";
@@ -202,7 +203,7 @@ export async function loadReceiptData(
       footer: s.receipt_footer ?? null,
     },
     register: s.register_name,
-    cashier: s.cashier_name ?? "",
+    cashier: shortStaffName(s.cashier_name ?? ""),
     customer:
       s.customer_id != null
         ? {

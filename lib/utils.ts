@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { shortStaffNameParts } from "@/lib/staff-name";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -66,12 +67,7 @@ export function formatEmployeeShort(
   lastName?: string | null,
   fallback?: string | null,
 ): string {
-  const f = (firstName ?? "").trim();
-  const l = (lastName ?? "").trim();
-  if (f && l) return `${f} ${l[0].toUpperCase()}.`;
-  if (f) return f;
-  if (l) return l;
-  return (fallback ?? "").trim();
+  return shortStaffNameParts(firstName, lastName, fallback);
 }
 
 /**

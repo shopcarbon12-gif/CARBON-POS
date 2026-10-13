@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatMoney } from "@/lib/utils";
+import { shortStaffName } from "@/lib/staff-name";
 import { ACTIVITY_LABEL } from "@/components/pos/RegisterReportView";
 import type { RegisterReport } from "@/lib/register-report-types";
 import { readQueue } from "@/lib/offline-queue";
@@ -73,7 +74,7 @@ export function ShiftReview({
             minute: "2-digit",
           })}
         </span>{" "}
-        by <span className="font-semibold text-carbon-text">{s.opened_by_name}</span>{" "}
+        by <span className="font-semibold text-carbon-text">{shortStaffName(s.opened_by_name)}</span>{" "}
         with {formatMoney(s.opening_cash)}. Review the shift, then approve to
         count the drawer.
       </p>
@@ -148,7 +149,7 @@ export function ShiftReview({
                     )}
                   </td>
                   <td className="px-4 py-2">{a.detail || "—"}</td>
-                  <td className="px-4 py-2">{a.by || "—"}</td>
+                  <td className="px-4 py-2">{shortStaffName(a.by) || "—"}</td>
                   <td
                     className={`px-4 py-2 text-right tabular-nums font-semibold ${
                       a.amount < 0 ? "text-carbon-danger" : ""

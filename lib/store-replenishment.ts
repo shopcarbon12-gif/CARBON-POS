@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { shortStaffName } from "@/lib/staff-name";
 
 /**
  * Store Replenishment — READ-ONLY view for the POS.
@@ -83,7 +84,7 @@ export async function listReplenishmentSales(
     saleNumber: x.sale_number,
     localDay: x.local_day,
     localTime: x.local_time,
-    employee: x.employee,
+    employee: shortStaffName(x.employee),
     customer: x.customer,
     soldQty: x.sold_qty,
     pickableLines: x.pickable_lines,
@@ -168,7 +169,7 @@ export async function getReplenishmentLines(
     inStock: x.in_stock,
     pickable: x.has_sku && x.in_stock > 0,
     picked: x.picked,
-    pickedBy: x.picked_by_name,
+    pickedBy: shortStaffName(x.picked_by_name),
     pickedAt: x.picked_at ? x.picked_at.toISOString() : null,
   }));
   lines.sort(

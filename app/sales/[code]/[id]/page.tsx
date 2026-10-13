@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getPool } from "@/lib/db";
 import { pageGuard } from "@/lib/page-guard";
 import { formatMoney } from "@/lib/utils";
+import { shortStaffName } from "@/lib/staff-name";
 import { cardDetails } from "@/lib/receipt-pdf";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { SaleActions } from "./SaleActions";
@@ -199,8 +200,8 @@ export default async function AdminSaleDetailPage({
             {at(sale.completed_at ?? sale.created_at)} · {sale.location_name} · {sale.register_name}
           </p>
           <p className="text-sm text-[var(--color-pos-muted)]">
-            Cashier: {sale.cashier_name ?? sale.cashier_email}
-            {sale.attributed_differs && sale.attributed_name ? ` · Sales associate: ${sale.attributed_name}` : ""}
+            Cashier: {shortStaffName(sale.cashier_name) ?? sale.cashier_email}
+            {sale.attributed_differs && sale.attributed_name ? ` · Sales associate: ${shortStaffName(sale.attributed_name)}` : ""}
             {sale.recorded_offline ? " · Rung up offline" : ""}
           </p>
           {exchangeOf && (
@@ -238,7 +239,7 @@ export default async function AdminSaleDetailPage({
       {sale.status === "voided" && (
         <div className="mx-6 mt-4 border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           Voided {sale.voided_at ? at(sale.voided_at) : ""}
-          {sale.voided_by_name ? ` by ${sale.voided_by_name}` : ""}
+          {sale.voided_by_name ? ` by ${shortStaffName(sale.voided_by_name)}` : ""}
           {sale.void_reason ? ` — ${sale.void_reason}` : ""}
         </div>
       )}
@@ -282,10 +283,10 @@ export default async function AdminSaleDetailPage({
                             <>Refund · {REFUND_LABEL[r.method] ?? r.method}</>
                           )}
                           {r.override_by && (
-                            <span className="block text-xs text-carbon-text-muted">Approved: {r.override_by}</span>
+                            <span className="block text-xs text-carbon-text-muted">Approved: {shortStaffName(r.override_by)}</span>
                           )}
                         </td>
-                        <td className="px-3 py-2">{r.by_name ?? "—"}</td>
+                        <td className="px-3 py-2">{shortStaffName(r.by_name) ?? "—"}</td>
                         <td className="px-3 py-2">{r.reason ?? "—"}</td>
                         <td className="px-3 py-2 text-right">{r.pieces || "—"}</td>
                         <td className="px-3 py-2 text-right tabular-nums">−{formatMoney(r.amount)}</td>

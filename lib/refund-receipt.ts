@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/db";
+import { shortStaffNameParts } from "@/lib/staff-name";
 import { cardDetails } from "@/lib/receipt-pdf";
 import type { RefundReceiptData } from "@/components/pos/RefundReceiptView";
 
@@ -100,7 +101,7 @@ export async function loadRefundReceipt(
       reason: rf.reason,
       at: new Date(rf.created_at).toISOString(),
       register: rf.register_name,
-      by: [rf.by_first, rf.by_last].filter(Boolean).join(" ") || rf.by_email || "",
+      by: shortStaffNameParts(rf.by_first, rf.by_last, rf.by_email),
       items_known: ids !== null,
     },
     sale: {
