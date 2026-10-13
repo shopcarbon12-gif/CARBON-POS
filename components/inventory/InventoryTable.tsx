@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Radio } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 import { UpdateStatusModal } from "./UpdateStatusModal";
+import { StoreReplenishmentModal } from "./StoreReplenishmentModal";
+import { REPLENISHMENT_LOCATION_CODE } from "@/lib/store-replenishment";
 import { ProductImagePreview } from "../pos/ProductImagePreview";
 
 type SortKey =
@@ -87,6 +89,7 @@ export function InventoryTable({
   const [loading, setLoading] = useState(false);
   const [picked, setPicked] = useState<Row | null>(null);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [replenishOpen, setReplenishOpen] = useState(false);
   // Time of the last successful refresh from WMS (shown under the title).
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -219,6 +222,18 @@ export function InventoryTable({
             <span className="material-symbols-outlined text-base">edit_note</span>
             <span>Update Item Status</span>
           </button>
+          {/* Orlando Warehouse only: watch the handheld's showroom refills. */}
+          {code === REPLENISHMENT_LOCATION_CODE ? (
+            <button
+              type="button"
+              onClick={() => setReplenishOpen(true)}
+              className="carbon-btn-primary tap px-4 font-semibold flex items-center gap-2"
+              title="See which showroom sales have been refilled from the back (view only)"
+            >
+              <span className="material-symbols-outlined text-base">inventory</span>
+              <span>Store Replenishment</span>
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -391,6 +406,8 @@ export function InventoryTable({
           onClose={() => setPicked(null)}
         />
       ) : null}
+
+      <StoreReplenishmentModal open={replenishOpen} onClose={() => setReplenishOpen(false)} />
 
       <UpdateStatusModal
         open={statusModalOpen}
