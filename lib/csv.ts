@@ -14,7 +14,14 @@ export function toCsv(rows: Array<Array<string | number | null>>): string {
 
 function cell(v: string | number | null): string {
   if (v === null || v === undefined) return "";
-  const s = String(v);
+  let s = String(v);
+  // Neutralize spreadsheet formula injection: a cell that a spreadsheet would
+  // evaluate (starts with = + - @, tab or CR) gets a leading apostrophe so
+  // Excel/Sheets treats it as text. Attacker-supplied values (e.g. cashier
+  // refund/void reasons) flow into these reports.
+  if (/^[=+\-@\t\r]/.test(s)) {
+    s = `'${s}`;
+  }
   if (/[",\r\n]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }

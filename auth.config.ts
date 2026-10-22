@@ -44,13 +44,36 @@ export const authConfig: NextAuthConfig = {
         token.flow = (user as { flow: "pin" | "password" }).flow;
       }
       // Session update trigger — used by the location switcher to swap
-      // the active location without forcing a re-auth. Only `lid` /
-      // `lcode` are mutable; everything else is fixed at sign-in.
+      // the active location without forcing a re-auth. The new location is
+      // re-validated against user_locations + tenant on the server; the client
+      // value is NOT trusted (otherwise any user could switch to any store).
+      // `lcode`/`tid` are taken authoritatively from the DB, never the client.
       if (trigger === "update" && session && typeof session === "object") {
-        const upd = session as { user?: { lid?: unknown; lcode?: unknown } };
-        const u = upd.user;
-        if (u && typeof u.lid === "string" && u.lid)     token.lid   = u.lid;
-        if (u && typeof u.lcode === "string" && u.lcode) token.lcode = u.lcode;
+        const upd = session as { user?: { lid?: unknown } };
+        const newLid = upd.user?.lid;
+        if (typeof newLid === "string" && newLid && token.sub) {
+          // Dynamic import so pg is never bundled into the Edge middleware
+          // that also loads this config.
+          const { getPool } = await import("@/lib/db");
+          const loc = await getPool().query<{ id: string; code: string; tid: string }>(
+            `SELECT l.id::text AS id, l.code, l.tenant_id::text AS tid
+               FROM locations l
+              WHERE l.id = $1::uuid AND l.is_active = TRUE
+                AND ( EXISTS (SELECT 1 FROM user_locations ul
+                               WHERE ul.user_id = $2::uuid AND ul.location_id = l.id)
+                      OR NOT EXISTS (SELECT 1 FROM user_locations ul
+                                      WHERE ul.user_id = $2::uuid) )
+              LIMIT 1`,
+            [newLid, String(token.sub)],
+          );
+          const lrow = loc.rows[0];
+          if (lrow) {
+            token.lid = lrow.id;
+            token.lcode = lrow.code;
+            token.tid = lrow.tid;
+          }
+          // No matching assigned location → ignore the switch (keep current).
+        }
       }
       return token;
     },

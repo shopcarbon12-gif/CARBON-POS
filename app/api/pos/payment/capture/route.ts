@@ -379,16 +379,30 @@ export async function POST(req: Request) {
 
   const cardPayments = data.payments.filter((p) => p.method === "card");
   const capturedIntents: string[] = [];
+  const seenIntents = new Set<string>();
 
   // Capture each card intent first. If any capture fails, refund the ones
   // that succeeded and bail out — never persist a partial sale.
   try {
     for (const p of cardPayments) {
+      // One intent may back only one payment line in one sale.
+      if (seenIntents.has(p.payment_intent_id)) {
+        throw new Error("intent_reused");
+      }
+      seenIntents.add(p.payment_intent_id);
       const captured = await stripe().paymentIntents.capture(
         p.payment_intent_id,
       );
       if (captured.status !== "succeeded") {
         throw new Error(`intent_${captured.status}`);
+      }
+      // Bind the money Stripe actually captured to the amount declared for this
+      // payment. Without this, the totals check only sees the client-declared
+      // amounts, so a $1 intent could back a $100 sale.
+      const expectedCents = Math.round(p.amount * 100);
+      const gotCents = captured.amount_received ?? captured.amount ?? 0;
+      if (gotCents !== expectedCents) {
+        throw new Error(`intent_amount_mismatch_${gotCents}_vs_${expectedCents}`);
       }
       capturedIntents.push(captured.id);
     }
