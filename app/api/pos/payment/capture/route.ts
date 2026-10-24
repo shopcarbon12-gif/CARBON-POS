@@ -396,6 +396,10 @@ export async function POST(req: Request) {
       if (captured.status !== "succeeded") {
         throw new Error(`intent_${captured.status}`);
       }
+      // The money is taken from here on: record it before any further check,
+      // so a failed check below refunds THIS card too (the mismatch threw
+      // before the push and left the customer charged).
+      capturedIntents.push(captured.id);
       // Bind the money Stripe actually captured to the amount declared for this
       // payment. Without this, the totals check only sees the client-declared
       // amounts, so a $1 intent could back a $100 sale.
@@ -404,7 +408,6 @@ export async function POST(req: Request) {
       if (gotCents !== expectedCents) {
         throw new Error(`intent_amount_mismatch_${gotCents}_vs_${expectedCents}`);
       }
-      capturedIntents.push(captured.id);
     }
   } catch (err) {
     console.error("[capture] card capture failed", err);

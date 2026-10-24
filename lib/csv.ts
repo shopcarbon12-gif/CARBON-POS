@@ -15,6 +15,9 @@ export function toCsv(rows: Array<Array<string | number | null>>): string {
 function cell(v: string | number | null): string {
   if (v === null || v === undefined) return "";
   let s = String(v);
+  // A plain number (refunds, loyalty lines, cash over/short are negative) is
+  // never a formula: leave it a number so spreadsheet sums keep working.
+  if (typeof v === "number" || /^-?\d+(?:\.\d+)?$/.test(s)) return s;
   // Neutralize spreadsheet formula injection: a cell that a spreadsheet would
   // evaluate (starts with = + - @, tab or CR) gets a leading apostrophe so
   // Excel/Sheets treats it as text. Attacker-supplied values (e.g. cashier
